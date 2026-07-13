@@ -65,9 +65,19 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           {/* Breadcrumb / page title */}
           <div>
             <h2 className="text-sm font-medium text-gray-700">
-              {pathname === "/dashboard" && "我的链接"}
-              {pathname === "/dashboard/links/new" && "创建链接"}
-              {pathname.startsWith("/dashboard/links/") && !pathname.endsWith("/new") && "链接详情"}
+              {(function () {
+                if (pathname === "/dashboard") return "链接";
+                if (pathname.startsWith("/dashboard/links/new")) return "创建链接";
+                if (pathname.match(/^\/dashboard\/links\/\d+$/)) return "链接详情";
+                if (pathname === "/dashboard/analytics") return "分析";
+                if (pathname === "/dashboard/domains") return "域名";
+                if (pathname === "/dashboard/events") return "事件";
+                if (pathname === "/dashboard/customers") return "客户";
+                if (pathname === "/dashboard/folders") return "文件夹";
+                if (pathname === "/dashboard/tags") return "标签";
+                if (pathname === "/dashboard/utm") return "UTM 模板";
+                return "";
+              })()}
             </h2>
           </div>
 
