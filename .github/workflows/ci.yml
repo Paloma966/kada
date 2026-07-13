@@ -32,6 +32,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: "1.26"
+          cache-dependency-path: backend/go.sum
 
       - name: Download dependencies
         run: cd backend && go mod download
@@ -56,7 +57,6 @@ jobs:
         with:
           node-version: "22"
 
-
       - name: Install dependencies
         run: cd frontend && npm ci
 
@@ -75,11 +75,11 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: "1.26"
+          cache-dependency-path: backend/go.sum
 
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-
 
       # ---- 构建后端 ----
       - name: Build Go binary
@@ -95,38 +95,50 @@ jobs:
       - name: Package frontend
         run: |
           cd frontend
-          tar czf /tmp/kada-fe-standalone.tar.gz -C .next/standalone .
-          tar czf /tmp/kada-fe-static.tar.gz -C .next static/
-
-      # ---- 配置 SSH ----
-      - name: Setup SSH
-        run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
-          chmod 600 ~/.ssh/id_ed25519
-          # 添加服务器 host key
-          ssh-keyscan ${{ secrets.SERVER_HOST }} >> ~/.ssh/known_hosts 2>/dev/null
-          # 测试连接
-          ssh -o ConnectTimeout=10 ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} "echo SSH_OK"
+          mkdir -p ../deploy-pkg
+          tar czf ../deploy-pkg/kada-fe-standalone.tar.gz -C .next/standalone .
+          tar czf ../deploy-pkg/kada-fe-static.tar.gz -C .next static/
 
       # ---- 部署 ----
-      - name: Deploy backend
-        run: |
-          scp -o ConnectTimeout=30 backend/bin/server ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:/opt/kada/backend/bin/server.new
-          ssh -o ConnectTimeout=10 ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} "systemctl stop kada-api && mv /opt/kada/backend/bin/server.new /opt/kada/backend/bin/server && systemctl start kada-api"
-          echo "✅ Backend deployed"
+      - name: Deploy to server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: 22
+          source: "backend/bin/server,deploy-pkg/*"
+          target: /tmp/kada-deploy/
+          strip_components: 0
 
-      - name: Deploy frontend
-        run: |
-          scp -o ConnectTimeout=30 /tmp/kada-fe-standalone.tar.gz /tmp/kada-fe-static.tar.gz ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:/tmp/
-          ssh -o ConnectTimeout=10 ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} "cd /opt/kada/frontend && rm -rf .next/static node_modules server.js package.json static && tar xzf /tmp/kada-fe-standalone.tar.gz && mkdir -p .next && tar xzf /tmp/kada-fe-static.tar.gz -C .next && rm /tmp/kada-fe-*.tar.gz && systemctl restart kada-frontend"
-          echo "✅ Frontend deployed"
+      - name: Restart services
+        uses: appleboy/ssh-action@v1.2.2
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: 22
+          script: |
+            # 替换后端
+            cp /tmp/kada-deploy/backend/bin/server /opt/kada/backend/bin/server.new
+            systemctl stop kada-api
+            mv /opt/kada/backend/bin/server.new /opt/kada/backend/bin/server
+            systemctl start kada-api
+            echo "✅ Backend restarted"
 
-      - name: Verify deployment
+            # 替换前端
+            cd /opt/kada/frontend
+            rm -rf .next/static node_modules server.js package.json static
+            tar xzf /tmp/kada-deploy/deploy-pkg/kada-fe-standalone.tar.gz
+            mkdir -p .next
+            tar xzf /tmp/kada-deploy/deploy-pkg/kada-fe-static.tar.gz -C .next
+            rm -rf /tmp/kada-deploy
+            systemctl restart kada-frontend
+            echo "✅ Frontend restarted"
+
+      - name: Verify
         run: |
           sleep 2
-          echo "API Health:"
           curl -s http://${{ secrets.SERVER_HOST }}/api/health
           echo
-          echo "Frontend:"
-          curl -s -o /dev/null -w "HTTP %{http_code}" http://${{ secrets.SERVER_HOST }}/
+          curl -s -o /dev/null -w "Frontend: HTTP %{http_code}\n" http://${{ secrets.SERVER_HOST }}/
