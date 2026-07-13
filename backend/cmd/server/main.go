@@ -13,12 +13,13 @@ import (
 	linkHandler "github.com/chun/kada-backend/internal/handler/link"
 	redirectHandler "github.com/chun/kada-backend/internal/handler/redirect"
 	"github.com/chun/kada-backend/internal/infra"
+	"github.com/chun/kada-backend/internal/infra/sms"
 	"github.com/chun/kada-backend/internal/middleware"
 	"github.com/chun/kada-backend/internal/service"
 )
 
 func main() {
-	// 加载 .env 文件（如果存在）
+	// 加载 .env 文件
 	_ = godotenv.Load()
 
 	// 加载配置
@@ -39,8 +40,19 @@ func main() {
 		defer infra.CloseRedis(redisClient)
 	}
 
+	// 初始化阿里云短信认证服务
+	var smsSender service.SMSSender
+	if cfg.SMSAccessKeyID != "" && cfg.SMSAccessKeySecret != "" {
+		smsSender, err = sms.NewAliyunSender(cfg.SMSAccessKeyID, cfg.SMSAccessKeySecret)
+		if err != nil {
+			log.Printf("⚠️  短信服务初始化失败: %v", err)
+		}
+	} else {
+		log.Println("⚠️  未配置短信服务，验证码将只打印在日志中")
+	}
+
 	// 初始化 Service 层
-	authSvc := service.NewAuthService(db, cfg.JWTSecret, cfg.JWTExpires)
+	authSvc := service.NewAuthService(db, cfg.JWTSecret, cfg.JWTExpires, smsSender)
 	linkSvc := service.NewLinkService(db, cfg.BaseURL)
 
 	// 初始化 Handler 层
@@ -62,11 +74,11 @@ func main() {
 		c.JSON(http.StatusOK, gin.H{
 			"status":  "ok",
 			"service": "kada-api",
-			"version": "0.1.0",
+			"version": "0.2.0",
 		})
 	})
 
-	// 短链重定向（公开端点，无需认证）
+	// 短链重定向（公开端点）
 	redirectH.RegisterRoutes(r)
 
 	// API v1 路由组

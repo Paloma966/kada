@@ -42,7 +42,10 @@ func (h *Handler) SendSMSCode(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "验证码已发送", "phone": req.Phone})
+	c.JSON(http.StatusOK, gin.H{
+		"message": "验证码已发送",
+		"phone":   req.Phone,
+	})
 }
 
 // LoginByPhone 手机号+验证码登录
