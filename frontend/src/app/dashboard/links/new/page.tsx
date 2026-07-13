@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
+import { toast } from "sonner";
 import { linksAPI } from "@/lib/api";
 import { getToken } from "@/lib/auth";
 
@@ -13,11 +14,9 @@ export default function CreateLinkPage() {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError("");
     setLoading(true);
 
     const token = getToken();
@@ -27,14 +26,15 @@ export default function CreateLinkPage() {
     }
 
     try {
-      const data = await linksAPI.create(token, {
+      await linksAPI.create(token, {
         original_url: originalUrl,
         title: title || undefined,
         description: description || undefined,
       });
+      toast.success("短链接创建成功！");
       router.push("/dashboard");
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "创建失败");
+      toast.error(e instanceof Error ? e.message : "创建失败");
     } finally {
       setLoading(false);
     }
@@ -50,10 +50,6 @@ export default function CreateLinkPage() {
       </Link>
 
       <h1 className="text-2xl font-bold text-gray-900 mb-6">创建短链接</h1>
-
-      {error && (
-        <div className="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-600">{error}</div>
-      )}
 
       <form onSubmit={handleSubmit} className="bg-white rounded-xl p-6 shadow-sm space-y-4">
         <div>

@@ -1,146 +1,149 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import Link from "next/link";
-import { Plus, Copy, ExternalLink, Trash2 } from "lucide-react";
+import { Plus, Search, Link2 } from "lucide-react";
 import useSWR from "swr";
+import { toast } from "sonner";
 import { linksAPI } from "@/lib/api";
 import { getToken } from "@/lib/auth";
+import { LinkCard, LinkCardPlaceholder } from "@/components/LinkCard";
+import type { LinkItem } from "@/components/LinkCard";
 
-interface LinkItem {
-  id: number;
-  short_code: string;
-  short_url: string;
-  original_url: string;
-  title: string;
-  click_count: number;
-  is_active: boolean;
-  created_at: string;
-}
+const PAGE_SIZE = 20;
 
 export default function DashboardPage() {
   const token = getToken();
   const [page, setPage] = useState(1);
+  const [search, setSearch] = useState("");
 
   const { data, error, isLoading, mutate } = useSWR(
-    token ? [`links`, page] : null,
-    () => linksAPI.list(token!, page)
+    token ? [`links`, page, search] : null,
+    () => linksAPI.list(token!, page, PAGE_SIZE)
   );
 
+  const links: LinkItem[] = data?.links ?? [];
+  const totalCount: number = data?.total_count ?? 0;
+  const totalPages = Math.ceil(totalCount / PAGE_SIZE);
+
   const handleDelete = async (id: number) => {
-    if (!confirm("确定删除这个短链接？") || !token) return;
+    if (!token) return;
     try {
       await linksAPI.delete(token, id);
       mutate();
-    } catch (e) {
-      console.error(e);
+    } catch {
+      toast.error("删除失败");
+      throw new Error("Delete failed");
     }
-  };
-
-  const copyToClipboard = (url: string) => {
-    navigator.clipboard.writeText(url);
   };
 
   return (
     <div>
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">我的链接</h1>
-          <p className="text-sm text-gray-500 mt-1">
-            {data?.total_count || 0} 个短链接
-          </p>
+          <p className="text-sm text-gray-500 mt-1">{totalCount} 个短链接</p>
         </div>
         <Link
           href="/dashboard/links/new"
-          className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 transition"
+          className="inline-flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-indigo-700 transition shadow-sm"
         >
-          <Plus className="w-4 h-4" /> 创建链接
+          <Plus className="w-4 h-4" />
+          创建链接
         </Link>
       </div>
 
-      {/* Link List */}
-      {isLoading ? (
-        <div className="text-center py-12 text-gray-400">加载中...</div>
-      ) : error ? (
-        <div className="text-center py-12 text-red-500">加载失败</div>
-      ) : !data?.links?.length ? (
-        <div className="text-center py-16 bg-white rounded-xl shadow-sm">
-          <div className="text-4xl mb-4">🔗</div>
-          <h3 className="text-lg font-medium text-gray-900">还没有短链接</h3>
-          <p className="text-sm text-gray-500 mt-1">创建你的第一个短链接</p>
-          <Link
-            href="/dashboard/links/new"
-            className="inline-flex items-center gap-2 mt-4 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 transition"
+      {/* Search (placeholder for now) */}
+      <div className="relative mb-4">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+        <input
+          type="text"
+          value={search}
+          onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+          placeholder="搜索链接..."
+          className="w-full sm:w-80 pl-9 pr-4 py-2.5 rounded-lg border border-gray-200 text-sm focus:border-indigo-300 focus:outline-none focus:ring-2 focus:ring-indigo-100 transition"
+        />
+      </div>
+
+      {/* Content */}
+      {error ? (
+        <div className="text-center py-16 bg-white rounded-xl border border-gray-100">
+          <div className="text-4xl mb-4">😞</div>
+          <h3 className="text-lg font-medium text-gray-900">加载失败</h3>
+          <p className="text-sm text-gray-500 mt-1">请检查网络连接后重试</p>
+          <button
+            onClick={() => mutate()}
+            className="mt-4 text-sm text-indigo-600 hover:text-indigo-500 font-medium"
           >
-            <Plus className="w-4 h-4" /> 创建链接
-          </Link>
+            重新加载
+          </button>
+        </div>
+      ) : isLoading ? (
+        <div className="space-y-3">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <LinkCardPlaceholder key={i} />
+          ))}
+        </div>
+      ) : links.length === 0 ? (
+        <div className="text-center py-16 bg-white rounded-xl border border-gray-100">
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-indigo-50 mb-4">
+            <Link2 className="w-8 h-8 text-indigo-400" />
+          </div>
+          <h3 className="text-lg font-medium text-gray-900">
+            {search ? "没有匹配的链接" : "还没有短链接"}
+          </h3>
+          <p className="text-sm text-gray-500 mt-1">
+            {search ? "试试其他关键词" : "创建你的第一个短链接开始使用"}
+          </p>
+          {!search && (
+            <Link
+              href="/dashboard/links/new"
+              className="inline-flex items-center gap-2 mt-4 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 transition"
+            >
+              <Plus className="w-4 h-4" /> 创建链接
+            </Link>
+          )}
         </div>
       ) : (
         <div className="space-y-3">
-          {data.links.map((link: LinkItem) => (
-            <div
-              key={link.id}
-              className="bg-white rounded-xl p-4 shadow-sm hover:shadow-md transition flex items-center justify-between gap-4"
-            >
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <h3 className="font-medium text-gray-900 truncate">
-                    {link.title || link.short_code}
-                  </h3>
-                  <span className={`px-2 py-0.5 text-xs rounded-full ${link.is_active ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500"}`}>
-                    {link.is_active ? "启用" : "停用"}
-                  </span>
-                </div>
-                <div className="flex items-center gap-3 mt-1 text-sm text-gray-500">
-                  <span className="text-indigo-600 font-mono">{link.short_url}</span>
-                  <button
-                    onClick={() => copyToClipboard(link.short_url)}
-                    className="hover:text-indigo-600 transition"
-                  >
-                    <Copy className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-                <p className="text-xs text-gray-400 mt-1 truncate">{link.original_url}</p>
-              </div>
-
-              <div className="flex items-center gap-4 text-sm">
-                <div className="text-center">
-                  <div className="font-semibold text-gray-900">{link.click_count.toLocaleString()}</div>
-                  <div className="text-xs text-gray-400">点击</div>
-                </div>
-                <a
-                  href={link.short_url}
-                  target="_blank"
-                  className="p-2 text-gray-400 hover:text-indigo-600 transition"
-                >
-                  <ExternalLink className="w-4 h-4" />
-                </a>
-                <button
-                  onClick={() => handleDelete(link.id)}
-                  className="p-2 text-gray-400 hover:text-red-500 transition"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
+          {links.map((link) => (
+            <LinkCard key={link.id} link={link} onDelete={handleDelete} />
           ))}
 
           {/* Pagination */}
-          {data.total_count > 20 && (
-            <div className="flex justify-center gap-2 pt-4">
+          {totalPages > 1 && (
+            <div className="flex items-center justify-center gap-1 pt-4">
               <button
-                onClick={() => setPage(p => Math.max(1, p - 1))}
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
                 disabled={page === 1}
-                className="px-4 py-2 text-sm rounded-lg bg-white border disabled:opacity-50"
+                className="px-3 py-1.5 text-sm rounded-lg border border-gray-200 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition"
               >
                 上一页
               </button>
-              <span className="px-4 py-2 text-sm text-gray-500">第 {page} 页</span>
+
+              {generatePageNumbers(page, totalPages).map((p, i) =>
+                p === null ? (
+                  <span key={`dot-${i}`} className="px-2 text-gray-400">...</span>
+                ) : (
+                  <button
+                    key={p}
+                    onClick={() => setPage(p)}
+                    className={`w-8 h-8 text-sm rounded-lg transition ${
+                      p === page
+                        ? "bg-indigo-600 text-white font-medium"
+                        : "border border-gray-200 hover:bg-gray-50 text-gray-600"
+                    }`}
+                  >
+                    {p}
+                  </button>
+                )
+              )}
+
               <button
-                onClick={() => setPage(p => p + 1)}
-                disabled={data.links.length < 20}
-                className="px-4 py-2 text-sm rounded-lg bg-white border disabled:opacity-50"
+                onClick={() => setPage((p) => p + 1)}
+                disabled={page >= totalPages}
+                className="px-3 py-1.5 text-sm rounded-lg border border-gray-200 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition"
               >
                 下一页
               </button>
@@ -150,4 +153,23 @@ export default function DashboardPage() {
       )}
     </div>
   );
+}
+
+/** Generate smart page numbers like: 1 ... 4 [5] 6 ... 10 */
+function generatePageNumbers(current: number, total: number): (number | null)[] {
+  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
+
+  const pages: (number | null)[] = [];
+  pages.push(1);
+
+  if (current > 3) pages.push(null);
+
+  for (let i = Math.max(2, current - 1); i <= Math.min(total - 1, current + 1); i++) {
+    pages.push(i);
+  }
+
+  if (current < total - 2) pages.push(null);
+
+  pages.push(total);
+  return pages;
 }

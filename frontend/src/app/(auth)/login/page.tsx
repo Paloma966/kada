@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { toast } from "sonner";
 import { authAPI } from "@/lib/api";
 import { setToken, setUser } from "@/lib/auth";
 
@@ -27,12 +28,13 @@ export default function LoginPage() {
     try {
       await authAPI.sendSMSCode(phone);
       setCodeSent(true);
+      toast.success("验证码已发送");
       setCountdown(60);
       const timer = setInterval(() => {
         setCountdown((c) => { if (c <= 1) { clearInterval(timer); return 0; } return c - 1; });
       }, 1000);
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Failed to send code");
+      toast.error(e instanceof Error ? e.message : "发送失败");
     }
   };
 
@@ -44,9 +46,10 @@ export default function LoginPage() {
       const data = await authAPI.loginByPhone(phone, code);
       setToken(data.token);
       setUser(data.user);
+      toast.success("登录成功");
       router.push("/dashboard");
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Login failed");
+      toast.error(e instanceof Error ? e.message : "登录失败");
     } finally {
       setLoading(false);
     }
@@ -60,9 +63,10 @@ export default function LoginPage() {
       const data = await authAPI.loginByEmail(email, password);
       setToken(data.token);
       setUser(data.user);
+      toast.success("登录成功");
       router.push("/dashboard");
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Login failed");
+      toast.error(e instanceof Error ? e.message : "登录失败");
     } finally {
       setLoading(false);
     }
