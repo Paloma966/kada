@@ -27,30 +27,14 @@ jobs:
           --health-retries 5
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Go
-        uses: actions/setup-go@v5
+      - uses: actions/setup-go@v5
         with:
           go-version: "1.26"
 
-      - name: Cache Go modules
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cache/go-build
-            ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ hashFiles('backend/go.sum') }}
-          restore-keys: ${{ runner.os }}-go-
-
-      - name: Install dependencies
+      - name: Download dependencies
         run: cd backend && go mod download
-
-      - name: Run migrations
-        env:
-          DATABASE_URL: postgres://kada:kada123@localhost:5432/kada_test?sslmode=disable
-        run: cd backend && go run ./cmd/migrate/
 
       - name: Run vet
         run: cd backend && go vet ./...
@@ -67,20 +51,11 @@ jobs:
     name: Frontend Build
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: "22"
-
-      - name: Cache node_modules
-        uses: actions/cache@v4
-        with:
-          path: ~/.npm
-          key: ${{ runner.os }}-node-${{ hashFiles('frontend/package-lock.json') }}
-          restore-keys: ${{ runner.os }}-node-
 
       - name: Install dependencies
         run: cd frontend && npm ci
@@ -95,16 +70,13 @@ jobs:
     needs: [backend-test, frontend-build]
     if: github.ref == 'refs/heads/main'
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Go
-        uses: actions/setup-go@v5
+      - uses: actions/setup-go@v5
         with:
           go-version: "1.26"
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: "22"
 
@@ -125,13 +97,15 @@ jobs:
           tar czf /tmp/kada-fe-standalone.tar.gz -C .next/standalone .
           tar czf /tmp/kada-fe-static.tar.gz -C .next static/
 
-      # ---- 部署到服务器 ----
+      # ---- 配置 SSH ----
       - name: Setup SSH
-        uses: shimataro/ssh-key-action@v2
-        with:
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          known_hosts: ${{ secrets.SSH_KNOWN_HOSTS }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H ${{ secrets.SERVER_HOST }} >> ~/.ssh/known_hosts
 
+      # ---- 部署 ----
       - name: Deploy backend
         run: |
           scp backend/bin/server ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:/opt/kada/backend/bin/server.new
@@ -149,4 +123,4 @@ jobs:
           sleep 2
           curl -s http://${{ secrets.SERVER_HOST }}/api/health
           echo
-          curl -s -o /dev/null -w "Frontend HTTP %{http_code}" http://${{ secrets.SERVER_HOST }}/
+          curl -s -o /dev/null -w "Frontend HTTP %{http_code}\n" http://${{ secrets.SERVER_HOST }}/
