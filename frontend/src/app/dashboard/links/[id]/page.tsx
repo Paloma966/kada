@@ -2,7 +2,7 @@
 
 import { use, useEffect, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Copy, ExternalLink, Pencil, Save, X, ToggleLeft, ToggleRight, Check } from "lucide-react";
+import { Copy, ExternalLink, Pencil, Save, X, ToggleLeft, ToggleRight, Check } from "lucide-react";
 import { toast } from "sonner";
 import { linksAPI } from "@/lib/api";
 import { getToken } from "@/lib/auth";
@@ -122,14 +122,6 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
 
   return (
     <div className="max-w-2xl mx-auto">
-      {/* Back */}
-      <Link
-        href="/dashboard"
-        className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-indigo-600 mb-6 transition"
-      >
-        <ArrowLeft className="w-4 h-4" /> 返回
-      </Link>
-
       <div className="bg-white rounded-xl p-6 shadow-sm">
         {/* Header */}
         <div className="flex items-center justify-between mb-6">

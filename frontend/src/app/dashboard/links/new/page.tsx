@@ -2,8 +2,6 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
-import { ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
 import { linksAPI } from "@/lib/api";
 import { getToken } from "@/lib/auth";
@@ -42,13 +40,6 @@ export default function CreateLinkPage() {
 
   return (
     <div className="max-w-2xl mx-auto">
-      <Link
-        href="/dashboard"
-        className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-indigo-600 mb-6 transition"
-      >
-        <ArrowLeft className="w-4 h-4" /> 返回
-      </Link>
-
       <h1 className="text-2xl font-bold text-gray-900 mb-6">创建短链接</h1>
 
       <form onSubmit={handleSubmit} className="bg-white rounded-xl p-6 shadow-sm space-y-4">
@@ -96,12 +87,6 @@ export default function CreateLinkPage() {
           >
             {loading ? "创建中..." : "创建短链接"}
           </button>
-          <Link
-            href="/dashboard"
-            className="rounded-lg border border-gray-300 px-6 py-3 font-medium text-gray-700 hover:bg-gray-50 transition"
-          >
-            取消
-          </Link>
         </div>
       </form>
     </div>
