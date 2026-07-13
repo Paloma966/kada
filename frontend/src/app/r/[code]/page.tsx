@@ -12,7 +12,7 @@ export default function RedirectPage() {
     if (!code) return;
 
     // 同步方式直接重定向
-    window.location.href = `http://localhost:8080/r/${code}`;
+    window.location.href = `/r/${code}`;
   }, [code]);
 
   return (

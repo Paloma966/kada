@@ -1,0 +1,21 @@
+[Unit]
+Description=Kada Next.js Frontend
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/kada/frontend
+Environment="PORT=3000"
+Environment="HOSTNAME=127.0.0.1"
+ExecStart=/usr/bin/node server.js
+Restart=always
+RestartSec=3
+StandardOutput=journal
+StandardError=journal
+
+# 内存限制
+MemoryMax=512M
+
+[Install]
+WantedBy=multi-user.target

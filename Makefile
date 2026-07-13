@@ -85,6 +85,28 @@ install-tools:  ## 安装开发工具
 	go install github.com/golang-migrate/migrate/v4/cmd/migrate@latest
 	go install github.com/sqlc-dev/sqlc/cmd/sqlc@latest
 
+# ========== 部署 ==========
+
+deploy: build  ## 编译并部署到服务器（热更新）
+	scp backend/bin/server root@47.122.124.48:/opt/kada/backend/bin/server.new
+	ssh root@47.122.124.48 "mv /opt/kada/backend/bin/server.new /opt/kada/backend/bin/server && systemctl restart kada-api && echo '✅ Deployed'"
+
+deploy-fe: build-fe-pkg  ## 编译并部署前端到服务器（热更新）
+	ssh root@47.122.124.48 "cd /opt/kada/frontend && rm -rf .next/static node_modules server.js package.json static 2>/dev/null; tar xzf /tmp/kada-fe-standalone.tar.gz && mkdir -p .next && tar xzf /tmp/kada-fe-static.tar.gz && mv static .next/static && rm -f /tmp/kada-fe-*.tar.gz && systemctl restart kada-frontend"
+	@echo "✅ Frontend deployed"
+
+build-fe-pkg: build-fe  ## 打包前端
+	cd frontend/.next/standalone && tar czf /tmp/kada-fe-standalone.tar.gz .
+	cd frontend && tar czf /tmp/kada-fe-static.tar.gz -C .next static/
+	scp /tmp/kada-fe-standalone.tar.gz /tmp/kada-fe-static.tar.gz root@47.122.124.48:/tmp/
+	@echo "✅ Packages uploaded"
+
+deploy-nginx:  ## 更新Nginx配置
+	scp nginx/nginx-prod.conf root@47.122.124.48:/opt/kada/nginx/
+	ssh root@47.122.124.48 "docker restart kada-nginx"
+
+deploy-all: deploy deploy-fe  ## 同时部署后端和前端
+
 # ========== 清理 ==========
 
 clean:  ## 清理构建文件

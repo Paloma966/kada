@@ -3,7 +3,7 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   output: "standalone",
   env: {
-    NEXT_PUBLIC_API_URL: "http://localhost:8080",
+    NEXT_PUBLIC_API_URL: "", // 同源，Nginx 代理 /api/ → Go 后端
   },
 };
 
