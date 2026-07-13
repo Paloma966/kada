@@ -20,7 +20,7 @@ export default function DashboardPage() {
 
   const { data, error, isLoading, mutate } = useSWR(
     token ? [`links`, page, search] : null,
-    () => linksAPI.list(token!, page, PAGE_SIZE)
+    () => linksAPI.list(token!, page, PAGE_SIZE, search)
   );
 
   const links: LinkItem[] = data?.links ?? [];

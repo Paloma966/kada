@@ -68,8 +68,11 @@ func (h *Handler) Get(c *gin.Context) {
 func (h *Handler) List(c *gin.Context) {
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
+	search := c.Query("search")
+	folderID, _ := strconv.ParseInt(c.Query("folder_id"), 10, 64)
+	tagID, _ := strconv.ParseInt(c.Query("tag_id"), 10, 64)
 
-	result, err := h.svc.List(c.Request.Context(), middleware.GetUserID(c), page, pageSize)
+	result, err := h.svc.List(c.Request.Context(), middleware.GetUserID(c), page, pageSize, search, folderID, tagID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

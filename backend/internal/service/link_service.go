@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"strconv"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -91,7 +92,7 @@ func (s *LinkService) GetByCode(ctx context.Context, shortCode string) (*domain.
 }
 
 // List 获取用户链接列表
-func (s *LinkService) List(ctx context.Context, userID int64, page, pageSize int) (*domain.PaginatedLinks, error) {
+func (s *LinkService) List(ctx context.Context, userID int64, page, pageSize int, search string, folderID, tagID int64) (*domain.PaginatedLinks, error) {
 	if page < 1 {
 		page = 1
 	}
@@ -99,14 +100,37 @@ func (s *LinkService) List(ctx context.Context, userID int64, page, pageSize int
 		pageSize = 20
 	}
 
+	// 动态构建查询条件
+	where := "WHERE user_id = $1"
+	args := []interface{}{userID}
+	argIdx := 2
+
+	if search != "" {
+		where += " AND (title ILIKE $" + strconv.Itoa(argIdx) + " OR original_url ILIKE $" + strconv.Itoa(argIdx) + " OR short_code ILIKE $" + strconv.Itoa(argIdx) + ")"
+		args = append(args, "%"+search+"%")
+		argIdx++
+	}
+	if folderID > 0 {
+		where += " AND folder_id = $" + strconv.Itoa(argIdx)
+		args = append(args, folderID)
+		argIdx++
+	}
+	if tagID > 0 {
+		where += " AND id IN (SELECT link_id FROM link_tags WHERE tag_id = $" + strconv.Itoa(argIdx) + ")"
+		args = append(args, tagID)
+		argIdx++
+	}
+
 	// 计数
 	var total int64
-	s.db.QueryRow(ctx, `SELECT COUNT(*) FROM links WHERE user_id = $1`, userID).Scan(&total)
+	s.db.QueryRow(ctx, `SELECT COUNT(*) FROM links `+where, args...).Scan(&total)
 
-	rows, err := s.db.Query(ctx, `
-		SELECT id, short_code, original_url, COALESCE(title,''), COALESCE(description,''), COALESCE(image_url,''), domain, click_count, is_active, expires_at, created_at, updated_at
-		FROM links WHERE user_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3
-	`, userID, pageSize, (page-1)*pageSize)
+	// 查询
+	query := `SELECT id, short_code, original_url, COALESCE(title,''), COALESCE(description,''), COALESCE(image_url,''), domain, click_count, is_active, expires_at, created_at, updated_at
+		FROM links ` + where + ` ORDER BY created_at DESC LIMIT $` + strconv.Itoa(argIdx) + ` OFFSET $` + strconv.Itoa(argIdx+1)
+	args = append(args, pageSize, (page-1)*pageSize)
+
+	rows, err := s.db.Query(ctx, query, args...)
 	if err != nil {
 		return nil, errors.New("查询链接列表失败")
 	}

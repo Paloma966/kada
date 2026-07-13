@@ -62,8 +62,13 @@ export const authAPI = {
 // ========== Links API ==========
 
 export const linksAPI = {
-  list: (token: string, page = 1, pageSize = 20) =>
-    fetchAPI(`/api/links?page=${page}&page_size=${pageSize}`, { token }),
+  list: (token: string, page = 1, pageSize = 20, search = "", folderId = 0, tagId = 0) => {
+    const params = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
+    if (search) params.set("search", search);
+    if (folderId > 0) params.set("folder_id", String(folderId));
+    if (tagId > 0) params.set("tag_id", String(tagId));
+    return fetchAPI(`/api/links?${params.toString()}`, { token });
+  },
 
   create: (token: string, data: {
     original_url: string;
@@ -88,6 +93,79 @@ export const linksAPI = {
 
   delete: (token: string, id: number) =>
     fetchAPI(`/api/links/${id}`, {
+      method: "DELETE",
+      token,
+    }),
+};
+
+// ========== Analytics API ==========
+
+export const analyticsAPI = {
+  overview: (token: string) =>
+    fetchAPI("/api/analytics/overview", { token }),
+
+  platforms: (token: string) =>
+    fetchAPI("/api/analytics/platforms", { token }),
+
+  daily: (token: string) =>
+    fetchAPI("/api/analytics/daily", { token }),
+};
+
+// ========== Folders API ==========
+
+export const foldersAPI = {
+  list: (token: string) =>
+    fetchAPI("/api/folders", { token }),
+
+  create: (token: string, name: string) =>
+    fetchAPI("/api/folders", {
+      method: "POST",
+      token,
+      body: JSON.stringify({ name }),
+    }),
+
+  update: (token: string, id: number, name: string) =>
+    fetchAPI(`/api/folders/${id}`, {
+      method: "PATCH",
+      token,
+      body: JSON.stringify({ name }),
+    }),
+
+  delete: (token: string, id: number) =>
+    fetchAPI(`/api/folders/${id}`, {
+      method: "DELETE",
+      token,
+    }),
+};
+
+// ========== Tags API ==========
+
+export const tagsAPI = {
+  list: (token: string) =>
+    fetchAPI("/api/tags", { token }),
+
+  create: (token: string, name: string, color?: string) =>
+    fetchAPI("/api/tags", {
+      method: "POST",
+      token,
+      body: JSON.stringify({ name, color }),
+    }),
+
+  delete: (token: string, id: number) =>
+    fetchAPI(`/api/tags/${id}`, {
+      method: "DELETE",
+      token,
+    }),
+
+  addToLink: (token: string, linkId: number, tagId: number) =>
+    fetchAPI(`/api/links/${linkId}/tags`, {
+      method: "POST",
+      token,
+      body: JSON.stringify({ tag_id: tagId }),
+    }),
+
+  removeFromLink: (token: string, linkId: number, tagId: number) =>
+    fetchAPI(`/api/links/${linkId}/tags/${tagId}`, {
       method: "DELETE",
       token,
     }),

@@ -88,9 +88,9 @@ jobs:
       - name: Build
         run: cd frontend && npm run build
 
-  # ========== Docker 镜像构建 ==========
-  docker-build:
-    name: Docker Image Build
+  # ========== 部署到生产服务器 ==========
+  deploy:
+    name: Deploy to Production
     runs-on: ubuntu-latest
     needs: [backend-test, frontend-build]
     if: github.ref == 'refs/heads/main'
@@ -98,11 +98,55 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Build backend image
-        run: docker build -t kada-api:latest ./backend
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
 
-      - name: Build frontend image
-        run: docker build -t kada-frontend:latest ./frontend
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
 
-      - name: Show images
-        run: docker images | grep kada
+      # ---- 构建后端 ----
+      - name: Build Go binary
+        run: cd backend && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o bin/server ./cmd/server/
+
+      # ---- 构建前端 ----
+      - name: Install frontend deps
+        run: cd frontend && npm ci
+
+      - name: Build frontend
+        run: cd frontend && npm run build
+
+      - name: Package frontend
+        run: |
+          cd frontend
+          tar czf /tmp/kada-fe-standalone.tar.gz -C .next/standalone .
+          tar czf /tmp/kada-fe-static.tar.gz -C .next static/
+
+      # ---- 部署到服务器 ----
+      - name: Setup SSH
+        uses: shimataro/ssh-key-action@v2
+        with:
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          known_hosts: ${{ secrets.SSH_KNOWN_HOSTS }}
+
+      - name: Deploy backend
+        run: |
+          scp backend/bin/server ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:/opt/kada/backend/bin/server.new
+          ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} "systemctl stop kada-api && mv /opt/kada/backend/bin/server.new /opt/kada/backend/bin/server && systemctl start kada-api"
+          echo "✅ Backend deployed"
+
+      - name: Deploy frontend
+        run: |
+          scp /tmp/kada-fe-standalone.tar.gz /tmp/kada-fe-static.tar.gz ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:/tmp/
+          ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} "cd /opt/kada/frontend && rm -rf .next/static node_modules server.js package.json static && tar xzf /tmp/kada-fe-standalone.tar.gz && mkdir -p .next && tar xzf /tmp/kada-fe-static.tar.gz -C .next && rm /tmp/kada-fe-*.tar.gz && systemctl restart kada-frontend"
+          echo "✅ Frontend deployed"
+
+      - name: Verify deployment
+        run: |
+          sleep 2
+          curl -s http://${{ secrets.SERVER_HOST }}/api/health
+          echo
+          curl -s -o /dev/null -w "Frontend HTTP %{http_code}" http://${{ secrets.SERVER_HOST }}/

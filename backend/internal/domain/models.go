@@ -100,3 +100,33 @@ const (
 	PlatformSMS          Platform = "sms"
 	PlatformUnknown      Platform = "unknown"
 )
+
+// ==================== 文件夹 ====================
+
+type Folder struct {
+	ID        int64     `json:"id"`
+	UserID    int64     `json:"user_id"`
+	Name      string    `json:"name"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+	LinkCount int64     `json:"link_count,omitempty"`
+}
+
+type CreateFolderRequest struct {
+	Name string `json:"name" binding:"required"`
+}
+
+// ==================== 标签 ====================
+
+type Tag struct {
+	ID        int64     `json:"id"`
+	UserID    int64     `json:"user_id"`
+	Name      string    `json:"name"`
+	Color     string    `json:"color"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+type CreateTagRequest struct {
+	Name  string  `json:"name" binding:"required"`
+	Color *string `json:"color"`
+}
