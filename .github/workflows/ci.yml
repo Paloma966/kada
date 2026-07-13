@@ -32,6 +32,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: "1.26"
+          cache: false
 
       - name: Download dependencies
         run: cd backend && go mod download
@@ -42,7 +43,6 @@ jobs:
       - name: Run tests
         env:
           DATABASE_URL: postgres://kada:kada123@localhost:5432/kada_test?sslmode=disable
-          REDIS_URL: redis://localhost:6379
           JWT_SECRET: test-secret
         run: cd backend && go test ./... -v -count=1
 
@@ -56,6 +56,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
+          cache: false
 
       - name: Install dependencies
         run: cd frontend && npm ci
@@ -75,10 +76,12 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: "1.26"
+          cache: false
 
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
+          cache: false
 
       # ---- 构建后端 ----
       - name: Build Go binary
@@ -103,24 +106,29 @@ jobs:
           mkdir -p ~/.ssh
           echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
-          ssh-keyscan -H ${{ secrets.SERVER_HOST }} >> ~/.ssh/known_hosts
+          # 添加服务器 host key
+          ssh-keyscan ${{ secrets.SERVER_HOST }} >> ~/.ssh/known_hosts 2>/dev/null
+          # 测试连接
+          ssh -o ConnectTimeout=10 ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} "echo SSH_OK"
 
       # ---- 部署 ----
       - name: Deploy backend
         run: |
-          scp backend/bin/server ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:/opt/kada/backend/bin/server.new
-          ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} "systemctl stop kada-api && mv /opt/kada/backend/bin/server.new /opt/kada/backend/bin/server && systemctl start kada-api"
+          scp -o ConnectTimeout=30 backend/bin/server ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:/opt/kada/backend/bin/server.new
+          ssh -o ConnectTimeout=10 ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} "systemctl stop kada-api && mv /opt/kada/backend/bin/server.new /opt/kada/backend/bin/server && systemctl start kada-api"
           echo "✅ Backend deployed"
 
       - name: Deploy frontend
         run: |
-          scp /tmp/kada-fe-standalone.tar.gz /tmp/kada-fe-static.tar.gz ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:/tmp/
-          ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} "cd /opt/kada/frontend && rm -rf .next/static node_modules server.js package.json static && tar xzf /tmp/kada-fe-standalone.tar.gz && mkdir -p .next && tar xzf /tmp/kada-fe-static.tar.gz -C .next && rm /tmp/kada-fe-*.tar.gz && systemctl restart kada-frontend"
+          scp -o ConnectTimeout=30 /tmp/kada-fe-standalone.tar.gz /tmp/kada-fe-static.tar.gz ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:/tmp/
+          ssh -o ConnectTimeout=10 ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} "cd /opt/kada/frontend && rm -rf .next/static node_modules server.js package.json static && tar xzf /tmp/kada-fe-standalone.tar.gz && mkdir -p .next && tar xzf /tmp/kada-fe-static.tar.gz -C .next && rm /tmp/kada-fe-*.tar.gz && systemctl restart kada-frontend"
           echo "✅ Frontend deployed"
 
       - name: Verify deployment
         run: |
           sleep 2
+          echo "API Health:"
           curl -s http://${{ secrets.SERVER_HOST }}/api/health
           echo
-          curl -s -o /dev/null -w "Frontend HTTP %{http_code}\n" http://${{ secrets.SERVER_HOST }}/
+          echo "Frontend:"
+          curl -s -o /dev/null -w "HTTP %{http_code}" http://${{ secrets.SERVER_HOST }}/
