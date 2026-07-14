@@ -177,3 +177,56 @@ export const tagsAPI = {
       token,
     }),
 };
+
+// ========== Domains API ==========
+
+export const domainsAPI = {
+  list: (token: string) =>
+    fetchAPI("/api/domains", { token }),
+
+  create: (token: string, name: string) =>
+    fetchAPI("/api/domains", {
+      method: "POST",
+      token,
+      body: JSON.stringify({ name }),
+    }),
+
+  verify: (token: string, id: number) =>
+    fetchAPI(`/api/domains/${id}/verify`, {
+      method: "POST",
+      token,
+    }),
+
+  delete: (token: string, id: number) =>
+    fetchAPI(`/api/domains/${id}`, {
+      method: "DELETE",
+      token,
+    }),
+};
+
+// ========== UTM Templates API ==========
+
+export const utmAPI = {
+  list: (token: string) =>
+    fetchAPI("/api/utm-templates", { token }),
+
+  create: (token: string, data: {
+    name: string;
+    utm_source?: string;
+    utm_medium?: string;
+    utm_campaign?: string;
+    utm_term?: string;
+    utm_content?: string;
+  }) =>
+    fetchAPI("/api/utm-templates", {
+      method: "POST",
+      token,
+      body: JSON.stringify(data),
+    }),
+
+  delete: (token: string, id: number) =>
+    fetchAPI(`/api/utm-templates/${id}`, {
+      method: "DELETE",
+      token,
+    }),
+};

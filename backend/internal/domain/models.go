@@ -130,3 +130,43 @@ type CreateTagRequest struct {
 	Name  string  `json:"name" binding:"required"`
 	Color *string `json:"color"`
 }
+
+// ==================== 域名 ====================
+
+type Domain struct {
+	ID         int64      `json:"id"`
+	UserID     int64      `json:"user_id"`
+	Name       string     `json:"name"`
+	Verified   bool       `json:"verified"`
+	VerifiedAt *time.Time `json:"verified_at"`
+	CreatedAt  time.Time  `json:"created_at"`
+	UpdatedAt  time.Time  `json:"updated_at"`
+}
+
+type CreateDomainRequest struct {
+	Name string `json:"name" binding:"required"`
+}
+
+// ==================== UTM 模板 ====================
+
+type UTMTemplate struct {
+	ID          int64     `json:"id"`
+	UserID      int64     `json:"user_id"`
+	Name        string    `json:"name"`
+	UTMSource   *string   `json:"utm_source"`
+	UTMMedium   *string   `json:"utm_medium"`
+	UTMCampaign *string   `json:"utm_campaign"`
+	UTMTerm     *string   `json:"utm_term"`
+	UTMContent  *string   `json:"utm_content"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+}
+
+type CreateUTMTemplateRequest struct {
+	Name        string  `json:"name" binding:"required"`
+	UTMSource   *string `json:"utm_source"`
+	UTMMedium   *string `json:"utm_medium"`
+	UTMCampaign *string `json:"utm_campaign"`
+	UTMTerm     *string `json:"utm_term"`
+	UTMContent  *string `json:"utm_content"`
+}

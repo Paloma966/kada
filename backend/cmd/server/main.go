@@ -11,10 +11,12 @@ import (
 	"github.com/chun/kada-backend/config"
 	analyticsHandler "github.com/chun/kada-backend/internal/handler/analytics"
 	authHandler "github.com/chun/kada-backend/internal/handler/auth"
+	domainHandler "github.com/chun/kada-backend/internal/handler/domain"
 	folderHandler "github.com/chun/kada-backend/internal/handler/folder"
 	linkHandler "github.com/chun/kada-backend/internal/handler/link"
 	redirectHandler "github.com/chun/kada-backend/internal/handler/redirect"
 	tagHandler "github.com/chun/kada-backend/internal/handler/tag"
+	utmHandler "github.com/chun/kada-backend/internal/handler/utm"
 	"github.com/chun/kada-backend/internal/infra"
 	"github.com/chun/kada-backend/internal/infra/sms"
 	"github.com/chun/kada-backend/internal/middleware"
@@ -57,15 +59,19 @@ func main() {
 	// 初始化 Service 层
 	authSvc := service.NewAuthService(db, cfg.JWTSecret, cfg.JWTExpires, smsSender)
 	linkSvc := service.NewLinkService(db, cfg.BaseURL)
+	domainSvc := service.NewDomainService(db)
 	folderSvc := service.NewFolderService(db)
 	tagSvc := service.NewTagService(db)
+	utmSvc := service.NewUTMTemplateService(db)
 
 	// 初始化 Handler 层
 	authH := authHandler.NewHandler(authSvc)
 	linkH := linkHandler.NewHandler(linkSvc)
 	redirectH := redirectHandler.NewHandler(linkSvc)
+	domainH := domainHandler.NewHandler(domainSvc)
 	folderH := folderHandler.NewHandler(folderSvc)
 	tagH := tagHandler.NewHandler(tagSvc)
+	utmH := utmHandler.NewHandler(utmSvc)
 	analyticsH := analyticsHandler.NewHandler(db)
 
 	// JWT 中间件
@@ -94,8 +100,10 @@ func main() {
 	{
 		authH.RegisterRoutes(v1, authMW)
 		linkH.RegisterRoutes(v1, authMW)
+		domainH.RegisterRoutes(v1, authMW)
 		folderH.RegisterRoutes(v1, authMW)
 		tagH.RegisterRoutes(v1, authMW)
+		utmH.RegisterRoutes(v1, authMW)
 		analyticsH.RegisterRoutes(v1, authMW)
 	}
 
