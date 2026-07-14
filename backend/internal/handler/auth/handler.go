@@ -27,6 +27,7 @@ func (h *Handler) RegisterRoutes(r *gin.RouterGroup, authMW gin.HandlerFunc) {
 	// 需要认证的路由
 	auth := r.Group("").Use(authMW)
 	auth.GET("/me", h.GetMe)
+	auth.PATCH("/me", h.UpdateMe)
 }
 
 // SendSMSCode 发送短信验证码
@@ -101,6 +102,26 @@ func (h *Handler) RegisterByEmail(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusCreated, gin.H{"token": resp.Token, "user": resp.User})
+}
+
+// UpdateMe 更新当前用户信息
+func (h *Handler) UpdateMe(c *gin.Context) {
+	var req struct {
+		Name  *string `json:"name"`
+		Email *string `json:"email"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请提供有效的更新信息"})
+		return
+	}
+
+	user, err := h.svc.UpdateUser(c.Request.Context(), middleware.GetUserID(c), req.Name, req.Email)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"user": user})
 }
 
 // GetMe 获取当前用户信息

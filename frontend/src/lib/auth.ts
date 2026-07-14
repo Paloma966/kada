@@ -9,6 +9,8 @@ export interface User {
   email?: string;
   name?: string;
   avatar?: string;
+  wechat_openid?: string;
+  created_at?: string;
 }
 
 export function getToken(): string | null {

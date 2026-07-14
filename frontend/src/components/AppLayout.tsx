@@ -76,6 +76,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                 if (pathname === "/dashboard/folders") return "文件夹";
                 if (pathname === "/dashboard/tags") return "标签";
                 if (pathname === "/dashboard/utm") return "UTM 模板";
+                if (pathname === "/dashboard/settings") return "设置";
                 return "";
               })()}
             </h2>

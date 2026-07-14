@@ -11,6 +11,7 @@ import {
   Folder,
   Tag,
   ArrowRightLeft,
+  Settings,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -104,9 +105,21 @@ export function Sidebar() {
         ))}
       </nav>
 
-      {/* Bottom version info */}
-      <div className="border-t border-gray-100 px-4 py-3">
-        <p className="text-xs text-gray-400">Kada v0.2</p>
+      {/* Bottom: Settings + version */}
+      <div className="border-t border-gray-100 px-3 py-3 space-y-2">
+        <Link
+          href="/dashboard/settings"
+          className={cn(
+            "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+            pathname === "/dashboard/settings"
+              ? "bg-indigo-50 text-indigo-700"
+              : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"
+          )}
+        >
+          <Settings className={cn("size-4 shrink-0", pathname === "/dashboard/settings" && "text-indigo-600")} />
+          <span>设置</span>
+        </Link>
+        <p className="px-3 text-xs text-gray-400">Kada v0.2</p>
       </div>
     </aside>
   );

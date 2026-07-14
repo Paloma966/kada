@@ -178,6 +178,39 @@ func (s *AuthService) GetUserByID(ctx context.Context, userID int64) (*domain.Us
 	return &user, nil
 }
 
+// UpdateUser 更新用户信息
+func (s *AuthService) UpdateUser(ctx context.Context, userID int64, name *string, email *string) (*domain.UserInfo, error) {
+	var user domain.UserInfo
+
+	// 动态构建 UPDATE
+	if name != nil && *name != "" {
+		err := s.db.QueryRow(ctx, `
+			UPDATE users SET name = $1, updated_at = NOW() WHERE id = $2
+			RETURNING id, phone, email, name, avatar
+		`, *name, userID).Scan(&user.ID, &user.Phone, &user.Email, &user.Name, &user.Avatar)
+		if err != nil {
+			return nil, fmt.Errorf("更新用户失败: %w", err)
+		}
+	}
+
+	if email != nil && *email != "" {
+		err := s.db.QueryRow(ctx, `
+			UPDATE users SET email = $1, updated_at = NOW() WHERE id = $2
+			RETURNING id, phone, email, name, avatar
+		`, *email, userID).Scan(&user.ID, &user.Phone, &user.Email, &user.Name, &user.Avatar)
+		if err != nil {
+			return nil, fmt.Errorf("更新邮箱失败: %w", err)
+		}
+	}
+
+	// 如果都没更新，返回当前用户
+	if name == nil && email == nil {
+		return s.GetUserByID(ctx, userID)
+	}
+
+	return &user, nil
+}
+
 // generateToken 生成 JWT
 func (s *AuthService) generateToken(user domain.UserInfo) (string, error) {
 	claims := middleware.Claims{

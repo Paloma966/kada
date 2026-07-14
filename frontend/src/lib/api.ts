@@ -57,6 +57,13 @@ export const authAPI = {
     }),
 
   getMe: (token: string) => fetchAPI("/api/me", { token }),
+
+  updateMe: (token: string, data: { name?: string; email?: string }) =>
+    fetchAPI("/api/me", {
+      method: "PATCH",
+      token,
+      body: JSON.stringify(data),
+    }),
 };
 
 // ========== Links API ==========
