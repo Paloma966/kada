@@ -81,6 +81,16 @@ export const linksAPI = {
     original_url: string;
     title?: string;
     description?: string;
+    domain?: string;
+    password?: string;
+    expires_at?: string;
+    utm_source?: string;
+    utm_medium?: string;
+    utm_campaign?: string;
+    utm_term?: string;
+    utm_content?: string;
+    ios_url?: string;
+    android_url?: string;
   }) =>
     fetchAPI("/api/links", {
       method: "POST",

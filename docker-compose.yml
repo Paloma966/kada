@@ -1,106 +1,65 @@
 services:
-  # ========== 基础设施 ==========
-
   postgres:
     image: postgres:16-alpine
-    container_name: kada-postgres
-    restart: always
     environment:
       POSTGRES_USER: kada
-      POSTGRES_PASSWORD: kada123  # 生产环境记得改
+      POSTGRES_PASSWORD: kada123
       POSTGRES_DB: kada
-    ports:
-      - "127.0.0.1:5432:5432"  # 只监听本地
     volumes:
-      - postgres_data:/var/lib/postgresql/data
-    deploy:
-      resources:
-        limits:
-          memory: 384M
+      - pgdata:/var/lib/postgresql/data
+      - ./backend/db/migrations:/docker-entrypoint-initdb.d
+    ports:
+      - "127.0.0.1:5432:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U kada"]
-      interval: 10s
-      timeout: 5s
+      test: ["CMD", "pg_isready", "-U", "kada"]
+      interval: 5s
       retries: 5
 
   redis:
     image: redis:7-alpine
-    container_name: kada-redis
-    restart: always
     ports:
-      - "127.0.0.1:6379:6379"  # 只监听本地
+      - "127.0.0.1:6379:6379"
     volumes:
-      - redis_data:/data
-    deploy:
-      resources:
-        limits:
-          memory: 128M
+      - redisdata:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
+      interval: 5s
       retries: 5
 
-  # ========== 数据库迁移 ==========
-
-  migrate:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile.migrate
-    container_name: kada-migrate
+  backend:
+    build: ./backend
     environment:
-      DATABASE_URL: "postgres://kada:kada123@postgres:5432/kada?sslmode=disable"
+      GIN_MODE: release
+      DATABASE_URL: postgres://kada:kada123@postgres:5432/kada?sslmode=disable
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: ${JWT_SECRET:-changeme}
+      JWT_EXPIRES: 72h
+      BASE_URL: http://localhost
+      PORT: 8080
     depends_on:
       postgres:
         condition: service_healthy
+    restart: unless-stopped
 
-  # ========== Go API ==========
-
-  api:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-    container_name: kada-api
-    restart: always
+  frontend:
+    build: ./frontend
     environment:
-      PORT: "8080"
-      DATABASE_URL: "postgres://kada:kada123@postgres:5432/kada?sslmode=disable"
-      REDIS_URL: "redis://redis:6379"
-      JWT_SECRET: "${JWT_SECRET:-kada-production-change-me}"
-      GIN_MODE: "release"
-      SMS_ACCESS_KEY_ID: "${SMS_ACCESS_KEY_ID}"
-      SMS_ACCESS_KEY_SECRET: "${SMS_ACCESS_KEY_SECRET}"
-    ports:
-      - "127.0.0.1:8080:8080"
-    deploy:
-      resources:
-        limits:
-          memory: 256M
+      NEXT_PUBLIC_API_URL: ""
     depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      migrate:
-        condition: service_completed_successfully
-
-  # ========== Nginx ==========
+      - backend
+    restart: unless-stopped
 
   nginx:
     image: nginx:alpine
-    container_name: kada-nginx
-    restart: always
     ports:
       - "80:80"
     volumes:
-      - ./nginx/nginx-prod.conf:/etc/nginx/nginx.conf:ro
-    deploy:
-      resources:
-        limits:
-          memory: 64M
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
     depends_on:
-      - api
+      - backend
+      - frontend
+    restart: unless-stopped
 
 volumes:
-  postgres_data:
-  redis_data:
+  pgdata:
+  redisdata:

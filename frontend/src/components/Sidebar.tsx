@@ -12,6 +12,7 @@ import {
   Tag,
   ArrowRightLeft,
   Settings,
+  X,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -55,17 +56,29 @@ const NAV_SECTIONS: NavSection[] = [
   },
 ];
 
-export function Sidebar() {
+export function Sidebar({ onCloseMobile }: { onCloseMobile?: () => void }) {
   const pathname = usePathname();
+
+  const handleClick = () => {
+    // Close mobile sidebar after navigation
+    setTimeout(() => onCloseMobile?.(), 100);
+  };
 
   return (
     <aside className="flex h-full w-[240px] shrink-0 flex-col border-r border-gray-200 bg-white">
       {/* Logo */}
-      <div className="flex h-14 items-center gap-2.5 px-4 border-b border-gray-100">
-        <div className="flex size-8 items-center justify-center rounded-lg bg-indigo-600">
-          <Link2 className="size-4 text-white" />
+      <div className="flex h-14 items-center justify-between px-4 border-b border-gray-100">
+        <div className="flex items-center gap-2.5">
+          <div className="flex size-8 items-center justify-center rounded-lg bg-indigo-600">
+            <Link2 className="size-4 text-white" />
+          </div>
+          <span className="font-bold text-lg text-gray-900">Kada</span>
         </div>
-        <span className="font-bold text-lg text-gray-900">Kada</span>
+        {onCloseMobile && (
+          <button onClick={onCloseMobile} className="lg:hidden p-1.5 rounded-lg text-gray-400 hover:bg-gray-100 transition">
+            <X className="size-4" />
+          </button>
+        )}
       </div>
 
       {/* Nav */}
@@ -88,6 +101,7 @@ export function Sidebar() {
                   <Link
                     key={item.href}
                     href={item.href}
+                    onClick={handleClick}
                     className={cn(
                       "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
                       isActive
@@ -109,6 +123,7 @@ export function Sidebar() {
       <div className="border-t border-gray-100 px-3 py-3 space-y-2">
         <Link
           href="/dashboard/settings"
+          onClick={handleClick}
           className={cn(
             "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
             pathname === "/dashboard/settings"

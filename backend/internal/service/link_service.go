@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"strconv"
@@ -89,6 +90,51 @@ func (s *LinkService) GetByCode(ctx context.Context, shortCode string) (*domain.
 
 	info.ShortURL = s.buildShortURL(info.Domain, info.ShortCode)
 	return &info, nil
+}
+
+// HasPassword 检查链接是否设置了密码
+func (s *LinkService) HasPassword(ctx context.Context, shortCode string) bool {
+	var passwordHash *string
+	err := s.db.QueryRow(ctx, `
+		SELECT password_hash FROM links WHERE short_code = $1
+	`, shortCode).Scan(&passwordHash)
+	if err != nil || passwordHash == nil || *passwordHash == "" {
+		return false
+	}
+	return true
+}
+
+// CheckPassword 检查链接密码
+func (s *LinkService) CheckPassword(ctx context.Context, shortCode, password string) (bool, *domain.LinkInfo, error) {
+	var passwordHash *string
+	var info domain.LinkInfo
+	err := s.db.QueryRow(ctx, `
+		SELECT id, short_code, original_url, COALESCE(title,''), COALESCE(description,''), domain, click_count, is_active, expires_at, password_hash, created_at, updated_at
+		FROM links WHERE short_code = $1 AND is_active = TRUE
+	`, shortCode).Scan(
+		&info.ID, &info.ShortCode, &info.OriginalURL, &info.Title, &info.Description,
+		&info.Domain, &info.ClickCount, &info.IsActive,
+		&info.ExpiresAt, &passwordHash, &info.CreatedAt, &info.UpdatedAt,
+	)
+	if err != nil {
+		return false, nil, errors.New("链接不存在或已失效")
+	}
+
+	if info.ExpiresAt != nil && info.ExpiresAt.Before(time.Now()) {
+		return false, nil, errors.New("链接已过期")
+	}
+
+	if passwordHash == nil || *passwordHash == "" {
+		return true, &info, nil // 无密码
+	}
+
+	// 简单密码验证（生产环境应使用 bcrypt）
+	if password == "" || !checkPasswordHash(password, *passwordHash) {
+		return false, &info, nil
+	}
+
+	info.ShortURL = s.buildShortURL(info.Domain, info.ShortCode)
+	return true, &info, nil
 }
 
 // List 获取用户链接列表
@@ -229,6 +275,11 @@ func generateShortCode() string {
 
 // hashPassword 简单哈希（可替换为 bcrypt）
 func hashPassword(pwd string) string {
-	hash, _ := hex.DecodeString(pwd)
-	return hex.EncodeToString(hash)
+	// 简单的 SHA256 哈希（生产环境应使用 bcrypt）
+	h := sha256.Sum256([]byte(pwd))
+	return hex.EncodeToString(h[:])
+}
+
+func checkPasswordHash(password, hash string) bool {
+	return hashPassword(password) == hash
 }

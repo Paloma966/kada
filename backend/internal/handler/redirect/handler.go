@@ -21,15 +21,23 @@ func NewHandler(svc *service.LinkService) *Handler {
 
 func (h *Handler) RegisterRoutes(r *gin.Engine) {
 	r.GET("/r/:code", h.Redirect)
+	r.POST("/r/:code/verify-password", h.VerifyPassword)
 }
 
-// Redirect 短链重定向（含平台检测）
+// Redirect 短链重定向（含平台检测和密码检查）
 func (h *Handler) Redirect(c *gin.Context) {
 	code := c.Param("code")
 
 	link, err := h.svc.GetByCode(c.Request.Context(), code)
 	if err != nil {
 		c.String(http.StatusNotFound, "链接不存在或已过期")
+		return
+	}
+
+	// 检查是否需要密码
+	if h.svc.HasPassword(c.Request.Context(), code) {
+		c.Header("Content-Type", "text/html; charset=utf-8")
+		c.String(http.StatusOK, passwordPageHTML(code))
 		return
 	}
 
@@ -50,6 +58,32 @@ func (h *Handler) Redirect(c *gin.Context) {
 
 	// 普通浏览器直接 302 跳转
 	c.Redirect(http.StatusFound, link.OriginalURL)
+}
+
+// VerifyPassword 验证密码后跳转
+func (h *Handler) VerifyPassword(c *gin.Context) {
+	code := c.Param("code")
+	password := c.PostForm("password")
+
+	ok, info, err := h.svc.CheckPassword(c.Request.Context(), code, password)
+	if err != nil || !ok {
+		c.Header("Content-Type", "text/html; charset=utf-8")
+		c.String(http.StatusOK, passwordPageHTMLWithError(code, "密码错误"))
+		return
+	}
+
+	// 密码正确，记录点击并跳转
+	userAgent := c.GetHeader("User-Agent")
+	platform := ua.Detect(userAgent)
+	ip := c.ClientIP()
+	referer := c.GetHeader("Referer")
+	go h.svc.LogClick(c.Request.Context(), info.ID, ip, userAgent, string(platform), referer)
+
+	if ua.NeedsIntermediatePage(platform) {
+		h.renderIntermediatePage(c, info.OriginalURL, platform)
+		return
+	}
+	c.Redirect(http.StatusFound, info.OriginalURL)
 }
 
 // renderIntermediatePage 渲染中间引导页（微信/QQ等）
@@ -139,3 +173,63 @@ const guidePageHTML = `<!DOCTYPE html>
     </script>
 </body>
 </html>`
+
+func passwordPageHTML(code string) string {
+	return passwordPageHTMLWithError(code, "")
+}
+
+func passwordPageHTMLWithError(code, errorMsg string) string {
+	errHTML := ""
+	if errorMsg != "" {
+		errHTML = `<p style="color: #ef4444; font-size: 13px; margin-bottom: 12px;">` + errorMsg + `</p>`
+	}
+	return `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>链接已加密</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: #f5f5f5;
+            display: flex; justify-content: center; align-items: center;
+            min-height: 100vh; padding: 20px;
+        }
+        .card {
+            background: white; border-radius: 16px; padding: 40px 32px;
+            max-width: 400px; width: 100%; text-align: center;
+            box-shadow: 0 2px 20px rgba(0,0,0,0.08);
+        }
+        .icon { font-size: 48px; margin-bottom: 16px; }
+        .title { font-size: 20px; font-weight: 600; color: #1a1a1a; margin-bottom: 8px; }
+        .subtitle { font-size: 14px; color: #666; margin-bottom: 20px; }
+        .input {
+            width: 100%; padding: 12px 16px; border: 1px solid #e5e7eb;
+            border-radius: 10px; font-size: 16px; text-align: center;
+            margin-bottom: 12px; outline: none;
+        }
+        .input:focus { border-color: #6366f1; box-shadow: 0 0 0 3px rgba(99,102,241,0.1); }
+        .btn {
+            display: block; width: 100%; padding: 14px; border-radius: 10px;
+            font-size: 16px; font-weight: 500; cursor: pointer; border: none;
+            background: #6366f1; color: white; transition: opacity 0.2s;
+        }
+        .btn:hover { opacity: 0.9; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <div class="icon">🔒</div>
+        <div class="title">此链接已加密</div>
+        <div class="subtitle">请输入密码以访问此链接</div>
+        ` + errHTML + `
+        <form method="POST" action="/r/` + code + `/verify-password">
+            <input type="password" name="password" class="input" placeholder="输入密码" autofocus required />
+            <button type="submit" class="btn">访问链接</button>
+        </form>
+    </div>
+</body>
+</html>`
+}
