@@ -59,11 +59,12 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
     setLoading(true);
     linksAPI.get(token, id)
       .then((data) => {
-        setLink(data);
-        setEditTitle(data.title || "");
-        setEditDescription(data.description || "");
-        setEditOriginalUrl(data.original_url || "");
-        setEditExpiresAt(data.expires_at ? data.expires_at.slice(0, 16) : "");
+        const l = data.link || data;
+        setLink(l);
+        setEditTitle(l.title || "");
+        setEditDescription(l.description || "");
+        setEditOriginalUrl(l.original_url || "");
+        setEditExpiresAt(l.expires_at ? l.expires_at.slice(0, 16) : "");
       })
       .catch(() => toast.error("加载链接失败"))
       .finally(() => setLoading(false));
