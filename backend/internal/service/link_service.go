@@ -68,6 +68,24 @@ func (s *LinkService) Create(ctx context.Context, userID int64, req domain.Creat
 	return &info, nil
 }
 
+// GetByID 根据ID获取链接
+func (s *LinkService) GetByID(ctx context.Context, linkID, userID int64) (*domain.LinkInfo, error) {
+	var info domain.LinkInfo
+	err := s.db.QueryRow(ctx, `
+		SELECT id, short_code, original_url, COALESCE(title,''), COALESCE(description,''), COALESCE(image_url,''), domain, click_count, is_active, expires_at, created_at, updated_at
+		FROM links WHERE id = $1 AND user_id = $2 AND is_active = TRUE
+	`, linkID, userID).Scan(
+		&info.ID, &info.ShortCode, &info.OriginalURL, &info.Title, &info.Description,
+		&info.ImageURL, &info.Domain, &info.ClickCount, &info.IsActive,
+		&info.ExpiresAt, &info.CreatedAt, &info.UpdatedAt,
+	)
+	if err != nil {
+		return nil, errors.New("链接不存在或已失效")
+	}
+	info.ShortURL = s.buildShortURL(info.Domain, info.ShortCode)
+	return &info, nil
+}
+
 // GetByCode 根据短码获取链接
 func (s *LinkService) GetByCode(ctx context.Context, shortCode string) (*domain.LinkInfo, error) {
 	var info domain.LinkInfo

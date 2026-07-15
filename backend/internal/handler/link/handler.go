@@ -53,9 +53,7 @@ func (h *Handler) Get(c *gin.Context) {
 		return
 	}
 
-	_ = id
-	// 按短码查询
-	link, err := h.svc.GetByCode(c.Request.Context(), c.Param("id"))
+	link, err := h.svc.GetByID(c.Request.Context(), id, middleware.GetUserID(c))
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		return
