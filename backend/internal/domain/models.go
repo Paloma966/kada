@@ -38,6 +38,7 @@ type UserInfo struct {
 
 type CreateLinkRequest struct {
 	OriginalURL string  `json:"original_url" binding:"required,url"`
+	ShortCode   *string `json:"short_code"`
 	Title       *string `json:"title"`
 	Description *string `json:"description"`
 	ImageURL    *string `json:"image_url"`

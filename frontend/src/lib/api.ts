@@ -79,6 +79,7 @@ export const linksAPI = {
 
   create: (token: string, data: {
     original_url: string;
+    short_code?: string;
     title?: string;
     description?: string;
     domain?: string;

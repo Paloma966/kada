@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"regexp"
 	"strconv"
 	"time"
 
@@ -13,6 +14,9 @@ import (
 
 	"github.com/chun/kada-backend/internal/domain"
 )
+
+// shortCodePattern 短码只允许字母、数字、下划线和连字符
+var shortCodePattern = regexp.MustCompile(`^[a-zA-Z0-9_-]{4,20}$`)
 
 type LinkService struct {
 	db      *pgxpool.Pool
@@ -25,7 +29,23 @@ func NewLinkService(db *pgxpool.Pool, baseURL string) *LinkService {
 
 // Create 创建短链接
 func (s *LinkService) Create(ctx context.Context, userID int64, req domain.CreateLinkRequest) (*domain.LinkInfo, error) {
-	shortCode := generateShortCode()
+	var shortCode string
+
+	if req.ShortCode != nil && *req.ShortCode != "" {
+		// 自定义短码：校验格式 + 唯一性
+		if !shortCodePattern.MatchString(*req.ShortCode) {
+			return nil, errors.New("短码格式无效：只允许字母、数字、下划线和连字符，长度4-20位")
+		}
+		var exists bool
+		s.db.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM links WHERE short_code = $1)`, *req.ShortCode).Scan(&exists)
+		if exists {
+			return nil, errors.New("该短码已被占用，请换一个")
+		}
+		shortCode = *req.ShortCode
+	} else {
+		shortCode = generateShortCode()
+	}
+
 	domain_ := "kada.click"
 	if req.Domain != nil && *req.Domain != "" {
 		domain_ = *req.Domain
@@ -284,9 +304,9 @@ func (s *LinkService) buildShortURL(domain, code string) string {
 	return "https://" + domain + "/r/" + code
 }
 
-// generateShortCode 生成6字节随机短码
+// generateShortCode 生成4字节随机短码（8位十六进制）
 func generateShortCode() string {
-	b := make([]byte, 6)
+	b := make([]byte, 4)
 	rand.Read(b)
 	return hex.EncodeToString(b)
 }

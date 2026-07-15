@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Globe, Clock, Shield, Smartphone, Tags } from "lucide-react";
+import { Globe, Clock, Shield, Smartphone, Tags, Link2 } from "lucide-react";
 import useSWR from "swr";
 import { linksAPI, domainsAPI, utmAPI } from "@/lib/api";
 import { getToken } from "@/lib/auth";
@@ -13,6 +13,7 @@ export default function CreateLinkPage() {
   const token = getToken();
 
   const [originalUrl, setOriginalUrl] = useState("");
+  const [shortCode, setShortCode] = useState("");
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [domain, setDomain] = useState("");
@@ -30,6 +31,10 @@ export default function CreateLinkPage() {
   const utmTemplates = utmData?.templates ?? [];
   const selectedTemplate = utmTemplates.find((t: { id: number }) => t.id === utmTemplateId);
 
+  // 实时预览短链接
+  const activeDomain = domain || "kada.click";
+  const previewURL = `https://${activeDomain}/r/${shortCode || "abc123"}`;
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!token) { router.push("/login"); return; }
@@ -37,6 +42,7 @@ export default function CreateLinkPage() {
     try {
       await linksAPI.create(token, {
         original_url: originalUrl,
+        short_code: shortCode || undefined,
         title: title || undefined,
         description: description || undefined,
         domain: domain || undefined,
@@ -147,6 +153,39 @@ export default function CreateLinkPage() {
                     <option key={d.id} value={d.name}>{d.name}</option>
                   ))}
                 </select>
+              </div>
+
+              {/* Short Code */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                  <span className="inline-flex items-center gap-1.5">
+                    <Link2 className="size-3.5 text-gray-400" />
+                    自定义短码
+                  </span>
+                </label>
+                <div className="flex items-center rounded-xl border border-gray-200 bg-white overflow-hidden focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-500/20 transition">
+                  <span className="pl-4 pr-1 py-3 text-sm text-gray-400 font-mono select-none">
+                    {activeDomain}/r/
+                  </span>
+                  <input
+                    type="text"
+                    value={shortCode}
+                    onChange={(e) => setShortCode(e.target.value.replace(/[^a-zA-Z0-9_-]/g, ""))}
+                    className="flex-1 py-3 pr-4 text-sm font-mono focus:outline-none min-w-0"
+                    placeholder="留空自动生成"
+                    maxLength={20}
+                  />
+                </div>
+                {shortCode && (
+                  <p className="mt-1.5 text-xs text-indigo-500 font-mono truncate">
+                    {previewURL}
+                  </p>
+                )}
+                {!shortCode && (
+                  <p className="mt-1.5 text-xs text-gray-400">
+                    留空则自动生成 8 位随机短码
+                  </p>
+                )}
               </div>
 
               {/* Password */}
