@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ChevronDown, ChevronRight, Globe, Shield, Clock, Smartphone, Tags } from "lucide-react";
+import { Globe, Clock, Shield, Smartphone, Tags } from "lucide-react";
 import useSWR from "swr";
 import { linksAPI, domainsAPI, utmAPI } from "@/lib/api";
 import { getToken } from "@/lib/auth";
@@ -12,58 +12,28 @@ export default function CreateLinkPage() {
   const router = useRouter();
   const token = getToken();
 
-  // Basic fields
   const [originalUrl, setOriginalUrl] = useState("");
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
-
-  // Advanced sections
-  const [showAdvanced, setShowAdvanced] = useState(false);
-  const [showUTM, setShowUTM] = useState(false);
-  const [showDeeplink, setShowDeeplink] = useState(false);
-
-  // Domain
   const [domain, setDomain] = useState("");
-
-  // Password + expiration
   const [password, setPassword] = useState("");
   const [expiresAt, setExpiresAt] = useState("");
-
-  // UTM
-  const [utmSource, setUtmSource] = useState("");
-  const [utmMedium, setUtmMedium] = useState("");
-  const [utmCampaign, setUtmCampaign] = useState("");
-  const [utmTerm, setUtmTerm] = useState("");
-  const [utmContent, setUtmContent] = useState("");
-
-  // Deep links
+  const [utmTemplateId, setUtmTemplateId] = useState<number | null>(null);
   const [iosUrl, setIosUrl] = useState("");
   const [androidUrl, setAndroidUrl] = useState("");
-
   const [loading, setLoading] = useState(false);
 
-  // Fetch domains and UTM templates
   const { data: domainData } = useSWR(token ? "domains" : null, () => domainsAPI.list(token!));
   const { data: utmData } = useSWR(token ? "utm-templates" : null, () => utmAPI.list(token!));
 
   const verifiedDomains = (domainData?.domains ?? []).filter((d: { verified: boolean }) => d.verified);
   const utmTemplates = utmData?.templates ?? [];
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const applyUTMTemplate = (t: any) => {
-    setUtmSource(t.utm_source || "");
-    setUtmMedium(t.utm_medium || "");
-    setUtmCampaign(t.utm_campaign || "");
-    setUtmTerm(t.utm_term || "");
-    setUtmContent(t.utm_content || "");
-    setShowUTM(true);
-  };
+  const selectedTemplate = utmTemplates.find((t: { id: number }) => t.id === utmTemplateId);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!token) { router.push("/login"); return; }
     setLoading(true);
-
     try {
       await linksAPI.create(token, {
         original_url: originalUrl,
@@ -72,11 +42,11 @@ export default function CreateLinkPage() {
         domain: domain || undefined,
         password: password || undefined,
         expires_at: expiresAt || undefined,
-        utm_source: utmSource || undefined,
-        utm_medium: utmMedium || undefined,
-        utm_campaign: utmCampaign || undefined,
-        utm_term: utmTerm || undefined,
-        utm_content: utmContent || undefined,
+        utm_source: selectedTemplate?.utm_source || undefined,
+        utm_medium: selectedTemplate?.utm_medium || undefined,
+        utm_campaign: selectedTemplate?.utm_campaign || undefined,
+        utm_term: selectedTemplate?.utm_term || undefined,
+        utm_content: selectedTemplate?.utm_content || undefined,
         ios_url: iosUrl || undefined,
         android_url: androidUrl || undefined,
       });
@@ -90,236 +60,190 @@ export default function CreateLinkPage() {
   };
 
   return (
-    <div className="max-w-2xl mx-auto">
+    <div className="max-w-4xl mx-auto">
       <h1 className="text-2xl font-bold text-gray-900 mb-6">创建短链接</h1>
 
-      <form onSubmit={handleSubmit} className="space-y-6">
-        {/* Basic Info */}
-        <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-6 space-y-4">
-          <h2 className="font-semibold text-gray-900 text-sm uppercase tracking-wider">基本信息</h2>
+      <form onSubmit={handleSubmit}>
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+          <div className="grid lg:grid-cols-5 divide-y lg:divide-y-0 lg:divide-x divide-gray-100">
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              目标 URL <span className="text-red-500">*</span>
-            </label>
-            <input
-              type="url"
-              value={originalUrl}
-              onChange={(e) => setOriginalUrl(e.target.value)}
-              className="w-full rounded-lg border border-gray-200 px-4 py-2.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition"
-              placeholder="https://example.com/your-long-url"
-              required
-            />
-          </div>
+            {/* ===== Left: Main ===== */}
+            <div className="lg:col-span-3 p-6 sm:p-8 space-y-5">
+              <h2 className="text-sm font-semibold text-gray-900 uppercase tracking-wider">基本信息</h2>
 
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">标题</label>
-              <input
-                type="text"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                className="w-full rounded-lg border border-gray-200 px-4 py-2.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition"
-                placeholder="我的推广链接"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                <span className="inline-flex items-center gap-1.5">
-                  <Globe className="size-3.5 text-gray-400" />
-                  自定义域名
-                </span>
-              </label>
-              <select
-                value={domain}
-                onChange={(e) => setDomain(e.target.value)}
-                className="w-full rounded-lg border border-gray-200 px-4 py-2.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition bg-white"
-              >
-                <option value="">kada.link（默认）</option>
-                {verifiedDomains.map((d: { id: number; name: string }) => (
-                  <option key={d.id} value={d.name}>{d.name}</option>
-                ))}
-              </select>
-            </div>
-          </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                  目标 URL <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="url"
+                  value={originalUrl}
+                  onChange={(e) => setOriginalUrl(e.target.value)}
+                  className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition"
+                  placeholder="https://example.com/your-long-url"
+                  required
+                />
+              </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">描述</label>
-            <textarea
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              className="w-full rounded-lg border border-gray-200 px-4 py-2.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition"
-              placeholder="简短描述（可选）"
-              rows={2}
-            />
-          </div>
-        </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">标题</label>
+                <input
+                  type="text"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition"
+                  placeholder="我的推广链接"
+                />
+              </div>
 
-        {/* Advanced Options */}
-        <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
-          <button
-            type="button"
-            onClick={() => setShowAdvanced(!showAdvanced)}
-            className="w-full flex items-center justify-between p-4 text-sm font-medium text-gray-700 hover:bg-gray-50 transition"
-          >
-            <span className="flex items-center gap-2">
-              <Shield className="size-4 text-gray-400" />
-              高级选项
-            </span>
-            {showAdvanced ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
-          </button>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">描述</label>
+                <textarea
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition resize-none"
+                  placeholder="简短描述（可选）"
+                  rows={3}
+                />
+              </div>
 
-          {showAdvanced && (
-            <div className="border-t border-gray-100 p-6 space-y-4">
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    密码保护
-                  </label>
-                  <input
-                    type="text"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    className="w-full rounded-lg border border-gray-200 px-4 py-2.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition"
-                    placeholder="留空则不加密"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    <span className="inline-flex items-center gap-1.5">
-                      <Clock className="size-3.5 text-gray-400" />
-                      过期时间
-                    </span>
-                  </label>
-                  <input
-                    type="datetime-local"
-                    value={expiresAt}
-                    onChange={(e) => setExpiresAt(e.target.value)}
-                    className="w-full rounded-lg border border-gray-200 px-4 py-2.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition"
-                  />
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                  <span className="inline-flex items-center gap-1.5">
+                    <Smartphone className="size-3.5 text-gray-400" />
+                    App 深度链接
+                  </span>
+                </label>
+                <div className="grid grid-cols-2 gap-3">
+                  <input type="text" value={iosUrl} onChange={(e) => setIosUrl(e.target.value)}
+                    className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm font-mono focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition"
+                    placeholder="iOS URL" />
+                  <input type="text" value={androidUrl} onChange={(e) => setAndroidUrl(e.target.value)}
+                    className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm font-mono focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition"
+                    placeholder="Android URL" />
                 </div>
               </div>
             </div>
-          )}
-        </div>
 
-        {/* UTM Parameters */}
-        <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
-          <button
-            type="button"
-            onClick={() => setShowUTM(!showUTM)}
-            className="w-full flex items-center justify-between p-4 text-sm font-medium text-gray-700 hover:bg-gray-50 transition"
-          >
-            <span className="flex items-center gap-2">
-              <Tags className="size-4 text-gray-400" />
-              UTM 参数
-            </span>
-            {showUTM ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
-          </button>
+            {/* ===== Right: Advanced ===== */}
+            <div className="lg:col-span-2 p-6 sm:p-8 space-y-6 bg-gray-50/50">
+              <h2 className="text-sm font-semibold text-gray-900 uppercase tracking-wider">高级选项</h2>
 
-          {showUTM && (
-            <div className="border-t border-gray-100 p-6 space-y-4">
-              {/* UTM Template quick-fill */}
-              {utmTemplates.length > 0 && (
-                <div className="flex flex-wrap items-center gap-2 pb-3 border-b border-gray-50">
-                  <span className="text-xs text-gray-500">快速填充：</span>
-                  {utmTemplates.map((t: { id: number; name: string }) => (
-                    <button
-                      key={t.id}
-                      type="button"
-                      onClick={() => applyUTMTemplate(t)}
-                      className="text-xs px-2.5 py-1 rounded-full bg-violet-50 text-violet-700 hover:bg-violet-100 transition"
-                    >
-                      {t.name}
-                    </button>
+              {/* Domain */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                  <span className="inline-flex items-center gap-1.5">
+                    <Globe className="size-3.5 text-gray-400" />
+                    域名
+                  </span>
+                </label>
+                <select
+                  value={domain}
+                  onChange={(e) => setDomain(e.target.value)}
+                  className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition bg-white"
+                >
+                  <option value="">kada.click（默认）</option>
+                  {verifiedDomains.map((d: { id: number; name: string }) => (
+                    <option key={d.id} value={d.name}>{d.name}</option>
                   ))}
-                </div>
-              )}
+                </select>
+              </div>
 
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div>
-                  <label className="block text-xs font-medium text-gray-500 mb-1">来源 (utm_source)</label>
-                  <input type="text" value={utmSource} onChange={(e) => setUtmSource(e.target.value)}
-                    className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-mono focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition"
-                    placeholder="wechat" />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-500 mb-1">媒介 (utm_medium)</label>
-                  <input type="text" value={utmMedium} onChange={(e) => setUtmMedium(e.target.value)}
-                    className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-mono focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition"
-                    placeholder="social" />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-500 mb-1">活动 (utm_campaign)</label>
-                  <input type="text" value={utmCampaign} onChange={(e) => setUtmCampaign(e.target.value)}
-                    className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-mono focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition"
-                    placeholder="spring-sale" />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-500 mb-1">关键词 (utm_term)</label>
-                  <input type="text" value={utmTerm} onChange={(e) => setUtmTerm(e.target.value)}
-                    className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-mono focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition"
-                    placeholder="shoes" />
-                </div>
-                <div className="sm:col-span-2">
-                  <label className="block text-xs font-medium text-gray-500 mb-1">内容 (utm_content)</label>
-                  <input type="text" value={utmContent} onChange={(e) => setUtmContent(e.target.value)}
-                    className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-mono focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition"
-                    placeholder="banner-top" />
-                </div>
+              {/* Password */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                  <span className="inline-flex items-center gap-1.5">
+                    <Shield className="size-3.5 text-gray-400" />
+                    密码保护
+                  </span>
+                </label>
+                <input
+                  type="text"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition"
+                  placeholder="留空则不加密"
+                />
+              </div>
+
+              {/* Expiration */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                  <span className="inline-flex items-center gap-1.5">
+                    <Clock className="size-3.5 text-gray-400" />
+                    过期时间
+                  </span>
+                </label>
+                <input
+                  type="datetime-local"
+                  value={expiresAt}
+                  onChange={(e) => setExpiresAt(e.target.value)}
+                  className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition"
+                />
+              </div>
+
+              {/* UTM Template */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                  <span className="inline-flex items-center gap-1.5">
+                    <Tags className="size-3.5 text-gray-400" />
+                    UTM 模板
+                  </span>
+                </label>
+                {utmTemplates.length > 0 ? (
+                  <div className="space-y-2">
+                    <select
+                      value={utmTemplateId ?? ""}
+                      onChange={(e) => setUtmTemplateId(e.target.value ? Number(e.target.value) : null)}
+                      className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition bg-white"
+                    >
+                      <option value="">不使用模板</option>
+                      {utmTemplates.map((t: { id: number; name: string }) => (
+                        <option key={t.id} value={t.id}>{t.name}</option>
+                      ))}
+                    </select>
+                    {selectedTemplate && (
+                      <div className="flex flex-wrap gap-1.5">
+                        {[
+                          ["source", selectedTemplate.utm_source],
+                          ["medium", selectedTemplate.utm_medium],
+                          ["campaign", selectedTemplate.utm_campaign],
+                          ["term", selectedTemplate.utm_term],
+                          ["content", selectedTemplate.utm_content],
+                        ].filter(([, v]) => v).map(([k, v]) => (
+                          <span key={k} className="text-[10px] bg-violet-50 text-violet-600 px-2 py-0.5 rounded-full font-mono">
+                            {k}={v}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <p className="text-xs text-gray-400 py-2">
+                    还没有 UTM 模板，去<a href="/dashboard/utm" className="text-indigo-600 hover:underline ml-1">UTM 模板</a>创建
+                  </p>
+                )}
               </div>
             </div>
-          )}
-        </div>
+          </div>
 
-        {/* Deep Links */}
-        <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
-          <button
-            type="button"
-            onClick={() => setShowDeeplink(!showDeeplink)}
-            className="w-full flex items-center justify-between p-4 text-sm font-medium text-gray-700 hover:bg-gray-50 transition"
-          >
-            <span className="flex items-center gap-2">
-              <Smartphone className="size-4 text-gray-400" />
-              深度链接（App 跳转）
-            </span>
-            {showDeeplink ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
-          </button>
-
-          {showDeeplink && (
-            <div className="border-t border-gray-100 p-6 space-y-4">
-              <div>
-                <label className="block text-xs font-medium text-gray-500 mb-1">iOS URL Scheme</label>
-                <input type="text" value={iosUrl} onChange={(e) => setIosUrl(e.target.value)}
-                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-mono focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition"
-                  placeholder="myapp://product/123" />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-500 mb-1">Android URL Scheme</label>
-                <input type="text" value={androidUrl} onChange={(e) => setAndroidUrl(e.target.value)}
-                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-mono focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition"
-                  placeholder="myapp://product/123" />
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Submit */}
-        <div className="flex items-center gap-3">
-          <button
-            type="submit"
-            disabled={loading || !originalUrl}
-            className="flex-1 rounded-lg bg-indigo-600 py-3 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed transition shadow-sm"
-          >
-            {loading ? "创建中..." : "创建短链接"}
-          </button>
-          <button
-            type="button"
-            onClick={() => router.back()}
-            className="rounded-lg border border-gray-200 px-6 py-3 text-sm font-medium text-gray-600 hover:bg-gray-50 transition"
-          >
-            取消
-          </button>
+          {/* Footer */}
+          <div className="border-t border-gray-100 px-6 py-4 flex items-center justify-between bg-white">
+            <button
+              type="button"
+              onClick={() => router.back()}
+              className="text-sm text-gray-500 hover:text-gray-700 transition"
+            >
+              取消
+            </button>
+            <button
+              type="submit"
+              disabled={loading || !originalUrl}
+              className="rounded-xl bg-indigo-600 px-8 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed transition shadow-sm"
+            >
+              {loading ? "创建中..." : "创建短链接"}
+            </button>
+          </div>
         </div>
       </form>
     </div>
