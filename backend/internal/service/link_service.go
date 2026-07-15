@@ -26,7 +26,7 @@ func NewLinkService(db *pgxpool.Pool, baseURL string) *LinkService {
 // Create 创建短链接
 func (s *LinkService) Create(ctx context.Context, userID int64, req domain.CreateLinkRequest) (*domain.LinkInfo, error) {
 	shortCode := generateShortCode()
-	domain_ := "kada.link"
+	domain_ := "kada.click"
 	if req.Domain != nil && *req.Domain != "" {
 		domain_ = *req.Domain
 	}

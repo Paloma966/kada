@@ -8,6 +8,9 @@ import {
   BarChart3,
   MousePointerClick,
   Users,
+  Folder,
+  Tag,
+  ArrowRightLeft,
   Settings,
   X,
   type LucideIcon,
@@ -41,6 +44,14 @@ const NAV_SECTIONS: NavSection[] = [
       { name: "分析", href: "/dashboard/analytics", icon: BarChart3 },
       { name: "事件", href: "/dashboard/events", icon: MousePointerClick },
       { name: "客户", href: "/dashboard/customers", icon: Users },
+    ],
+  },
+  {
+    name: "资源管理",
+    items: [
+      { name: "文件夹", href: "/dashboard/folders", icon: Folder },
+      { name: "标签", href: "/dashboard/tags", icon: Tag },
+      { name: "UTM 模板", href: "/dashboard/utm", icon: ArrowRightLeft },
     ],
   },
 ];
