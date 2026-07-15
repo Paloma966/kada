@@ -31,7 +31,7 @@ func Load() *Config {
 		RedisURL:           getEnv("REDIS_URL", "redis://localhost:6379"),
 		JWTSecret:          getEnv("JWT_SECRET", "kada-dev-secret-change-in-production"),
 		JWTExpires:         getEnv("JWT_EXPIRES_IN", "720h"),
-		BaseURL:            getEnv("API_BASE_URL", "http://localhost:8080"),
+		BaseURL:            getEnv("API_BASE_URL", "https://kada.click"),
 		FrontendURL:        getEnv("FRONTEND_URL", "http://localhost:3000"),
 		SMSAccessKeyID:     getEnv("SMS_ACCESS_KEY_ID", ""),
 		SMSAccessKeySecret: getEnv("SMS_ACCESS_KEY_SECRET", ""),
