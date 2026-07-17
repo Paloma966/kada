@@ -127,6 +127,12 @@ export const analyticsAPI = {
 
   daily: (token: string) =>
     fetchAPI("/api/analytics/daily", { token }),
+
+  events: (token: string, page = 1, pageSize = 20) =>
+    fetchAPI(`/api/analytics/events?page=${page}&page_size=${pageSize}`, { token }),
+
+  customers: (token: string) =>
+    fetchAPI("/api/analytics/customers", { token }),
 };
 
 // ========== Folders API ==========
