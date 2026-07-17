@@ -1,6 +1,7 @@
 package redirect
 
 import (
+	"context"
 	"html/template"
 	"net/http"
 
@@ -48,7 +49,7 @@ func (h *Handler) Redirect(c *gin.Context) {
 
 	// 记录点击
 	clickPlatform := string(platform)
-	go h.svc.LogClick(c.Request.Context(), link.ID, ip, userAgent, clickPlatform, referer)
+	go h.svc.LogClick(context.Background(), link.ID, ip, userAgent, clickPlatform, referer)
 
 	// 判断是否需要中间引导页
 	if ua.NeedsIntermediatePage(platform) {
