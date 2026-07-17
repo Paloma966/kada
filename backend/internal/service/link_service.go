@@ -32,7 +32,6 @@ func (s *LinkService) Create(ctx context.Context, userID int64, req domain.Creat
 	var shortCode string
 
 	if req.ShortCode != nil && *req.ShortCode != "" {
-		// 自定义短码：校验格式 + 唯一性
 		if !shortCodePattern.MatchString(*req.ShortCode) {
 			return nil, errors.New("短码格式无效：只允许字母、数字、下划线和连字符，长度4-20位")
 		}
@@ -67,12 +66,12 @@ func (s *LinkService) Create(ctx context.Context, userID int64, req domain.Creat
 
 	var info domain.LinkInfo
 	err := s.db.QueryRow(ctx, `
-		INSERT INTO links (short_code, original_url, title, description, image_url, domain, password_hash, expires_at, user_id, workspace_id, utm_source, utm_medium, utm_campaign, utm_term, utm_content, ios_url, android_url)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+		INSERT INTO links (short_code, original_url, title, description, image_url, domain, password_hash, expires_at, user_id, workspace_id, folder_id, utm_source, utm_medium, utm_campaign, utm_term, utm_content, ios_url, android_url)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
 		RETURNING id, short_code, original_url, COALESCE(title,''), COALESCE(description,''), COALESCE(image_url,''), domain, click_count, is_active, expires_at, created_at, updated_at
 	`,
 		shortCode, req.OriginalURL, req.Title, req.Description, req.ImageURL,
-		domain_, passwordHash, expiresAt, userID, req.WorkspaceID,
+		domain_, passwordHash, expiresAt, userID, req.WorkspaceID, req.FolderID,
 		req.UTMSource, req.UTMMedium, req.UTMCampaign, req.UTMTerm, req.UTMContent,
 		req.IosURL, req.AndroidURL,
 	).Scan(
@@ -84,24 +83,63 @@ func (s *LinkService) Create(ctx context.Context, userID int64, req domain.Creat
 		return nil, errors.New("创建短链接失败: " + err.Error())
 	}
 
+	// 关联标签
+	for _, tagID := range req.TagIDs {
+		s.db.Exec(ctx, `INSERT INTO link_tags (link_id, tag_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`, info.ID, tagID)
+	}
+
 	info.ShortURL = s.buildShortURL(info.Domain, info.ShortCode)
 	return &info, nil
 }
 
-// GetByID 根据ID获取链接
+// GetByID 根据ID获取链接（含文件夹、标签、UTM等完整信息）
 func (s *LinkService) GetByID(ctx context.Context, linkID, userID int64) (*domain.LinkInfo, error) {
 	var info domain.LinkInfo
 	err := s.db.QueryRow(ctx, `
-		SELECT id, short_code, original_url, COALESCE(title,''), COALESCE(description,''), COALESCE(image_url,''), domain, click_count, is_active, expires_at, created_at, updated_at
-		FROM links WHERE id = $1 AND user_id = $2 AND is_active = TRUE
+		SELECT l.id, l.short_code, l.original_url, COALESCE(l.title,''), COALESCE(l.description,''),
+		       COALESCE(l.image_url,''), l.domain, l.click_count, l.is_active, l.expires_at,
+		       l.created_at, l.updated_at, l.folder_id,
+		       l.utm_source, l.utm_medium, l.utm_campaign, l.utm_term, l.utm_content,
+		       l.ios_url, l.android_url, l.password_hash
+		FROM links l WHERE l.id = $1 AND l.user_id = $2
 	`, linkID, userID).Scan(
 		&info.ID, &info.ShortCode, &info.OriginalURL, &info.Title, &info.Description,
 		&info.ImageURL, &info.Domain, &info.ClickCount, &info.IsActive,
-		&info.ExpiresAt, &info.CreatedAt, &info.UpdatedAt,
+		&info.ExpiresAt, &info.CreatedAt, &info.UpdatedAt, &info.FolderID,
+		&info.UTMSource, &info.UTMMedium, &info.UTMCampaign, &info.UTMTerm, &info.UTMContent,
+		&info.IosURL, &info.AndroidURL, &info.PasswordHash,
 	)
 	if err != nil {
 		return nil, errors.New("链接不存在或已失效")
 	}
+
+	// 查询文件夹名
+	if info.FolderID != nil {
+		var folderName string
+		err := s.db.QueryRow(ctx, `SELECT name FROM folders WHERE id = $1`, *info.FolderID).Scan(&folderName)
+		if err == nil {
+			info.FolderName = &folderName
+		}
+	}
+
+	// 查询标签
+	rows, err := s.db.Query(ctx, `
+		SELECT t.id, t.name, t.color FROM tags t
+		JOIN link_tags lt ON t.id = lt.tag_id
+		WHERE lt.link_id = $1
+	`, linkID)
+	if err == nil {
+		defer rows.Close()
+		for rows.Next() {
+			var t domain.LinkTagInfo
+			rows.Scan(&t.ID, &t.Name, &t.Color)
+			info.Tags = append(info.Tags, t)
+		}
+	}
+	if info.Tags == nil {
+		info.Tags = []domain.LinkTagInfo{}
+	}
+
 	info.ShortURL = s.buildShortURL(info.Domain, info.ShortCode)
 	return &info, nil
 }
@@ -166,7 +204,6 @@ func (s *LinkService) CheckPassword(ctx context.Context, shortCode, password str
 		return true, &info, nil // 无密码
 	}
 
-	// 简单密码验证（生产环境应使用 bcrypt）
 	if password == "" || !checkPasswordHash(password, *passwordHash) {
 		return false, &info, nil
 	}
@@ -184,34 +221,31 @@ func (s *LinkService) List(ctx context.Context, userID int64, page, pageSize int
 		pageSize = 20
 	}
 
-	// 动态构建查询条件
-	where := "WHERE user_id = $1"
+	where := "WHERE l.user_id = $1"
 	args := []interface{}{userID}
 	argIdx := 2
 
 	if search != "" {
-		where += " AND (title ILIKE $" + strconv.Itoa(argIdx) + " OR original_url ILIKE $" + strconv.Itoa(argIdx) + " OR short_code ILIKE $" + strconv.Itoa(argIdx) + ")"
+		where += " AND (l.title ILIKE $" + strconv.Itoa(argIdx) + " OR l.original_url ILIKE $" + strconv.Itoa(argIdx) + " OR l.short_code ILIKE $" + strconv.Itoa(argIdx) + ")"
 		args = append(args, "%"+search+"%")
 		argIdx++
 	}
 	if folderID > 0 {
-		where += " AND folder_id = $" + strconv.Itoa(argIdx)
+		where += " AND l.folder_id = $" + strconv.Itoa(argIdx)
 		args = append(args, folderID)
 		argIdx++
 	}
 	if tagID > 0 {
-		where += " AND id IN (SELECT link_id FROM link_tags WHERE tag_id = $" + strconv.Itoa(argIdx) + ")"
+		where += " AND l.id IN (SELECT link_id FROM link_tags WHERE tag_id = $" + strconv.Itoa(argIdx) + ")"
 		args = append(args, tagID)
 		argIdx++
 	}
 
-	// 计数
 	var total int64
-	s.db.QueryRow(ctx, `SELECT COUNT(*) FROM links `+where, args...).Scan(&total)
+	s.db.QueryRow(ctx, `SELECT COUNT(*) FROM links l `+where, args...).Scan(&total)
 
-	// 查询
-	query := `SELECT id, short_code, original_url, COALESCE(title,''), COALESCE(description,''), COALESCE(image_url,''), domain, click_count, is_active, expires_at, created_at, updated_at
-		FROM links ` + where + ` ORDER BY created_at DESC LIMIT $` + strconv.Itoa(argIdx) + ` OFFSET $` + strconv.Itoa(argIdx+1)
+	query := `SELECT l.id, l.short_code, l.original_url, COALESCE(l.title,''), COALESCE(l.description,''), COALESCE(l.image_url,''), l.domain, l.click_count, l.is_active, l.expires_at, l.created_at, l.updated_at, l.folder_id
+		FROM links l ` + where + ` ORDER BY l.created_at DESC LIMIT $` + strconv.Itoa(argIdx) + ` OFFSET $` + strconv.Itoa(argIdx+1)
 	args = append(args, pageSize, (page-1)*pageSize)
 
 	rows, err := s.db.Query(ctx, query, args...)
@@ -225,7 +259,7 @@ func (s *LinkService) List(ctx context.Context, userID int64, page, pageSize int
 		var l domain.LinkInfo
 		rows.Scan(&l.ID, &l.ShortCode, &l.OriginalURL, &l.Title, &l.Description,
 			&l.ImageURL, &l.Domain, &l.ClickCount, &l.IsActive,
-			&l.ExpiresAt, &l.CreatedAt, &l.UpdatedAt)
+			&l.ExpiresAt, &l.CreatedAt, &l.UpdatedAt, &l.FolderID)
 		l.ShortURL = s.buildShortURL(l.Domain, l.ShortCode)
 		links = append(links, l)
 	}
@@ -261,19 +295,28 @@ func (s *LinkService) Update(ctx context.Context, linkID, userID int64, req doma
 			password_hash = COALESCE($6, password_hash),
 			expires_at = COALESCE($7, expires_at),
 			is_active = COALESCE($8, is_active),
+			folder_id = COALESCE($9, folder_id),
 			updated_at = NOW()
-		WHERE id = $1 AND user_id = $9
-		RETURNING id, short_code, original_url, COALESCE(title,''), COALESCE(description,''), COALESCE(image_url,''), domain, click_count, is_active, expires_at, created_at, updated_at
+		WHERE id = $1 AND user_id = $10
+		RETURNING id, short_code, original_url, COALESCE(title,''), COALESCE(description,''), COALESCE(image_url,''), domain, click_count, is_active, expires_at, folder_id, created_at, updated_at
 	`,
 		linkID, req.OriginalURL, req.Title, req.Description, req.ImageURL,
-		passwordHash, expiresAt, req.IsActive, userID,
+		passwordHash, expiresAt, req.IsActive, req.FolderID, userID,
 	).Scan(
 		&info.ID, &info.ShortCode, &info.OriginalURL, &info.Title, &info.Description,
 		&info.ImageURL, &info.Domain, &info.ClickCount, &info.IsActive,
-		&info.ExpiresAt, &info.CreatedAt, &info.UpdatedAt,
+		&info.ExpiresAt, &info.FolderID, &info.CreatedAt, &info.UpdatedAt,
 	)
 	if err != nil {
 		return nil, errors.New("更新链接失败，链接不存在或无权限")
+	}
+
+	// 更新标签关联
+	if req.TagIDs != nil {
+		s.db.Exec(ctx, `DELETE FROM link_tags WHERE link_id = $1`, linkID)
+		for _, tagID := range req.TagIDs {
+			s.db.Exec(ctx, `INSERT INTO link_tags (link_id, tag_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`, linkID, tagID)
+		}
 	}
 
 	info.ShortURL = s.buildShortURL(info.Domain, info.ShortCode)
@@ -313,7 +356,6 @@ func generateShortCode() string {
 
 // hashPassword 简单哈希（可替换为 bcrypt）
 func hashPassword(pwd string) string {
-	// 简单的 SHA256 哈希（生产环境应使用 bcrypt）
 	h := sha256.Sum256([]byte(pwd))
 	return hex.EncodeToString(h[:])
 }

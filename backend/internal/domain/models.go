@@ -45,6 +45,8 @@ type CreateLinkRequest struct {
 	Domain      *string `json:"domain"`
 	Password    *string `json:"password"`
 	ExpiresAt   *string `json:"expires_at"`
+	FolderID    *int64  `json:"folder_id"`
+	TagIDs      []int64 `json:"tag_ids"`
 	WorkspaceID *int64  `json:"workspace_id"`
 	UTMSource   *string `json:"utm_source"`
 	UTMMedium   *string `json:"utm_medium"`
@@ -63,22 +65,41 @@ type UpdateLinkRequest struct {
 	Password    *string `json:"password"`
 	ExpiresAt   *string `json:"expires_at"`
 	IsActive    *bool   `json:"is_active"`
+	FolderID    *int64  `json:"folder_id"`
+	TagIDs      []int64 `json:"tag_ids"`
+}
+
+type LinkTagInfo struct {
+	ID    int64  `json:"id"`
+	Name  string `json:"name"`
+	Color string `json:"color"`
 }
 
 type LinkInfo struct {
-	ID          int64      `json:"id"`
-	ShortCode   string     `json:"short_code"`
-	ShortURL    string     `json:"short_url"`
-	OriginalURL string     `json:"original_url"`
-	Title       *string    `json:"title"`
-	Description *string    `json:"description"`
-	ImageURL    *string    `json:"image_url"`
-	Domain      string     `json:"domain"`
-	ClickCount  int64      `json:"click_count"`
-	IsActive    bool       `json:"is_active"`
-	ExpiresAt   *time.Time `json:"expires_at"`
-	CreatedAt   time.Time  `json:"created_at"`
-	UpdatedAt   time.Time  `json:"updated_at"`
+	ID           int64         `json:"id"`
+	ShortCode    string        `json:"short_code"`
+	ShortURL     string        `json:"short_url"`
+	OriginalURL  string        `json:"original_url"`
+	Title        *string       `json:"title"`
+	Description  *string       `json:"description"`
+	ImageURL     *string       `json:"image_url"`
+	Domain       string        `json:"domain"`
+	ClickCount   int64         `json:"click_count"`
+	IsActive     bool          `json:"is_active"`
+	ExpiresAt    *time.Time    `json:"expires_at"`
+	CreatedAt    time.Time     `json:"created_at"`
+	UpdatedAt    time.Time     `json:"updated_at"`
+	FolderID     *int64        `json:"folder_id"`
+	FolderName   *string       `json:"folder_name"`
+	Tags         []LinkTagInfo `json:"tags"`
+	PasswordHash *string       `json:"password_hash,omitempty"`
+	UTMSource    *string       `json:"utm_source,omitempty"`
+	UTMMedium    *string       `json:"utm_medium,omitempty"`
+	UTMCampaign  *string       `json:"utm_campaign,omitempty"`
+	UTMTerm      *string       `json:"utm_term,omitempty"`
+	UTMContent   *string       `json:"utm_content,omitempty"`
+	IosURL       *string       `json:"ios_url,omitempty"`
+	AndroidURL   *string       `json:"android_url,omitempty"`
 }
 
 type PaginatedLinks struct {

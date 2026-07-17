@@ -5,7 +5,7 @@ import Link from "next/link";
 import { Plus, Link2 } from "lucide-react";
 import useSWR from "swr";
 import { toast } from "sonner";
-import { linksAPI } from "@/lib/api";
+import { linksAPI, foldersAPI, tagsAPI } from "@/lib/api";
 import { getToken } from "@/lib/auth";
 import { LinkCard, LinkCardPlaceholder } from "@/components/LinkCard";
 import { LinksToolbar } from "@/components/LinksToolbar";
@@ -17,15 +17,29 @@ export default function DashboardPage() {
   const token = getToken();
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
+  const [folderId, setFolderId] = useState(0);
+  const [tagId, setTagId] = useState(0);
 
   const { data, error, isLoading, mutate } = useSWR(
-    token ? [`links`, page, search] : null,
-    () => linksAPI.list(token!, page, PAGE_SIZE, search)
+    token ? [`links`, page, search, folderId, tagId] : null,
+    () => linksAPI.list(token!, page, PAGE_SIZE, search, folderId, tagId)
+  );
+
+  const { data: folderData } = useSWR(
+    token ? "folders" : null,
+    () => foldersAPI.list(token!)
+  );
+
+  const { data: tagData } = useSWR(
+    token ? "tags" : null,
+    () => tagsAPI.list(token!)
   );
 
   const links: LinkItem[] = data?.links ?? [];
   const totalCount: number = data?.total_count ?? 0;
   const totalPages = Math.ceil(totalCount / PAGE_SIZE);
+  const folders = folderData?.folders ?? [];
+  const tags = tagData?.tags ?? [];
 
   const handleDelete = async (id: number) => {
     if (!token) return;
@@ -44,6 +58,12 @@ export default function DashboardPage() {
         search={search}
         onSearchChange={(v) => { setSearch(v); setPage(1); }}
         totalCount={totalCount}
+        folders={folders}
+        tags={tags}
+        selectedFolderId={folderId}
+        onFolderChange={(id) => { setFolderId(id); setPage(1); }}
+        selectedTagId={tagId}
+        onTagChange={(id) => { setTagId(id); setPage(1); }}
       />
 
       {error ? (
@@ -95,7 +115,6 @@ export default function DashboardPage() {
             <LinkCard key={link.id} link={link} onDelete={handleDelete} />
           ))}
 
-          {/* Pagination */}
           {totalPages > 1 && (
             <div className="flex items-center justify-center gap-1 pt-6 pb-4">
               <button

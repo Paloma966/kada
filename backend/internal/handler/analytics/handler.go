@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/chun/kada-backend/internal/middleware"
@@ -46,15 +47,25 @@ func (h *Handler) Overview(c *gin.Context) {
 // Platforms 平台来源分布
 func (h *Handler) Platforms(c *gin.Context) {
 	userID := middleware.GetUserID(c)
+	linkID, _ := strconv.ParseInt(c.Query("link_id"), 10, 64)
 
-	rows, err := h.db.Query(c.Request.Context(), `
-		SELECT COALESCE(cl.platform, 'browser'), COUNT(*)
-		FROM click_logs cl
-		JOIN links l ON cl.link_id = l.id
-		WHERE l.user_id = $1
-		GROUP BY cl.platform
-		ORDER BY COUNT(*) DESC
-	`, userID)
+	var rows pgx.Rows
+	var err error
+	if linkID > 0 {
+		rows, err = h.db.Query(c.Request.Context(), `
+			SELECT COALESCE(cl.platform, 'browser'), COUNT(*)
+			FROM click_logs cl JOIN links l ON cl.link_id = l.id
+			WHERE l.user_id = $1 AND cl.link_id = $2
+			GROUP BY cl.platform ORDER BY COUNT(*) DESC
+		`, userID, linkID)
+	} else {
+		rows, err = h.db.Query(c.Request.Context(), `
+			SELECT COALESCE(cl.platform, 'browser'), COUNT(*)
+			FROM click_logs cl JOIN links l ON cl.link_id = l.id
+			WHERE l.user_id = $1
+			GROUP BY cl.platform ORDER BY COUNT(*) DESC
+		`, userID)
+	}
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询失败"})
 		return
@@ -82,15 +93,25 @@ func (h *Handler) Platforms(c *gin.Context) {
 // DailyClicks 每日点击量（最近30天）
 func (h *Handler) DailyClicks(c *gin.Context) {
 	userID := middleware.GetUserID(c)
+	linkID, _ := strconv.ParseInt(c.Query("link_id"), 10, 64)
 
-	rows, err := h.db.Query(c.Request.Context(), `
-		SELECT DATE(cl.created_at) as date, COUNT(*)
-		FROM click_logs cl
-		JOIN links l ON cl.link_id = l.id
-		WHERE l.user_id = $1 AND cl.created_at > NOW() - INTERVAL '30 days'
-		GROUP BY DATE(cl.created_at)
-		ORDER BY date
-	`, userID)
+	var rows pgx.Rows
+	var err error
+	if linkID > 0 {
+		rows, err = h.db.Query(c.Request.Context(), `
+			SELECT DATE(cl.created_at) as date, COUNT(*)
+			FROM click_logs cl JOIN links l ON cl.link_id = l.id
+			WHERE l.user_id = $1 AND cl.link_id = $2 AND cl.created_at > NOW() - INTERVAL '30 days'
+			GROUP BY DATE(cl.created_at) ORDER BY date
+		`, userID, linkID)
+	} else {
+		rows, err = h.db.Query(c.Request.Context(), `
+			SELECT DATE(cl.created_at) as date, COUNT(*)
+			FROM click_logs cl JOIN links l ON cl.link_id = l.id
+			WHERE l.user_id = $1 AND cl.created_at > NOW() - INTERVAL '30 days'
+			GROUP BY DATE(cl.created_at) ORDER BY date
+		`, userID)
+	}
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询失败"})
 		return

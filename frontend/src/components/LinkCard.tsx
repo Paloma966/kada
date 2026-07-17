@@ -15,6 +15,9 @@ export interface LinkItem {
   click_count: number;
   is_active: boolean;
   created_at: string;
+  folder_id?: number;
+  folder_name?: string;
+  tags?: { id: number; name: string; color: string }[];
 }
 
 interface LinkCardProps {

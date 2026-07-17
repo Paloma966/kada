@@ -3,9 +3,9 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Globe, Clock, Shield, Smartphone, Tags, Link2 } from "lucide-react";
+import { Globe, Clock, Shield, Smartphone, Tags, Link2, Folder } from "lucide-react";
 import useSWR from "swr";
-import { linksAPI, domainsAPI, utmAPI } from "@/lib/api";
+import { linksAPI, domainsAPI, utmAPI, foldersAPI, tagsAPI } from "@/lib/api";
 import { getToken } from "@/lib/auth";
 
 export default function CreateLinkPage() {
@@ -20,20 +20,31 @@ export default function CreateLinkPage() {
   const [password, setPassword] = useState("");
   const [expiresAt, setExpiresAt] = useState("");
   const [utmTemplateId, setUtmTemplateId] = useState<number | null>(null);
+  const [folderId, setFolderId] = useState<number | null>(null);
+  const [selectedTagIds, setSelectedTagIds] = useState<number[]>([]);
   const [iosUrl, setIosUrl] = useState("");
   const [androidUrl, setAndroidUrl] = useState("");
   const [loading, setLoading] = useState(false);
 
   const { data: domainData } = useSWR(token ? "domains" : null, () => domainsAPI.list(token!));
   const { data: utmData } = useSWR(token ? "utm-templates" : null, () => utmAPI.list(token!));
+  const { data: folderData } = useSWR(token ? "folders" : null, () => foldersAPI.list(token!));
+  const { data: tagData } = useSWR(token ? "tags" : null, () => tagsAPI.list(token!));
 
   const verifiedDomains = (domainData?.domains ?? []).filter((d: { verified: boolean }) => d.verified);
   const utmTemplates = utmData?.templates ?? [];
   const selectedTemplate = utmTemplates.find((t: { id: number }) => t.id === utmTemplateId);
+  const folders = folderData?.folders ?? [];
+  const allTags = tagData?.tags ?? [];
 
-  // 实时预览短链接
   const activeDomain = domain || "kada.click";
   const previewURL = `https://${activeDomain}/r/${shortCode || "abc123"}`;
+
+  const toggleTag = (tagId: number) => {
+    setSelectedTagIds(prev =>
+      prev.includes(tagId) ? prev.filter(id => id !== tagId) : [...prev, tagId]
+    );
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -48,6 +59,8 @@ export default function CreateLinkPage() {
         domain: domain || undefined,
         password: password || undefined,
         expires_at: expiresAt || undefined,
+        folder_id: folderId ?? undefined,
+        tag_ids: selectedTagIds.length > 0 ? selectedTagIds : undefined,
         utm_source: selectedTemplate?.utm_source || undefined,
         utm_medium: selectedTemplate?.utm_medium || undefined,
         utm_campaign: selectedTemplate?.utm_campaign || undefined,
@@ -111,6 +124,58 @@ export default function CreateLinkPage() {
                   placeholder="简短描述（可选）"
                   rows={3}
                 />
+              </div>
+
+              {/* Folder & Tags */}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                    <span className="inline-flex items-center gap-1.5">
+                      <Folder className="size-3.5 text-gray-400" />
+                      文件夹
+                    </span>
+                  </label>
+                  <select
+                    value={folderId ?? ""}
+                    onChange={(e) => setFolderId(e.target.value ? Number(e.target.value) : null)}
+                    className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition bg-white"
+                  >
+                    <option value="">不分类</option>
+                    {folders.map((f: { id: number; name: string }) => (
+                      <option key={f.id} value={f.id}>{f.name}</option>
+                    ))}
+                  </select>
+                </div>
+                {allTags.length > 0 && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                      <span className="inline-flex items-center gap-1.5">
+                        <Tags className="size-3.5 text-gray-400" />
+                        标签
+                      </span>
+                    </label>
+                    <div className="flex flex-wrap gap-1.5 pt-1">
+                      {allTags.map((t: { id: number; name: string; color: string }) => {
+                        const isSelected = selectedTagIds.includes(t.id);
+                        return (
+                          <button
+                            key={t.id}
+                            type="button"
+                            onClick={() => toggleTag(t.id)}
+                            className={`text-xs px-3 py-1.5 rounded-full font-medium transition border ${
+                              isSelected
+                                ? "text-white shadow-sm"
+                                : "text-gray-600 bg-white border-gray-200 hover:border-gray-300"
+                            }`}
+                            style={isSelected ? { backgroundColor: t.color, borderColor: t.color } : {}}
+                          >
+                            {t.name}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div>

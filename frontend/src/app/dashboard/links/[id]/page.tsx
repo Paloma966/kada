@@ -4,11 +4,18 @@ import { use, useEffect, useState, useRef } from "react";
 import Link from "next/link";
 import {
   Copy, ExternalLink, Pencil, Save, X, Check, QrCode, Download,
-  BarChart3, Globe, Clock, Shield, Smartphone, Tags, ArrowLeft,
+  BarChart3, Globe, Clock, Shield, Smartphone, Tags, ArrowLeft, Folder,
 } from "lucide-react";
 import { toast } from "sonner";
-import { linksAPI } from "@/lib/api";
+import useSWR from "swr";
+import { linksAPI, foldersAPI, tagsAPI } from "@/lib/api";
 import { getToken } from "@/lib/auth";
+
+interface TagInfo {
+  id: number;
+  name: string;
+  color: string;
+}
 
 interface LinkDetail {
   id: number;
@@ -31,7 +38,15 @@ interface LinkDetail {
   android_url?: string;
   password_hash?: string;
   expires_at?: string;
+  folder_id?: number;
+  folder_name?: string;
+  tags?: TagInfo[];
 }
+
+const platformLabels: Record<string, string> = {
+  browser: "浏览器", wechat: "微信", qq: "QQ",
+  weibo: "微博", xiaohongshu: "小红书", sms: "短信", unknown: "其他",
+};
 
 export default function LinkDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -48,13 +63,24 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
   const [editOriginalUrl, setEditOriginalUrl] = useState("");
   const [editPassword, setEditPassword] = useState("");
   const [editExpiresAt, setEditExpiresAt] = useState("");
+  const [editFolderId, setEditFolderId] = useState<number | null>(null);
+  const [editTagIds, setEditTagIds] = useState<number[]>([]);
 
   // QR code
   const [showQR, setShowQR] = useState(false);
   const [qrURL, setQrURL] = useState<string | null>(null);
 
+  // Analytics
+  const [showAnalytics, setShowAnalytics] = useState(false);
+  const [clickData, setClickData] = useState<{ daily: { date: string; count: number }[]; platforms: { platform: string; count: number }[] } | null>(null);
+
+  const token = getToken();
+  const { data: folderData } = useSWR(token ? "folders" : null, () => foldersAPI.list(token!));
+  const { data: tagData } = useSWR(token ? "tags" : null, () => tagsAPI.list(token!));
+  const folders = folderData?.folders ?? [];
+  const allTags = tagData?.tags ?? [];
+
   const fetchLink = () => {
-    const token = getToken();
     if (!token) return;
     setLoading(true);
     linksAPI.get(token, id)
@@ -65,6 +91,8 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
         setEditDescription(l.description || "");
         setEditOriginalUrl(l.original_url || "");
         setEditExpiresAt(l.expires_at ? l.expires_at.slice(0, 16) : "");
+        setEditFolderId(l.folder_id ?? null);
+        setEditTagIds((l.tags ?? []).map((t: TagInfo) => t.id));
       })
       .catch(() => toast.error("加载链接失败"))
       .finally(() => setLoading(false));
@@ -72,7 +100,26 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
 
   useEffect(() => { fetchLink(); }, [id]);
 
-  // Generate QR code
+  // Fetch per-link analytics
+  useEffect(() => {
+    if (showAnalytics && link && token) {
+      Promise.all([
+        fetch(`${process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080"}/api/analytics/daily?link_id=${link.id}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        }).then(r => r.json()),
+        fetch(`${process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080"}/api/analytics/platforms?link_id=${link.id}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        }).then(r => r.json()),
+      ]).then(([dailyData, platformsData]) => {
+        setClickData({
+          daily: dailyData.daily ?? [],
+          platforms: platformsData.platforms ?? [],
+        });
+      }).catch(() => toast.error("加载统计数据失败"));
+    }
+  }, [showAnalytics, link, token]);
+
+  // QR code
   useEffect(() => {
     if (showQR && link && !qrURL) {
       import("qrcode").then((QRCode) => {
@@ -96,18 +143,19 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
   };
 
   const handleSave = async () => {
-    const token = getToken();
     if (!token || !link) return;
     setSaving(true);
     try {
-      const data: Record<string, unknown> = {
+      const payload: Record<string, unknown> = {
         title: editTitle,
         description: editDescription,
         original_url: editOriginalUrl,
+        folder_id: editFolderId,
+        tag_ids: editTagIds,
       };
-      if (editPassword) data.password = editPassword;
-      if (editExpiresAt) data.expires_at = new Date(editExpiresAt).toISOString();
-      const updated = await linksAPI.update(token, link.id, data);
+      if (editPassword) payload.password = editPassword;
+      if (editExpiresAt) payload.expires_at = new Date(editExpiresAt).toISOString();
+      const updated = await linksAPI.update(token, link.id, payload);
       setLink({ ...link, ...updated });
       setEditing(false);
       toast.success("已更新");
@@ -119,7 +167,6 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
   };
 
   const handleToggleActive = async () => {
-    const token = getToken();
     if (!token || !link) return;
     try {
       await linksAPI.update(token, link.id, { is_active: !link.is_active });
@@ -128,6 +175,12 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
     } catch {
       toast.error("状态更新失败");
     }
+  };
+
+  const toggleEditTag = (tagId: number) => {
+    setEditTagIds(prev =>
+      prev.includes(tagId) ? prev.filter(id => id !== tagId) : [...prev, tagId]
+    );
   };
 
   if (loading) {
@@ -153,7 +206,6 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
 
   return (
     <div className="max-w-2xl mx-auto space-y-6">
-      {/* Back */}
       <Link href="/dashboard" className="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 transition">
         <ArrowLeft className="size-4" /> 返回链接列表
       </Link>
@@ -195,6 +247,21 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
                 className="p-2 text-gray-400 hover:text-indigo-600 transition shrink-0"><Pencil className="size-4" /></button>
             )}
           </div>
+
+          {/* Folder + Tags display */}
+          <div className="flex items-center gap-2 mt-2 flex-wrap">
+            {link.folder_name && (
+              <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-amber-50 text-amber-700">
+                <Folder className="size-3" />
+                {link.folder_name}
+              </span>
+            )}
+            {(link.tags ?? []).map((t) => (
+              <span key={t.id} className="text-xs px-2 py-0.5 rounded-full text-white" style={{ backgroundColor: t.color }}>
+                {t.name}
+              </span>
+            ))}
+          </div>
         </div>
 
         {/* Short URL bar */}
@@ -221,10 +288,76 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
             <p className="text-xs text-gray-500 mt-0.5">创建日期</p>
           </div>
           <div className="p-4 text-center">
-            <p className="text-sm font-bold text-gray-900">{new Date(link.updated_at).toLocaleDateString("zh-CN")}</p>
-            <p className="text-xs text-gray-500 mt-0.5">最近更新</p>
+            <button
+              onClick={() => setShowAnalytics(!showAnalytics)}
+              className={`text-sm font-bold transition ${showAnalytics ? "text-indigo-600" : "text-gray-900"}`}
+            >
+              <BarChart3 className="size-4 inline mr-1" />
+              统计
+            </button>
+            <p className="text-xs text-gray-500 mt-0.5">点击详情</p>
           </div>
         </div>
+
+        {/* Per-link analytics */}
+        {showAnalytics && (
+          <div className="p-6 border-b border-gray-100 bg-gray-50/50 space-y-4">
+            <h3 className="text-sm font-semibold text-gray-900">点击统计</h3>
+            {clickData ? (
+              <>
+                {/* Daily chart */}
+                {clickData.daily.length > 0 && (
+                  <div>
+                    <p className="text-xs text-gray-500 mb-2">每日点击量（近30天）</p>
+                    <div className="flex items-end gap-1 h-24">
+                      {clickData.daily.map((d) => {
+                        const max = Math.max(...clickData.daily.map(dd => dd.count), 1);
+                        const h = (d.count / max) * 100;
+                        return (
+                          <div key={d.date} className="flex-1 flex flex-col items-center gap-1 min-w-0">
+                            <div className="w-full flex flex-col justify-end" style={{ height: "80px" }}>
+                              <div className="w-full rounded-t bg-indigo-500 min-h-[2px]" style={{ height: `${Math.max(h, 1)}%` }}
+                                title={`${d.date}: ${d.count} 点击`} />
+                            </div>
+                            <span className="text-[9px] text-gray-400 truncate w-full text-center">{d.date.slice(5)}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+                {/* Platforms */}
+                {clickData.platforms.length > 0 && (
+                  <div>
+                    <p className="text-xs text-gray-500 mb-2">平台分布</p>
+                    <div className="space-y-1.5">
+                      {clickData.platforms.map((p) => {
+                        const total = clickData.platforms.reduce((s, pp) => s + pp.count, 0);
+                        const pct = total > 0 ? Math.round((p.count / total) * 100) : 0;
+                        return (
+                          <div key={p.platform} className="flex items-center gap-2 text-xs">
+                            <span className="w-14 text-gray-500">{platformLabels[p.platform] || p.platform}</span>
+                            <div className="flex-1 h-1.5 rounded-full bg-gray-200 overflow-hidden">
+                              <div className="h-full rounded-full bg-indigo-500" style={{ width: `${pct}%` }} />
+                            </div>
+                            <span className="w-10 text-right text-gray-500 tabular-nums">{p.count}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+                {clickData.daily.length === 0 && clickData.platforms.length === 0 && (
+                  <p className="text-xs text-gray-400 py-2">暂无点击数据</p>
+                )}
+              </>
+            ) : (
+              <div className="flex items-center justify-center py-4">
+                <div className="size-5 animate-spin rounded-full border-2 border-indigo-600 border-t-transparent" />
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Edit form */}
         {editing && (
@@ -239,6 +372,45 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
               <textarea value={editDescription} onChange={(e) => setEditDescription(e.target.value)}
                 className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition" rows={2} />
             </div>
+
+            {/* Folder + Tags edit */}
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1">文件夹</label>
+                <select
+                  value={editFolderId ?? ""}
+                  onChange={(e) => setEditFolderId(e.target.value ? Number(e.target.value) : null)}
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition bg-white"
+                >
+                  <option value="">不分类</option>
+                  {folders.map((f: { id: number; name: string }) => (
+                    <option key={f.id} value={f.id}>{f.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1">标签</label>
+                <div className="flex flex-wrap gap-1">
+                  {allTags.map((t: { id: number; name: string; color: string }) => {
+                    const selected = editTagIds.includes(t.id);
+                    return (
+                      <button
+                        key={t.id}
+                        type="button"
+                        onClick={() => toggleEditTag(t.id)}
+                        className={`text-xs px-2.5 py-1 rounded-full font-medium transition border ${
+                          selected ? "text-white" : "text-gray-500 bg-white border-gray-200 hover:border-gray-300"
+                        }`}
+                        style={selected ? { backgroundColor: t.color, borderColor: t.color } : {}}
+                      >
+                        {t.name}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+
             <div className="grid gap-4 sm:grid-cols-2">
               <div>
                 <label className="block text-xs font-medium text-gray-500 mb-1">密码保护</label>

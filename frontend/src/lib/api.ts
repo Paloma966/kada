@@ -85,6 +85,8 @@ export const linksAPI = {
     domain?: string;
     password?: string;
     expires_at?: string;
+    folder_id?: number;
+    tag_ids?: number[];
     utm_source?: string;
     utm_medium?: string;
     utm_campaign?: string;
