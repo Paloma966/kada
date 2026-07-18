@@ -177,12 +177,6 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
     }
   };
 
-  const toggleEditTag = (tagId: number) => {
-    setEditTagIds(prev =>
-      prev.includes(tagId) ? prev.filter(id => id !== tagId) : [...prev, tagId]
-    );
-  };
-
   if (loading) {
     return (
       <div className="max-w-2xl mx-auto">
@@ -390,24 +384,37 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
               </div>
               <div>
                 <label className="block text-xs font-medium text-gray-500 mb-1">标签</label>
-                <div className="flex flex-wrap gap-1">
-                  {allTags.map((t: { id: number; name: string; color: string }) => {
-                    const selected = editTagIds.includes(t.id);
-                    return (
-                      <button
-                        key={t.id}
-                        type="button"
-                        onClick={() => toggleEditTag(t.id)}
-                        className={`text-xs px-2.5 py-1 rounded-full font-medium transition border ${
-                          selected ? "text-white" : "text-gray-500 bg-white border-gray-200 hover:border-gray-300"
-                        }`}
-                        style={selected ? { backgroundColor: t.color, borderColor: t.color } : {}}
+                <select
+                  value=""
+                  onChange={(e) => {
+                    const id = Number(e.target.value);
+                    if (id && !editTagIds.includes(id)) {
+                      setEditTagIds(prev => [...prev, id]);
+                    }
+                  }}
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition bg-white"
+                >
+                  <option value="">添加标签...</option>
+                  {allTags.filter((t: { id: number }) => !editTagIds.includes(t.id)).map((t: { id: number; name: string }) => (
+                    <option key={t.id} value={t.id}>{t.name}</option>
+                  ))}
+                </select>
+                {editTagIds.length > 0 && (
+                  <div className="flex flex-wrap gap-1 mt-1.5">
+                    {allTags.filter((t: { id: number }) => editTagIds.includes(t.id)).map((t: { id: number; name: string; color: string }) => (
+                      <span key={t.id}
+                        className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full text-white"
+                        style={{ backgroundColor: t.color }}
                       >
                         {t.name}
-                      </button>
-                    );
-                  })}
-                </div>
+                        <button type="button" onClick={() => setEditTagIds(prev => prev.filter(id => id !== t.id))}
+                          className="hover:bg-white/20 rounded-full p-0.5 -mr-1">
+                          <X className="size-2.5" />
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
 

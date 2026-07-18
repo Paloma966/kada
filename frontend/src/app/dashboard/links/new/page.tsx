@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Globe, Clock, Shield, Smartphone, Tags, Link2, Folder } from "lucide-react";
+import { Globe, Clock, Shield, Smartphone, Tags, Link2, Folder, X } from "lucide-react";
 import useSWR from "swr";
 import { linksAPI, domainsAPI, utmAPI, foldersAPI, tagsAPI } from "@/lib/api";
 import { getToken } from "@/lib/auth";
@@ -39,12 +39,6 @@ export default function CreateLinkPage() {
 
   const activeDomain = domain || "kada.click";
   const previewURL = `https://${activeDomain}/r/${shortCode || "abc123"}`;
-
-  const toggleTag = (tagId: number) => {
-    setSelectedTagIds(prev =>
-      prev.includes(tagId) ? prev.filter(id => id !== tagId) : [...prev, tagId]
-    );
-  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -153,31 +147,42 @@ export default function CreateLinkPage() {
                         标签
                       </span>
                     </label>
-                    <div className="flex flex-wrap gap-1.5 pt-1">
-                      {allTags.map((t: { id: number; name: string; color: string }) => {
-                        const isSelected = selectedTagIds.includes(t.id);
-                        return (
-                          <button
-                            key={t.id}
-                            type="button"
-                            onClick={() => toggleTag(t.id)}
-                            className={`text-xs px-3 py-1.5 rounded-full font-medium transition border ${
-                              isSelected
-                                ? "text-white shadow-sm"
-                                : "text-gray-600 bg-white border-gray-200 hover:border-gray-300"
-                            }`}
-                            style={isSelected ? { backgroundColor: t.color, borderColor: t.color } : {}}
+                    <select
+                      value=""
+                      onChange={(e) => {
+                        const id = Number(e.target.value);
+                        if (id && !selectedTagIds.includes(id)) {
+                          setSelectedTagIds(prev => [...prev, id]);
+                        }
+                      }}
+                      className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition bg-white"
+                    >
+                      <option value="">添加标签...</option>
+                      {allTags.filter((t: { id: number }) => !selectedTagIds.includes(t.id)).map((t: { id: number; name: string; color: string }) => (
+                        <option key={t.id} value={t.id}>{t.name}</option>
+                      ))}
+                    </select>
+                    {selectedTagIds.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5 mt-2">
+                        {allTags.filter((t: { id: number }) => selectedTagIds.includes(t.id)).map((t: { id: number; name: string; color: string }) => (
+                          <span key={t.id}
+                            className="inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full text-white"
+                            style={{ backgroundColor: t.color }}
                           >
                             {t.name}
-                          </button>
-                        );
-                      })}
-                      {allTags.length === 0 && (
-                        <p className="text-xs text-gray-400 py-1">
-                          还没有标签，去<a href="/dashboard/tags" className="text-indigo-600 hover:underline ml-1">标签管理</a>创建
-                        </p>
-                      )}
-                    </div>
+                            <button type="button" onClick={() => setSelectedTagIds(prev => prev.filter(id => id !== t.id))}
+                              className="hover:bg-white/20 rounded-full p-0.5 -mr-1">
+                              <X className="size-2.5" />
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    {allTags.length === 0 && (
+                      <p className="text-xs text-gray-400 py-1">
+                        还没有标签，去<a href="/dashboard/tags" className="text-indigo-600 hover:underline ml-1">标签管理</a>创建
+                      </p>
+                    )}
                   </div>
               </div>
 
