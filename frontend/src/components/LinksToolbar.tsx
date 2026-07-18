@@ -32,8 +32,6 @@ export function LinksToolbar({
   selectedTagId,
   onTagChange,
 }: LinksToolbarProps) {
-  const hasFilters = folders.length > 0 || tags.length > 0;
-
   return (
     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
       <div className="flex items-center gap-2 flex-1">
@@ -50,38 +48,34 @@ export function LinksToolbar({
         </div>
 
         {/* Folder filter */}
-        {folders.length > 0 && (
-          <div className="relative">
-            <select
-              value={selectedFolderId}
-              onChange={(e) => onFolderChange(Number(e.target.value))}
-              className="appearance-none rounded-lg border border-gray-200 bg-white py-2 pl-8 pr-8 text-sm text-gray-600 focus:border-indigo-300 focus:outline-none focus:ring-2 focus:ring-indigo-100 transition cursor-pointer"
-            >
-              <option value={0}>全部文件夹</option>
-              {folders.map((f) => (
-                <option key={f.id} value={f.id}>{f.name}</option>
-              ))}
-            </select>
-            <Folder className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-gray-400 pointer-events-none" />
-          </div>
-        )}
+        <div className="relative">
+          <select
+            value={selectedFolderId}
+            onChange={(e) => onFolderChange(Number(e.target.value))}
+            className="appearance-none rounded-lg border border-gray-200 bg-white py-2 pl-8 pr-8 text-sm text-gray-600 focus:border-indigo-300 focus:outline-none focus:ring-2 focus:ring-indigo-100 transition cursor-pointer"
+          >
+            <option value={0}>全部文件夹</option>
+            {folders.map((f) => (
+              <option key={f.id} value={f.id}>{f.name}</option>
+            ))}
+          </select>
+          <Folder className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-gray-400 pointer-events-none" />
+        </div>
 
         {/* Tag filter */}
-        {tags.length > 0 && (
-          <div className="relative">
-            <select
-              value={selectedTagId}
-              onChange={(e) => onTagChange(Number(e.target.value))}
-              className="appearance-none rounded-lg border border-gray-200 bg-white py-2 pl-8 pr-8 text-sm text-gray-600 focus:border-indigo-300 focus:outline-none focus:ring-2 focus:ring-indigo-100 transition cursor-pointer"
-            >
-              <option value={0}>全部标签</option>
-              {tags.map((t) => (
-                <option key={t.id} value={t.id}>{t.name}</option>
-              ))}
-            </select>
+        <div className="relative">
+          <select
+            value={selectedTagId}
+            onChange={(e) => onTagChange(Number(e.target.value))}
+            className="appearance-none rounded-lg border border-gray-200 bg-white py-2 pl-8 pr-8 text-sm text-gray-600 focus:border-indigo-300 focus:outline-none focus:ring-2 focus:ring-indigo-100 transition cursor-pointer"
+          >
+            <option value={0}>全部标签</option>
+            {tags.map((t) => (
+              <option key={t.id} value={t.id}>{t.name}</option>
+            ))}
+          </select>
             <Tag className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-gray-400 pointer-events-none" />
           </div>
-        )}
       </div>
 
       <div className="flex items-center gap-2">

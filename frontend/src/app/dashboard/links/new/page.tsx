@@ -146,8 +146,7 @@ export default function CreateLinkPage() {
                     ))}
                   </select>
                 </div>
-                {allTags.length > 0 && (
-                  <div>
+                <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1.5">
                       <span className="inline-flex items-center gap-1.5">
                         <Tags className="size-3.5 text-gray-400" />
@@ -173,9 +172,13 @@ export default function CreateLinkPage() {
                           </button>
                         );
                       })}
+                      {allTags.length === 0 && (
+                        <p className="text-xs text-gray-400 py-1">
+                          还没有标签，去<a href="/dashboard/tags" className="text-indigo-600 hover:underline ml-1">标签管理</a>创建
+                        </p>
+                      )}
                     </div>
                   </div>
-                )}
               </div>
 
               <div>
