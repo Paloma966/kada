@@ -24,9 +24,12 @@ interface LinkCardProps {
   link: LinkItem;
   onDelete: (id: number) => void;
   workspaceSlug?: string;
+  selectable?: boolean;
+  selected?: boolean;
+  onSelect?: (id: number, checked: boolean) => void;
 }
 
-export function LinkCard({ link, onDelete }: LinkCardProps) {
+export function LinkCard({ link, onDelete, selectable, selected, onSelect }: LinkCardProps) {
   const [copied, setCopied] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [showQR, setShowQR] = useState(false);
@@ -80,11 +83,25 @@ export function LinkCard({ link, onDelete }: LinkCardProps) {
 
   return (
     <>
-      <div className="group relative bg-white rounded-xl border border-gray-100 hover:border-gray-200 hover:shadow-md transition-all duration-200">
-        <Link
-          href={`/dashboard/links/${link.id}`}
-          className="block p-4 sm:p-5"
-        >
+      <div className={`group relative bg-white rounded-xl border transition-all duration-200 ${
+        selected ? "border-indigo-300 ring-2 ring-indigo-500/10 shadow-sm" : "border-gray-100 hover:border-gray-200 hover:shadow-md"
+      }`}>
+        <div className="flex items-start p-4 sm:p-5">
+          {selectable && (
+            <div className="pr-3 pt-0.5 shrink-0">
+              <input
+                type="checkbox"
+                checked={selected}
+                onChange={(e) => onSelect?.(link.id, e.target.checked)}
+                onClick={(e) => e.stopPropagation()}
+                className="size-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+              />
+            </div>
+          )}
+          <Link
+            href={`/dashboard/links/${link.id}`}
+            className="flex-1 min-w-0"
+          >
           <div className="flex items-start justify-between gap-4">
             {/* Left: Info */}
             <div className="flex-1 min-w-0">
@@ -175,7 +192,8 @@ export function LinkCard({ link, onDelete }: LinkCardProps) {
               </button>
             </div>
           </div>
-        </Link>
+          </Link>
+        </div>
       </div>
 
       {/* QR Code Modal */}

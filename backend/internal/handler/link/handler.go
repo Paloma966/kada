@@ -23,6 +23,8 @@ func (h *Handler) RegisterRoutes(r *gin.RouterGroup, authMW gin.HandlerFunc) {
 	r.Use(authMW)
 	r.POST("/links", h.Create)
 	r.GET("/links", h.List)
+	r.POST("/links/batch-delete", h.BatchDelete)
+	r.POST("/links/batch-tag", h.BatchTag)
 	r.GET("/links/:id", h.Get)
 	r.PATCH("/links/:id", h.Update)
 	r.DELETE("/links/:id", h.Delete)
@@ -122,4 +124,42 @@ func (h *Handler) Delete(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "链接已删除"})
+}
+
+// BatchDelete 批量删除链接
+func (h *Handler) BatchDelete(c *gin.Context) {
+	var req struct {
+		IDs []int64 `json:"ids" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请提供链接ID列表"})
+		return
+	}
+
+	count, err := h.svc.BatchDelete(c.Request.Context(), req.IDs, middleware.GetUserID(c))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"deleted": count})
+}
+
+// BatchTag 批量打标签
+func (h *Handler) BatchTag(c *gin.Context) {
+	var req struct {
+		IDs  []int64 `json:"ids" binding:"required"`
+		TagID int64  `json:"tag_id" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请提供链接ID和标签ID"})
+		return
+	}
+
+	if err := h.svc.BatchTag(c.Request.Context(), req.IDs, req.TagID, middleware.GetUserID(c)); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "批量打标签成功"})
 }

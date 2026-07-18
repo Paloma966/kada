@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { Plus, Link2 } from "lucide-react";
 import useSWR from "swr";
@@ -17,9 +17,23 @@ export default function DashboardPage() {
   const token = getToken();
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
+  const [searchInput, setSearchInput] = useState("");
+  const searchTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const [folderId, setFolderId] = useState(0);
   const [tagId, setTagId] = useState(0);
   const [sort, setSort] = useState("created_desc");
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [batchTagId, setBatchTagId] = useState<number>(0);
+
+  // 搜索防抖 300ms
+  useEffect(() => {
+    clearTimeout(searchTimer.current);
+    searchTimer.current = setTimeout(() => {
+      setSearch(searchInput);
+      setPage(1);
+    }, 300);
+    return () => clearTimeout(searchTimer.current);
+  }, [searchInput]);
 
   const { data, error, isLoading, mutate } = useSWR(
     token ? [`links`, page, search, folderId, tagId, sort] : null,
@@ -53,11 +67,51 @@ export default function DashboardPage() {
     }
   };
 
+  const handleSelect = (id: number, checked: boolean) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      checked ? next.add(id) : next.delete(id);
+      return next;
+    });
+  };
+
+  const handleSelectAll = () => {
+    if (selectedIds.size === links.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(links.map(l => l.id)));
+    }
+  };
+
+  const handleBatchDelete = async () => {
+    if (!token || selectedIds.size === 0) return;
+    try {
+      await linksAPI.batchDelete(token, Array.from(selectedIds));
+      toast.success(`已删除 ${selectedIds.size} 条链接`);
+      setSelectedIds(new Set());
+      mutate();
+    } catch {
+      toast.error("批量删除失败");
+    }
+  };
+
+  const handleBatchTag = async () => {
+    if (!token || selectedIds.size === 0 || batchTagId === 0) return;
+    try {
+      await linksAPI.batchTag(token, Array.from(selectedIds), batchTagId);
+      toast.success(`已为 ${selectedIds.size} 条链接添加标签`);
+      setBatchTagId(0);
+      mutate();
+    } catch {
+      toast.error("批量打标签失败");
+    }
+  };
+
   return (
     <div className="space-y-5">
       <LinksToolbar
-        search={search}
-        onSearchChange={(v) => { setSearch(v); setPage(1); }}
+        search={searchInput}
+        onSearchChange={(v) => setSearchInput(v)}
         totalCount={totalCount}
         folders={folders}
         tags={tags}
@@ -114,9 +168,63 @@ export default function DashboardPage() {
         </div>
       ) : (
         <div className="space-y-2">
+          {/* Select all bar */}
+          <div className="flex items-center gap-2 px-1">
+            <label className="flex items-center gap-2 text-sm text-gray-500 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={links.length > 0 && selectedIds.size === links.length}
+                onChange={handleSelectAll}
+                className="size-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+              />
+              全选
+            </label>
+            {selectedIds.size > 0 && (
+              <span className="text-xs text-gray-400">已选 {selectedIds.size} 条</span>
+            )}
+          </div>
+
           {links.map((link) => (
-            <LinkCard key={link.id} link={link} onDelete={handleDelete} />
+            <LinkCard
+              key={link.id}
+              link={link}
+              onDelete={handleDelete}
+              selectable
+              selected={selectedIds.has(link.id)}
+              onSelect={handleSelect}
+            />
           ))}
+
+          {/* Batch action bar */}
+          {selectedIds.size > 0 && (
+            <div className="sticky bottom-0 flex items-center justify-between gap-3 rounded-xl bg-white border border-gray-200 shadow-lg p-4 mt-4">
+              <span className="text-sm font-medium text-gray-700">已选 {selectedIds.size} 条链接</span>
+              <div className="flex items-center gap-2">
+                <select
+                  value={batchTagId}
+                  onChange={(e) => setBatchTagId(Number(e.target.value))}
+                  className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm text-gray-600 focus:border-indigo-300 focus:outline-none bg-white"
+                >
+                  <option value={0}>添加标签...</option>
+                  {tags.map((t: { id: number; name: string }) => (
+                    <option key={t.id} value={t.id}>{t.name}</option>
+                  ))}
+                </select>
+                <button onClick={handleBatchTag} disabled={batchTagId === 0}
+                  className="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed transition">
+                  批量打标签
+                </button>
+                <button onClick={handleBatchDelete}
+                  className="rounded-lg bg-red-50 px-3 py-1.5 text-sm font-medium text-red-600 hover:bg-red-100 transition">
+                  批量删除
+                </button>
+                <button onClick={() => setSelectedIds(new Set())}
+                  className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm text-gray-500 hover:bg-gray-50 transition">
+                  取消选择
+                </button>
+              </div>
+            </div>
+          )}
 
           {totalPages > 1 && (
             <div className="flex items-center justify-center gap-1 pt-6 pb-4">

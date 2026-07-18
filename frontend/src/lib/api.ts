@@ -117,6 +117,20 @@ export const linksAPI = {
       method: "DELETE",
       token,
     }),
+
+  batchDelete: (token: string, ids: number[]) =>
+    fetchAPI("/api/links/batch-delete", {
+      method: "POST",
+      token,
+      body: JSON.stringify({ ids }),
+    }),
+
+  batchTag: (token: string, ids: number[], tagId: number) =>
+    fetchAPI("/api/links/batch-tag", {
+      method: "POST",
+      token,
+      body: JSON.stringify({ ids, tag_id: tagId }),
+    }),
 };
 
 // ========== Analytics API ==========

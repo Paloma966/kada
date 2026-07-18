@@ -365,6 +365,29 @@ func (s *LinkService) Delete(ctx context.Context, linkID, userID int64) error {
 	return nil
 }
 
+// BatchDelete 批量删除链接
+func (s *LinkService) BatchDelete(ctx context.Context, ids []int64, userID int64) (int64, error) {
+	tag, err := s.db.Exec(ctx, `DELETE FROM links WHERE id = ANY($1) AND user_id = $2`, ids, userID)
+	if err != nil {
+		return 0, errors.New("批量删除失败")
+	}
+	return tag.RowsAffected(), nil
+}
+
+// BatchTag 批量打标签
+func (s *LinkService) BatchTag(ctx context.Context, ids []int64, tagID int64, userID int64) error {
+	for _, linkID := range ids {
+		// 验证链接属于该用户
+		var ownerID int64
+		err := s.db.QueryRow(ctx, `SELECT user_id FROM links WHERE id = $1`, linkID).Scan(&ownerID)
+		if err != nil || ownerID != userID {
+			continue
+		}
+		s.db.Exec(ctx, `INSERT INTO link_tags (link_id, tag_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`, linkID, tagID)
+	}
+	return nil
+}
+
 // LogClick 记录点击
 func (s *LinkService) LogClick(ctx context.Context, linkID int64, ip, userAgent, platform, referer string) {
 	s.db.Exec(ctx, `
