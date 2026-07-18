@@ -19,6 +19,8 @@ interface LinksToolbarProps {
   onFolderChange: (id: number) => void;
   selectedTagId: number;
   onTagChange: (id: number) => void;
+  sort: string;
+  onSortChange: (sort: string) => void;
 }
 
 export function LinksToolbar({
@@ -31,6 +33,8 @@ export function LinksToolbar({
   onFolderChange,
   selectedTagId,
   onTagChange,
+  sort,
+  onSortChange,
 }: LinksToolbarProps) {
   return (
     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -79,6 +83,16 @@ export function LinksToolbar({
       </div>
 
       <div className="flex items-center gap-2">
+        <select
+          value={sort}
+          onChange={(e) => onSortChange(e.target.value)}
+          className="rounded-lg border border-gray-200 bg-white py-2 pl-3 pr-7 text-sm text-gray-600 focus:border-indigo-300 focus:outline-none focus:ring-2 focus:ring-indigo-100 transition cursor-pointer appearance-none"
+        >
+          <option value="created_desc">最新创建</option>
+          <option value="created_asc">最早创建</option>
+          <option value="clicks_desc">点击最多</option>
+          <option value="clicks_asc">点击最少</option>
+        </select>
         <span className="text-sm text-gray-400">{totalCount} 条链接</span>
         <Link
           href="/dashboard/links/new"

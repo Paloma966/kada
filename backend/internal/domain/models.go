@@ -59,14 +59,23 @@ type CreateLinkRequest struct {
 
 type UpdateLinkRequest struct {
 	OriginalURL *string `json:"original_url"`
+	ShortCode   *string `json:"short_code"`
 	Title       *string `json:"title"`
 	Description *string `json:"description"`
 	ImageURL    *string `json:"image_url"`
+	Domain      *string `json:"domain"`
 	Password    *string `json:"password"`
 	ExpiresAt   *string `json:"expires_at"`
 	IsActive    *bool   `json:"is_active"`
 	FolderID    *int64  `json:"folder_id"`
 	TagIDs      []int64 `json:"tag_ids"`
+	UTMSource   *string `json:"utm_source"`
+	UTMMedium   *string `json:"utm_medium"`
+	UTMCampaign *string `json:"utm_campaign"`
+	UTMTerm     *string `json:"utm_term"`
+	UTMContent  *string `json:"utm_content"`
+	IosURL      *string `json:"ios_url"`
+	AndroidURL  *string `json:"android_url"`
 }
 
 type LinkTagInfo struct {

@@ -69,11 +69,12 @@ export const authAPI = {
 // ========== Links API ==========
 
 export const linksAPI = {
-  list: (token: string, page = 1, pageSize = 20, search = "", folderId = 0, tagId = 0) => {
+  list: (token: string, page = 1, pageSize = 20, search = "", folderId = 0, tagId = 0, sort = "created_desc") => {
     const params = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
     if (search) params.set("search", search);
     if (folderId > 0) params.set("folder_id", String(folderId));
     if (tagId > 0) params.set("tag_id", String(tagId));
+    if (sort) params.set("sort", sort);
     return fetchAPI(`/api/links?${params.toString()}`, { token });
   },
 

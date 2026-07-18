@@ -19,10 +19,11 @@ export default function DashboardPage() {
   const [search, setSearch] = useState("");
   const [folderId, setFolderId] = useState(0);
   const [tagId, setTagId] = useState(0);
+  const [sort, setSort] = useState("created_desc");
 
   const { data, error, isLoading, mutate } = useSWR(
-    token ? [`links`, page, search, folderId, tagId] : null,
-    () => linksAPI.list(token!, page, PAGE_SIZE, search, folderId, tagId)
+    token ? [`links`, page, search, folderId, tagId, sort] : null,
+    () => linksAPI.list(token!, page, PAGE_SIZE, search, folderId, tagId, sort)
   );
 
   const { data: folderData } = useSWR(
@@ -64,6 +65,8 @@ export default function DashboardPage() {
         onFolderChange={(id) => { setFolderId(id); setPage(1); }}
         selectedTagId={tagId}
         onTagChange={(id) => { setTagId(id); setPage(1); }}
+        sort={sort}
+        onSortChange={(s) => { setSort(s); setPage(1); }}
       />
 
       {error ? (

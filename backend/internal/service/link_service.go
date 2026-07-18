@@ -213,7 +213,7 @@ func (s *LinkService) CheckPassword(ctx context.Context, shortCode, password str
 }
 
 // List 获取用户链接列表
-func (s *LinkService) List(ctx context.Context, userID int64, page, pageSize int, search string, folderID, tagID int64) (*domain.PaginatedLinks, error) {
+func (s *LinkService) List(ctx context.Context, userID int64, page, pageSize int, search string, folderID, tagID int64, sort string) (*domain.PaginatedLinks, error) {
 	if page < 1 {
 		page = 1
 	}
@@ -244,8 +244,18 @@ func (s *LinkService) List(ctx context.Context, userID int64, page, pageSize int
 	var total int64
 	s.db.QueryRow(ctx, `SELECT COUNT(*) FROM links l `+where, args...).Scan(&total)
 
+	orderBy := "l.created_at DESC"
+	switch sort {
+	case "clicks_desc":
+		orderBy = "l.click_count DESC"
+	case "clicks_asc":
+		orderBy = "l.click_count ASC"
+	case "created_asc":
+		orderBy = "l.created_at ASC"
+	}
+
 	query := `SELECT l.id, l.short_code, l.original_url, COALESCE(l.title,''), COALESCE(l.description,''), COALESCE(l.image_url,''), l.domain, l.click_count, l.is_active, l.expires_at, l.created_at, l.updated_at, l.folder_id
-		FROM links l ` + where + ` ORDER BY l.created_at DESC LIMIT $` + strconv.Itoa(argIdx) + ` OFFSET $` + strconv.Itoa(argIdx+1)
+		FROM links l ` + where + ` ORDER BY ` + orderBy + ` LIMIT $` + strconv.Itoa(argIdx) + ` OFFSET $` + strconv.Itoa(argIdx+1)
 	args = append(args, pageSize, (page-1)*pageSize)
 
 	rows, err := s.db.Query(ctx, query, args...)
@@ -285,23 +295,46 @@ func (s *LinkService) Update(ctx context.Context, linkID, userID int64, req doma
 		passwordHash = &hash
 	}
 
+	// 校验自定义短码
+	if req.ShortCode != nil && *req.ShortCode != "" {
+		if !shortCodePattern.MatchString(*req.ShortCode) {
+			return nil, errors.New("短码格式无效：只允许字母、数字、下划线和连字符，长度4-20位")
+		}
+		var exists bool
+		s.db.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM links WHERE short_code = $1 AND id != $2)`, *req.ShortCode, linkID).Scan(&exists)
+		if exists {
+			return nil, errors.New("该短码已被占用，请换一个")
+		}
+	}
+
 	var info domain.LinkInfo
 	err := s.db.QueryRow(ctx, `
 		UPDATE links SET
 			original_url = COALESCE($2, original_url),
-			title = COALESCE($3, title),
-			description = COALESCE($4, description),
-			image_url = COALESCE($5, image_url),
-			password_hash = COALESCE($6, password_hash),
-			expires_at = COALESCE($7, expires_at),
-			is_active = COALESCE($8, is_active),
-			folder_id = COALESCE($9, folder_id),
+			short_code = COALESCE($3, short_code),
+			title = COALESCE($4, title),
+			description = COALESCE($5, description),
+			image_url = COALESCE($6, image_url),
+			domain = COALESCE($7, domain),
+			password_hash = COALESCE($8, password_hash),
+			expires_at = COALESCE($9, expires_at),
+			is_active = COALESCE($10, is_active),
+			folder_id = COALESCE($11, folder_id),
+			utm_source = COALESCE($12, utm_source),
+			utm_medium = COALESCE($13, utm_medium),
+			utm_campaign = COALESCE($14, utm_campaign),
+			utm_term = COALESCE($15, utm_term),
+			utm_content = COALESCE($16, utm_content),
+			ios_url = COALESCE($17, ios_url),
+			android_url = COALESCE($18, android_url),
 			updated_at = NOW()
-		WHERE id = $1 AND user_id = $10
+		WHERE id = $1 AND user_id = $19
 		RETURNING id, short_code, original_url, COALESCE(title,''), COALESCE(description,''), COALESCE(image_url,''), domain, click_count, is_active, expires_at, folder_id, created_at, updated_at
 	`,
-		linkID, req.OriginalURL, req.Title, req.Description, req.ImageURL,
-		passwordHash, expiresAt, req.IsActive, req.FolderID, userID,
+		linkID, req.OriginalURL, req.ShortCode, req.Title, req.Description, req.ImageURL,
+		req.Domain, passwordHash, expiresAt, req.IsActive, req.FolderID,
+		req.UTMSource, req.UTMMedium, req.UTMCampaign, req.UTMTerm, req.UTMContent,
+		req.IosURL, req.AndroidURL, userID,
 	).Scan(
 		&info.ID, &info.ShortCode, &info.OriginalURL, &info.Title, &info.Description,
 		&info.ImageURL, &info.Domain, &info.ClickCount, &info.IsActive,

@@ -8,7 +8,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import useSWR from "swr";
-import { linksAPI, foldersAPI, tagsAPI } from "@/lib/api";
+import { linksAPI, foldersAPI, tagsAPI, domainsAPI } from "@/lib/api";
 import { getToken } from "@/lib/auth";
 
 interface TagInfo {
@@ -61,10 +61,20 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
   const [editTitle, setEditTitle] = useState("");
   const [editDescription, setEditDescription] = useState("");
   const [editOriginalUrl, setEditOriginalUrl] = useState("");
+  const [editShortCode, setEditShortCode] = useState("");
+  const [editDomain, setEditDomain] = useState("");
   const [editPassword, setEditPassword] = useState("");
   const [editExpiresAt, setEditExpiresAt] = useState("");
   const [editFolderId, setEditFolderId] = useState<number | null>(null);
   const [editTagIds, setEditTagIds] = useState<number[]>([]);
+  const [editUtmSource, setEditUtmSource] = useState("");
+  const [editUtmMedium, setEditUtmMedium] = useState("");
+  const [editUtmCampaign, setEditUtmCampaign] = useState("");
+  const [editUtmTerm, setEditUtmTerm] = useState("");
+  const [editUtmContent, setEditUtmContent] = useState("");
+  const [editIosUrl, setEditIosUrl] = useState("");
+  const [editAndroidUrl, setEditAndroidUrl] = useState("");
+  const [editShowAdvanced, setEditShowAdvanced] = useState(false);
 
   // QR code
   const [showQR, setShowQR] = useState(false);
@@ -77,8 +87,10 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
   const token = getToken();
   const { data: folderData } = useSWR(token ? "folders" : null, () => foldersAPI.list(token!));
   const { data: tagData } = useSWR(token ? "tags" : null, () => tagsAPI.list(token!));
+  const { data: domainData } = useSWR(token ? "domains" : null, () => domainsAPI.list(token!));
   const folders = folderData?.folders ?? [];
   const allTags = tagData?.tags ?? [];
+  const verifiedDomains = (domainData?.domains ?? []).filter((d: { verified: boolean }) => d.verified);
 
   const fetchLink = () => {
     if (!token) return;
@@ -90,9 +102,18 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
         setEditTitle(l.title || "");
         setEditDescription(l.description || "");
         setEditOriginalUrl(l.original_url || "");
+        setEditShortCode(l.short_code || "");
+        setEditDomain(l.domain || "");
         setEditExpiresAt(l.expires_at ? l.expires_at.slice(0, 16) : "");
         setEditFolderId(l.folder_id ?? null);
         setEditTagIds((l.tags ?? []).map((t: TagInfo) => t.id));
+        setEditUtmSource(l.utm_source || "");
+        setEditUtmMedium(l.utm_medium || "");
+        setEditUtmCampaign(l.utm_campaign || "");
+        setEditUtmTerm(l.utm_term || "");
+        setEditUtmContent(l.utm_content || "");
+        setEditIosUrl(l.ios_url || "");
+        setEditAndroidUrl(l.android_url || "");
       })
       .catch(() => toast.error("加载链接失败"))
       .finally(() => setLoading(false));
@@ -152,6 +173,15 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
         original_url: editOriginalUrl,
         folder_id: editFolderId,
         tag_ids: editTagIds,
+        short_code: editShortCode || undefined,
+        domain: editDomain || undefined,
+        utm_source: editUtmSource || undefined,
+        utm_medium: editUtmMedium || undefined,
+        utm_campaign: editUtmCampaign || undefined,
+        utm_term: editUtmTerm || undefined,
+        utm_content: editUtmContent || undefined,
+        ios_url: editIosUrl || undefined,
+        android_url: editAndroidUrl || undefined,
       };
       if (editPassword) payload.password = editPassword;
       if (editExpiresAt) payload.expires_at = new Date(editExpiresAt).toISOString();
@@ -431,6 +461,59 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
                   className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition" />
               </div>
             </div>
+
+            {/* Advanced toggle */}
+            <button type="button" onClick={() => setEditShowAdvanced(!editShowAdvanced)}
+              className="text-xs text-indigo-600 hover:text-indigo-700 font-medium">
+              {editShowAdvanced ? "隐藏高级选项 ▲" : "展开高级选项 ▼"}
+            </button>
+
+            {editShowAdvanced && (
+              <div className="space-y-4 pt-2">
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 mb-1">短码</label>
+                  <input type="text" value={editShortCode} onChange={(e) => setEditShortCode(e.target.value.replace(/[^a-zA-Z0-9_-]/g, ""))}
+                    className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-mono focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition"
+                    placeholder="修改短码" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 mb-1">域名</label>
+                  <select value={editDomain} onChange={(e) => setEditDomain(e.target.value)}
+                    className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition bg-white">
+                    <option value="">kada.click（默认）</option>
+                    {verifiedDomains.map((d: { id: number; name: string }) => (
+                      <option key={d.id} value={d.name}>{d.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  {[["utm_source", "来源", editUtmSource, setEditUtmSource],
+                    ["utm_medium", "媒介", editUtmMedium, setEditUtmMedium],
+                    ["utm_campaign", "活动", editUtmCampaign, setEditUtmCampaign],
+                    ["utm_term", "关键词", editUtmTerm, setEditUtmTerm],
+                    ["utm_content", "内容", editUtmContent, setEditUtmContent],
+                  ].map(([key, label, value, setter]) => (
+                    <div key={key as string}>
+                      <label className="block text-xs font-medium text-gray-500 mb-1">UTM {label as string}</label>
+                      <input type="text" value={value as string} onChange={(e) => (setter as (v: string) => void)(e.target.value)}
+                        className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-mono focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition" />
+                    </div>
+                  ))}
+                </div>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-500 mb-1">iOS 深度链接</label>
+                    <input type="text" value={editIosUrl} onChange={(e) => setEditIosUrl(e.target.value)}
+                      className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-mono focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-500 mb-1">Android 深度链接</label>
+                    <input type="text" value={editAndroidUrl} onChange={(e) => setEditAndroidUrl(e.target.value)}
+                      className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-mono focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition" />
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
