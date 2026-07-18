@@ -201,3 +201,22 @@ type CreateUTMTemplateRequest struct {
 	UTMTerm     *string `json:"utm_term"`
 	UTMContent  *string `json:"utm_content"`
 }
+
+// ==================== API Token ====================
+
+type APIToken struct {
+	ID        int64      `json:"id"`
+	UserID    int64      `json:"user_id"`
+	Name      string     `json:"name"`
+	LastUsed  *time.Time `json:"last_used"`
+	CreatedAt time.Time  `json:"created_at"`
+}
+
+type CreateAPITokenRequest struct {
+	Name string `json:"name" binding:"required"`
+}
+
+type CreateAPITokenResponse struct {
+	Token     string   `json:"token"`
+	APIToken  APIToken `json:"api_token"`
+}

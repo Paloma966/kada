@@ -25,6 +25,7 @@ func (h *Handler) RegisterRoutes(r *gin.RouterGroup, authMW gin.HandlerFunc) {
 	r.GET("/links", h.List)
 	r.POST("/links/batch-delete", h.BatchDelete)
 	r.POST("/links/batch-tag", h.BatchTag)
+	r.GET("/links/export", h.ExportCSV)
 	r.GET("/links/:id", h.Get)
 	r.PATCH("/links/:id", h.Update)
 	r.DELETE("/links/:id", h.Delete)
@@ -162,4 +163,17 @@ func (h *Handler) BatchTag(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "批量打标签成功"})
+}
+
+// ExportCSV 导出链接数据为 CSV
+func (h *Handler) ExportCSV(c *gin.Context) {
+	csvStr, err := h.svc.ExportCSV(c.Request.Context(), middleware.GetUserID(c))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.Header("Content-Type", "text/csv; charset=utf-8")
+	c.Header("Content-Disposition", `attachment; filename="kada-links.csv"`)
+	c.String(http.StatusOK, csvStr)
 }

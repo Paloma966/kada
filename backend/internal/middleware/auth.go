@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"context"
 	"net/http"
 	"strings"
 
@@ -15,8 +16,13 @@ type Claims struct {
 	jwt.RegisteredClaims
 }
 
-// JWTAuth JWT 认证中间件
-func JWTAuth(secret string) gin.HandlerFunc {
+// TokenValidator API Token 验证接口
+type TokenValidator interface {
+	ValidateToken(ctx context.Context, rawToken string) (int64, error)
+}
+
+// JWTAuth JWT + API Token 认证中间件
+func JWTAuth(secret string, tokenValidator TokenValidator) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		authHeader := c.GetHeader("Authorization")
 		if authHeader == "" {
@@ -32,7 +38,25 @@ func JWTAuth(secret string) gin.HandlerFunc {
 			return
 		}
 
-		token, err := jwt.ParseWithClaims(parts[1], &Claims{}, func(t *jwt.Token) (interface{}, error) {
+		tokenStr := parts[1]
+
+		// 尝试 API Token 验证（以 kada_ 开头）
+		if strings.HasPrefix(tokenStr, "kada_") {
+			if tokenValidator != nil {
+				userID, err := tokenValidator.ValidateToken(c.Request.Context(), tokenStr)
+				if err == nil {
+					c.Set("user_id", userID)
+					c.Next()
+					return
+				}
+			}
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "无效的 API Token"})
+			c.Abort()
+			return
+		}
+
+		// JWT 验证
+		token, err := jwt.ParseWithClaims(tokenStr, &Claims{}, func(t *jwt.Token) (interface{}, error) {
 			return []byte(secret), nil
 		})
 		if err != nil || !token.Valid {

@@ -95,6 +95,24 @@ export default function DashboardPage() {
     }
   };
 
+  const handleExport = async () => {
+    if (!token) return;
+    try {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
+      const res = await fetch(`${apiUrl}/api/links/export`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = "kada-links.csv"; a.click();
+      URL.revokeObjectURL(url);
+      toast.success("导出成功");
+    } catch {
+      toast.error("导出失败");
+    }
+  };
+
   const handleBatchTag = async () => {
     if (!token || selectedIds.size === 0 || batchTagId === 0) return;
     try {
@@ -121,6 +139,7 @@ export default function DashboardPage() {
         onTagChange={(id) => { setTagId(id); setPage(1); }}
         sort={sort}
         onSortChange={(s) => { setSort(s); setPage(1); }}
+        onExport={handleExport}
       />
 
       {error ? (

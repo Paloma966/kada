@@ -16,6 +16,7 @@ import (
 	linkHandler "github.com/chun/kada-backend/internal/handler/link"
 	redirectHandler "github.com/chun/kada-backend/internal/handler/redirect"
 	tagHandler "github.com/chun/kada-backend/internal/handler/tag"
+	tokenHandler "github.com/chun/kada-backend/internal/handler/token"
 	utmHandler "github.com/chun/kada-backend/internal/handler/utm"
 	"github.com/chun/kada-backend/internal/infra"
 	"github.com/chun/kada-backend/internal/infra/sms"
@@ -63,6 +64,7 @@ func main() {
 	folderSvc := service.NewFolderService(db)
 	tagSvc := service.NewTagService(db)
 	utmSvc := service.NewUTMTemplateService(db)
+	tokenSvc := service.NewAPITokenService(db)
 
 	// 初始化 Handler 层
 	authH := authHandler.NewHandler(authSvc)
@@ -72,10 +74,11 @@ func main() {
 	folderH := folderHandler.NewHandler(folderSvc)
 	tagH := tagHandler.NewHandler(tagSvc)
 	utmH := utmHandler.NewHandler(utmSvc)
+	tokenH := tokenHandler.NewHandler(tokenSvc)
 	analyticsH := analyticsHandler.NewHandler(db)
 
-	// JWT 中间件
-	authMW := middleware.JWTAuth(cfg.JWTSecret)
+	// JWT + API Token 中间件
+	authMW := middleware.JWTAuth(cfg.JWTSecret, tokenSvc)
 
 	// 创建 Gin 实例
 	if os.Getenv("GIN_MODE") == "release" {
@@ -104,6 +107,7 @@ func main() {
 		folderH.RegisterRoutes(v1, authMW)
 		tagH.RegisterRoutes(v1, authMW)
 		utmH.RegisterRoutes(v1, authMW)
+		tokenH.RegisterRoutes(v1, authMW)
 		analyticsH.RegisterRoutes(v1, authMW)
 	}
 

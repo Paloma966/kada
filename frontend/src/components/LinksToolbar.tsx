@@ -1,6 +1,6 @@
 "use client";
 
-import { Search, Plus, Folder, Tag } from "lucide-react";
+import { Search, Plus, Folder, Tag, Download } from "lucide-react";
 import Link from "next/link";
 
 export interface FilterOption {
@@ -21,6 +21,7 @@ interface LinksToolbarProps {
   onTagChange: (id: number) => void;
   sort: string;
   onSortChange: (sort: string) => void;
+  onExport?: () => void;
 }
 
 export function LinksToolbar({
@@ -35,6 +36,7 @@ export function LinksToolbar({
   onTagChange,
   sort,
   onSortChange,
+  onExport,
 }: LinksToolbarProps) {
   return (
     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -94,6 +96,15 @@ export function LinksToolbar({
           <option value="clicks_asc">点击最少</option>
         </select>
         <span className="text-sm text-gray-400">{totalCount} 条链接</span>
+        {onExport && (
+          <button
+            type="button"
+            onClick={onExport}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50 transition"
+          >
+            <Download className="size-4" />
+          </button>
+        )}
         <Link
           href="/dashboard/links/new"
           className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 transition shadow-sm"

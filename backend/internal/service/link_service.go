@@ -6,8 +6,10 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"regexp"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -386,6 +388,42 @@ func (s *LinkService) BatchTag(ctx context.Context, ids []int64, tagID int64, us
 		s.db.Exec(ctx, `INSERT INTO link_tags (link_id, tag_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`, linkID, tagID)
 	}
 	return nil
+}
+
+// ExportCSV 导出用户链接为 CSV 字符串
+func (s *LinkService) ExportCSV(ctx context.Context, userID int64) (string, error) {
+	rows, err := s.db.Query(ctx, `
+		SELECT short_code, original_url, COALESCE(title,''), domain, click_count, is_active, created_at
+		FROM links WHERE user_id = $1 ORDER BY created_at DESC
+	`, userID)
+	if err != nil {
+		return "", errors.New("查询链接数据失败")
+	}
+	defer rows.Close()
+
+	var sb strings.Builder
+	sb.WriteString("短码,目标URL,标题,域名,点击量,状态,创建时间\n")
+	for rows.Next() {
+		var code, url, title, domain string
+		var clicks int64
+		var active bool
+		var created time.Time
+		rows.Scan(&code, &url, &title, &domain, &clicks, &active, &created)
+		status := "启用"
+		if !active {
+			status = "停用"
+		}
+		sb.WriteString(fmt.Sprintf("%s,%s,%s,%s,%d,%s,%s\n",
+			code, escapeCSV(url), escapeCSV(title), domain, clicks, status, created.Format("2006-01-02 15:04")))
+	}
+	return sb.String(), nil
+}
+
+func escapeCSV(s string) string {
+	if strings.ContainsAny(s, ",\"\n") {
+		return `"` + strings.ReplaceAll(s, `"`, `""`) + `"`
+	}
+	return s
 }
 
 // LogClick 记录点击

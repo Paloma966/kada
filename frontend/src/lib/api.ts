@@ -238,6 +238,26 @@ export const domainsAPI = {
     }),
 };
 
+// ========== API Tokens ==========
+
+export const tokensAPI = {
+  list: (token: string) =>
+    fetchAPI("/api/api-tokens", { token }),
+
+  create: (token: string, name: string) =>
+    fetchAPI("/api/api-tokens", {
+      method: "POST",
+      token,
+      body: JSON.stringify({ name }),
+    }),
+
+  delete: (token: string, id: number) =>
+    fetchAPI(`/api/api-tokens/${id}`, {
+      method: "DELETE",
+      token,
+    }),
+};
+
 // ========== UTM Templates API ==========
 
 export const utmAPI = {
