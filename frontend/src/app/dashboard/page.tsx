@@ -5,7 +5,7 @@ import Link from "next/link";
 import { Plus, Link2 } from "lucide-react";
 import useSWR from "swr";
 import { toast } from "sonner";
-import { linksAPI, foldersAPI, tagsAPI } from "@/lib/api";
+import { linksAPI, foldersAPI, tagsAPI, workspacesAPI } from "@/lib/api";
 import { getToken } from "@/lib/auth";
 import { LinkCard, LinkCardPlaceholder } from "@/components/LinkCard";
 import { LinksToolbar } from "@/components/LinksToolbar";
@@ -21,6 +21,7 @@ export default function DashboardPage() {
   const searchTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const [folderId, setFolderId] = useState(0);
   const [tagId, setTagId] = useState(0);
+  const [workspaceId, setWorkspaceId] = useState(0);
   const [sort, setSort] = useState("created_desc");
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [batchTagId, setBatchTagId] = useState<number>(0);
@@ -36,8 +37,8 @@ export default function DashboardPage() {
   }, [searchInput]);
 
   const { data, error, isLoading, mutate } = useSWR(
-    token ? [`links`, page, search, folderId, tagId, sort] : null,
-    () => linksAPI.list(token!, page, PAGE_SIZE, search, folderId, tagId, sort)
+    token ? [`links`, page, search, folderId, tagId, workspaceId, sort] : null,
+    () => linksAPI.list(token!, page, PAGE_SIZE, search, folderId, tagId, workspaceId, sort)
   );
 
   const { data: folderData } = useSWR(
@@ -50,11 +51,17 @@ export default function DashboardPage() {
     () => tagsAPI.list(token!)
   );
 
+  const { data: workspaceData } = useSWR(
+    token ? "workspaces" : null,
+    () => workspacesAPI.list(token!)
+  );
+
   const links: LinkItem[] = data?.links ?? [];
   const totalCount: number = data?.total_count ?? 0;
   const totalPages = Math.ceil(totalCount / PAGE_SIZE);
   const folders = folderData?.folders ?? [];
   const tags = tagData?.tags ?? [];
+  const workspaces = workspaceData?.workspaces ?? [];
 
   const handleDelete = async (id: number) => {
     if (!token) return;
@@ -133,10 +140,13 @@ export default function DashboardPage() {
         totalCount={totalCount}
         folders={folders}
         tags={tags}
+        workspaces={workspaces}
         selectedFolderId={folderId}
         onFolderChange={(id) => { setFolderId(id); setPage(1); }}
         selectedTagId={tagId}
         onTagChange={(id) => { setTagId(id); setPage(1); }}
+        selectedWorkspaceId={workspaceId}
+        onWorkspaceChange={(id) => { setWorkspaceId(id); setPage(1); }}
         sort={sort}
         onSortChange={(s) => { setSort(s); setPage(1); }}
         onExport={handleExport}

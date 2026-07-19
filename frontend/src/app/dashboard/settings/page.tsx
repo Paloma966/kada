@@ -1,10 +1,10 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { User, Mail, Phone, Pencil, Check, X, Shield, Calendar, Key, Copy, Trash2, Plus } from "lucide-react";
+import { User, Mail, Phone, Pencil, Check, X, Shield, Calendar, Key, Copy, Trash2, Plus, Building2, Globe } from "lucide-react";
 import { toast } from "sonner";
 import useSWR from "swr";
-import { authAPI, tokensAPI } from "@/lib/api";
+import { authAPI, tokensAPI, workspacesAPI } from "@/lib/api";
 import { getToken, getUser, setUser } from "@/lib/auth";
 
 export default function SettingsPage() {
@@ -70,6 +70,43 @@ export default function SettingsPage() {
       await tokensAPI.delete(token, id);
       mutateTokens();
       toast.success("Token 已删除");
+    } catch {
+      toast.error("删除失败");
+    }
+  };
+
+  // Workspaces
+  const { data: workspaceData, mutate: mutateWorkspaces } = useSWR(
+    token ? "workspaces" : null,
+    () => workspacesAPI.list(token!)
+  );
+  const workspaces = workspaceData?.workspaces ?? [];
+  const [newWorkspaceName, setNewWorkspaceName] = useState("");
+  const [newWorkspaceSlug, setNewWorkspaceSlug] = useState("");
+  const [creatingWs, setCreatingWs] = useState(false);
+
+  const handleCreateWorkspace = async () => {
+    if (!token || !newWorkspaceName.trim() || !newWorkspaceSlug.trim()) return;
+    setCreatingWs(true);
+    try {
+      await workspacesAPI.create(token, newWorkspaceName.trim(), newWorkspaceSlug.trim().toLowerCase());
+      setNewWorkspaceName("");
+      setNewWorkspaceSlug("");
+      mutateWorkspaces();
+      toast.success("工作区已创建");
+    } catch {
+      toast.error("创建失败");
+    } finally {
+      setCreatingWs(false);
+    }
+  };
+
+  const handleDeleteWorkspace = async (id: number) => {
+    if (!token) return;
+    try {
+      await workspacesAPI.delete(token, id);
+      mutateWorkspaces();
+      toast.success("工作区已删除");
     } catch {
       toast.error("删除失败");
     }
@@ -229,6 +266,70 @@ export default function SettingsPage() {
             </div>
           ) : (
             <p className="text-sm text-gray-400 py-2">暂无 API Token，创建一个用于外部程序调用 API</p>
+          )}
+        </div>
+      </div>
+
+      {/* Workspaces Card */}
+      <div className="rounded-xl border border-gray-100 bg-white shadow-sm overflow-hidden">
+        <div className="border-b border-gray-100 px-6 py-4">
+          <div className="flex items-center gap-2">
+            <Building2 className="size-4 text-gray-500" />
+            <h2 className="font-semibold text-gray-900">工作区</h2>
+          </div>
+        </div>
+
+        <div className="px-6 py-5 space-y-4">
+          {/* Create workspace */}
+          <div className="flex items-center gap-2">
+            <input
+              type="text" value={newWorkspaceName}
+              onChange={(e) => setNewWorkspaceName(e.target.value)}
+              className="flex-1 rounded-lg border border-gray-200 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition"
+              placeholder="工作区名称，如：个人项目"
+              onKeyDown={(e) => { if (e.key === "Enter") handleCreateWorkspace(); }}
+            />
+            <input
+              type="text" value={newWorkspaceSlug}
+              onChange={(e) => setNewWorkspaceSlug(e.target.value.replace(/[^a-z0-9-]/g, ""))}
+              className="w-36 rounded-lg border border-gray-200 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition font-mono"
+              placeholder="slug"
+              onKeyDown={(e) => { if (e.key === "Enter") handleCreateWorkspace(); }}
+            />
+            <button
+              onClick={handleCreateWorkspace}
+              disabled={creatingWs || !newWorkspaceName.trim() || !newWorkspaceSlug.trim()}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed transition shrink-0"
+            >
+              <Plus className="size-3.5" /> 创建
+            </button>
+          </div>
+
+          {/* Workspace list */}
+          {workspaces.length > 0 ? (
+            <div className="space-y-1">
+              {workspaces.map((w: { id: number; name: string; slug: string; link_count: number; created_at: string }) => (
+                <div key={w.id} className="flex items-center justify-between py-2 px-3 rounded-lg hover:bg-gray-50 transition">
+                  <div className="flex items-center gap-2">
+                    <Globe className="size-4 text-gray-400" />
+                    <div>
+                      <p className="text-sm font-medium text-gray-900">{w.name}</p>
+                      <p className="text-xs text-gray-400">
+                        {w.slug} · {w.link_count ?? 0} 条链接 · {new Date(w.created_at).toLocaleDateString("zh-CN")}
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => handleDeleteWorkspace(w.id)}
+                    className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition"
+                  >
+                    <Trash2 className="size-3.5" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-gray-400 py-2">暂无工作区，创建一个来组织你的链接</p>
           )}
         </div>
       </div>

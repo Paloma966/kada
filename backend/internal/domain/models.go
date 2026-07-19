@@ -217,6 +217,32 @@ type CreateAPITokenRequest struct {
 }
 
 type CreateAPITokenResponse struct {
-	Token     string   `json:"token"`
-	APIToken  APIToken `json:"api_token"`
+	Token    string   `json:"token"`
+	APIToken APIToken `json:"api_token"`
+}
+
+// ---- 工作区 ----
+
+type Workspace struct {
+	ID        int64     `json:"id"`
+	Name      string    `json:"name"`
+	Slug      string    `json:"slug"`
+	UserID    int64     `json:"user_id"`
+	LinkCount int64     `json:"link_count"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+type CreateWorkspaceRequest struct {
+	Name string `json:"name" binding:"required"`
+	Slug string `json:"slug" binding:"required"`
+}
+
+type UpdateWorkspaceRequest struct {
+	Name *string `json:"name"`
+	Slug *string `json:"slug"`
+}
+
+type WorkspaceListResponse struct {
+	Workspaces []Workspace `json:"workspaces"`
 }

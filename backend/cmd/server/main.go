@@ -18,6 +18,7 @@ import (
 	tagHandler "github.com/chun/kada-backend/internal/handler/tag"
 	tokenHandler "github.com/chun/kada-backend/internal/handler/token"
 	utmHandler "github.com/chun/kada-backend/internal/handler/utm"
+	workspaceHandler "github.com/chun/kada-backend/internal/handler/workspace"
 	"github.com/chun/kada-backend/internal/infra"
 	"github.com/chun/kada-backend/internal/infra/sms"
 	"github.com/chun/kada-backend/internal/middleware"
@@ -57,14 +58,21 @@ func main() {
 		log.Println("⚠️  未配置短信服务，验证码将只打印在日志中")
 	}
 
+	// 初始化缓存服务（如果 Redis 可用）
+	var cacheSvc *service.CacheService
+	if redisClient != nil {
+		cacheSvc = service.NewCacheService(redisClient)
+	}
+
 	// 初始化 Service 层
 	authSvc := service.NewAuthService(db, cfg.JWTSecret, cfg.JWTExpires, smsSender)
-	linkSvc := service.NewLinkService(db, cfg.BaseURL)
+	linkSvc := service.NewLinkService(db, cfg.BaseURL, cacheSvc)
 	domainSvc := service.NewDomainService(db)
 	folderSvc := service.NewFolderService(db)
 	tagSvc := service.NewTagService(db)
 	utmSvc := service.NewUTMTemplateService(db)
 	tokenSvc := service.NewAPITokenService(db)
+	workspaceSvc := service.NewWorkspaceService(db)
 
 	// 初始化 Handler 层
 	authH := authHandler.NewHandler(authSvc)
@@ -75,16 +83,28 @@ func main() {
 	tagH := tagHandler.NewHandler(tagSvc)
 	utmH := utmHandler.NewHandler(utmSvc)
 	tokenH := tokenHandler.NewHandler(tokenSvc)
+	workspaceH := workspaceHandler.NewHandler(workspaceSvc)
 	analyticsH := analyticsHandler.NewHandler(db)
 
 	// JWT + API Token 中间件
 	authMW := middleware.JWTAuth(cfg.JWTSecret, tokenSvc)
+
+	// 速率限制中间件
+	var rateLimiter *middleware.RateLimiter
+	if redisClient != nil {
+		rateLimiter = middleware.NewRateLimiter(redisClient)
+	}
 
 	// 创建 Gin 实例
 	if os.Getenv("GIN_MODE") == "release" {
 		gin.SetMode(gin.ReleaseMode)
 	}
 	r := gin.Default()
+
+	// 全局速率限制（如果 Redis 可用）
+	if rateLimiter != nil {
+		r.Use(rateLimiter.Normal())
+	}
 
 	// 健康检查
 	r.GET("/api/health", func(c *gin.Context) {
@@ -95,19 +115,29 @@ func main() {
 		})
 	})
 
-	// 短链重定向（公开端点）
-	redirectH.RegisterRoutes(r)
+	// 短链重定向（公开端点，高流量速率限制）
+	var redirectMW gin.HandlerFunc
+	if rateLimiter != nil {
+		redirectMW = rateLimiter.Redirect()
+	}
+	redirectH.RegisterRoutes(r, redirectMW)
 
 	// API v1 路由组
 	v1 := r.Group("/api")
 	{
-		authH.RegisterRoutes(v1, authMW)
+		// 认证路由（严格速率限制）
+		var strictMW gin.HandlerFunc
+		if rateLimiter != nil {
+			strictMW = rateLimiter.Strict()
+		}
+		authH.RegisterRoutes(v1, authMW, strictMW)
 		linkH.RegisterRoutes(v1, authMW)
 		domainH.RegisterRoutes(v1, authMW)
 		folderH.RegisterRoutes(v1, authMW)
 		tagH.RegisterRoutes(v1, authMW)
 		utmH.RegisterRoutes(v1, authMW)
 		tokenH.RegisterRoutes(v1, authMW)
+		workspaceH.RegisterRoutes(v1, authMW)
 		analyticsH.RegisterRoutes(v1, authMW)
 	}
 

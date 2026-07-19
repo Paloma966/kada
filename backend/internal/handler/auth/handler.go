@@ -18,11 +18,16 @@ func NewHandler(svc *service.AuthService) *Handler {
 	return &Handler{svc: svc}
 }
 
-func (h *Handler) RegisterRoutes(r *gin.RouterGroup, authMW gin.HandlerFunc) {
-	r.POST("/auth/send-sms-code", h.SendSMSCode)
-	r.POST("/auth/login-by-phone", h.LoginByPhone)
-	r.POST("/auth/login-by-email", h.LoginByEmail)
-	r.POST("/auth/register-by-email", h.RegisterByEmail)
+func (h *Handler) RegisterRoutes(r *gin.RouterGroup, authMW gin.HandlerFunc, strictMW ...gin.HandlerFunc) {
+	// 公开路由（可施加严格速率限制）
+	public := r.Group("")
+	if len(strictMW) > 0 && strictMW[0] != nil {
+		public.Use(strictMW[0])
+	}
+	public.POST("/auth/send-sms-code", h.SendSMSCode)
+	public.POST("/auth/login-by-phone", h.LoginByPhone)
+	public.POST("/auth/login-by-email", h.LoginByEmail)
+	public.POST("/auth/register-by-email", h.RegisterByEmail)
 
 	// 需要认证的路由
 	auth := r.Group("").Use(authMW)
