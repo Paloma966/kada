@@ -81,6 +81,9 @@ func JWTAuth(secret string, tokenValidator TokenValidator) gin.HandlerFunc {
 
 // GetUserID 从 gin.Context 获取当前用户 ID
 func GetUserID(c *gin.Context) int64 {
-	id, _ := c.Get("user_id")
+	id, exists := c.Get("user_id")
+	if !exists || id == nil {
+		return 0
+	}
 	return id.(int64)
 }
