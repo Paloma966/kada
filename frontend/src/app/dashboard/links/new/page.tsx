@@ -3,9 +3,9 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Globe, Clock, Shield, Smartphone, Tags, Link2, Folder, X } from "lucide-react";
+import { Globe, Clock, Shield, Smartphone, Tags, Link2, Folder, X, Building2 } from "lucide-react";
 import useSWR from "swr";
-import { linksAPI, domainsAPI, utmAPI, foldersAPI, tagsAPI } from "@/lib/api";
+import { linksAPI, domainsAPI, utmAPI, foldersAPI, tagsAPI, workspacesAPI } from "@/lib/api";
 import { getToken } from "@/lib/auth";
 
 export default function CreateLinkPage() {
@@ -21,6 +21,7 @@ export default function CreateLinkPage() {
   const [expiresAt, setExpiresAt] = useState("");
   const [utmTemplateId, setUtmTemplateId] = useState<number | null>(null);
   const [folderId, setFolderId] = useState<number | null>(null);
+  const [workspaceId, setWorkspaceId] = useState<number | null>(null);
   const [selectedTagIds, setSelectedTagIds] = useState<number[]>([]);
   const [iosUrl, setIosUrl] = useState("");
   const [androidUrl, setAndroidUrl] = useState("");
@@ -30,12 +31,14 @@ export default function CreateLinkPage() {
   const { data: utmData } = useSWR(token ? "utm-templates" : null, () => utmAPI.list(token!));
   const { data: folderData } = useSWR(token ? "folders" : null, () => foldersAPI.list(token!));
   const { data: tagData } = useSWR(token ? "tags" : null, () => tagsAPI.list(token!));
+  const { data: workspaceData } = useSWR(token ? "workspaces" : null, () => workspacesAPI.list(token!));
 
   const verifiedDomains = (domainData?.domains ?? []).filter((d: { verified: boolean }) => d.verified);
   const utmTemplates = utmData?.templates ?? [];
   const selectedTemplate = utmTemplates.find((t: { id: number }) => t.id === utmTemplateId);
   const folders = folderData?.folders ?? [];
   const allTags = tagData?.tags ?? [];
+  const workspaces = workspaceData?.workspaces ?? [];
 
   const activeDomain = domain || "kada.click";
   const previewURL = `https://${activeDomain}/r/${shortCode || "abc123"}`;
@@ -54,6 +57,7 @@ export default function CreateLinkPage() {
         password: password || undefined,
         expires_at: expiresAt || undefined,
         folder_id: folderId ?? undefined,
+        workspace_id: workspaceId ?? undefined,
         tag_ids: selectedTagIds.length > 0 ? selectedTagIds : undefined,
         utm_source: selectedTemplate?.utm_source || undefined,
         utm_medium: selectedTemplate?.utm_medium || undefined,
@@ -120,8 +124,8 @@ export default function CreateLinkPage() {
                 />
               </div>
 
-              {/* Folder & Tags */}
-              <div className="grid grid-cols-2 gap-4">
+              {/* Folder, Workspace & Tags */}
+              <div className="grid grid-cols-3 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1.5">
                     <span className="inline-flex items-center gap-1.5">
@@ -140,6 +144,26 @@ export default function CreateLinkPage() {
                     ))}
                   </select>
                 </div>
+                {workspaces.length > 0 && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                      <span className="inline-flex items-center gap-1.5">
+                        <Building2 className="size-3.5 text-gray-400" />
+                        工作区
+                      </span>
+                    </label>
+                    <select
+                      value={workspaceId ?? ""}
+                      onChange={(e) => setWorkspaceId(e.target.value ? Number(e.target.value) : null)}
+                      className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition bg-white"
+                    >
+                      <option value="">默认</option>
+                      {workspaces.map((w: { id: number; name: string }) => (
+                        <option key={w.id} value={w.id}>{w.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
                 <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1.5">
                       <span className="inline-flex items-center gap-1.5">

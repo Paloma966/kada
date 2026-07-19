@@ -23,10 +23,15 @@ var shortCodePattern = regexp.MustCompile(`^[a-zA-Z0-9_-]{4,20}$`)
 type LinkService struct {
 	db      *pgxpool.Pool
 	baseURL string
+	cache   *CacheService
 }
 
-func NewLinkService(db *pgxpool.Pool, baseURL string) *LinkService {
-	return &LinkService{db: db, baseURL: baseURL}
+func NewLinkService(db *pgxpool.Pool, baseURL string, cache ...*CacheService) *LinkService {
+	var c *CacheService
+	if len(cache) > 0 {
+		c = cache[0]
+	}
+	return &LinkService{db: db, baseURL: baseURL, cache: c}
 }
 
 // Create 创建短链接
@@ -91,6 +96,12 @@ func (s *LinkService) Create(ctx context.Context, userID int64, req domain.Creat
 	}
 
 	info.ShortURL = s.buildShortURL(info.Domain, info.ShortCode)
+
+	// 写入缓存
+	if s.cache != nil {
+		s.cache.SetLink(ctx, &info)
+	}
+
 	return &info, nil
 }
 
@@ -146,8 +157,20 @@ func (s *LinkService) GetByID(ctx context.Context, linkID, userID int64) (*domai
 	return &info, nil
 }
 
-// GetByCode 根据短码获取链接
+// GetByCode 根据短码获取链接（优先从缓存读取）
 func (s *LinkService) GetByCode(ctx context.Context, shortCode string) (*domain.LinkInfo, error) {
+	// 尝试从缓存获取
+	if s.cache != nil {
+		if info, ok := s.cache.GetLink(ctx, shortCode); ok {
+			// 检查是否过期
+			if info.ExpiresAt != nil && info.ExpiresAt.Before(time.Now()) {
+				s.cache.InvalidateLink(ctx, shortCode)
+				return nil, errors.New("链接已过期")
+			}
+			return info, nil
+		}
+	}
+
 	var info domain.LinkInfo
 	err := s.db.QueryRow(ctx, `
 		SELECT id, short_code, original_url, COALESCE(title,''), COALESCE(description,''), COALESCE(image_url,''), domain, click_count, is_active, expires_at, created_at, updated_at
@@ -167,6 +190,12 @@ func (s *LinkService) GetByCode(ctx context.Context, shortCode string) (*domain.
 	}
 
 	info.ShortURL = s.buildShortURL(info.Domain, info.ShortCode)
+
+	// 写入缓存
+	if s.cache != nil {
+		s.cache.SetLink(ctx, &info)
+	}
+
 	return &info, nil
 }
 
@@ -215,7 +244,7 @@ func (s *LinkService) CheckPassword(ctx context.Context, shortCode, password str
 }
 
 // List 获取用户链接列表
-func (s *LinkService) List(ctx context.Context, userID int64, page, pageSize int, search string, folderID, tagID int64, sort string) (*domain.PaginatedLinks, error) {
+func (s *LinkService) List(ctx context.Context, userID int64, page, pageSize int, search string, folderID, tagID, workspaceID int64, sort string) (*domain.PaginatedLinks, error) {
 	if page < 1 {
 		page = 1
 	}
@@ -240,6 +269,11 @@ func (s *LinkService) List(ctx context.Context, userID int64, page, pageSize int
 	if tagID > 0 {
 		where += " AND l.id IN (SELECT link_id FROM link_tags WHERE tag_id = $" + strconv.Itoa(argIdx) + ")"
 		args = append(args, tagID)
+		argIdx++
+	}
+	if workspaceID > 0 {
+		where += " AND l.workspace_id = $" + strconv.Itoa(argIdx)
+		args = append(args, workspaceID)
 		argIdx++
 	}
 
@@ -296,6 +330,10 @@ func (s *LinkService) Update(ctx context.Context, linkID, userID int64, req doma
 		hash := hashPassword(*req.Password)
 		passwordHash = &hash
 	}
+
+	// 获取旧短码（用于缓存失效）
+	var oldShortCode string
+	s.db.QueryRow(ctx, `SELECT short_code FROM links WHERE id = $1`, linkID).Scan(&oldShortCode)
 
 	// 校验自定义短码
 	if req.ShortCode != nil && *req.ShortCode != "" {
@@ -354,15 +392,33 @@ func (s *LinkService) Update(ctx context.Context, linkID, userID int64, req doma
 		}
 	}
 
+	// 使缓存失效
+	if s.cache != nil {
+		if oldShortCode != "" {
+			s.cache.InvalidateLink(ctx, oldShortCode)
+		}
+		if info.ShortCode != oldShortCode {
+			s.cache.InvalidateLink(ctx, info.ShortCode)
+		}
+	}
+
 	info.ShortURL = s.buildShortURL(info.Domain, info.ShortCode)
 	return &info, nil
 }
 
 // Delete 删除链接
 func (s *LinkService) Delete(ctx context.Context, linkID, userID int64) error {
+	// 获取短码用于缓存失效
+	var shortCode string
+	s.db.QueryRow(ctx, `SELECT short_code FROM links WHERE id = $1`, linkID).Scan(&shortCode)
+
 	_, err := s.db.Exec(ctx, `DELETE FROM links WHERE id = $1 AND user_id = $2`, linkID, userID)
 	if err != nil {
 		return errors.New("删除链接失败")
+	}
+
+	if s.cache != nil && shortCode != "" {
+		s.cache.InvalidateLink(ctx, shortCode)
 	}
 	return nil
 }

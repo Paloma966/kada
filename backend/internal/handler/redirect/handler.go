@@ -20,9 +20,13 @@ func NewHandler(svc *service.LinkService) *Handler {
 	return &Handler{svc: svc}
 }
 
-func (h *Handler) RegisterRoutes(r *gin.Engine) {
-	r.GET("/r/:code", h.Redirect)
-	r.POST("/r/:code/verify-password", h.VerifyPassword)
+func (h *Handler) RegisterRoutes(r *gin.Engine, mw ...gin.HandlerFunc) {
+	rg := r.Group("/r")
+	if len(mw) > 0 && mw[0] != nil {
+		rg.Use(mw[0])
+	}
+	rg.GET("/:code", h.Redirect)
+	rg.POST("/:code/verify-password", h.VerifyPassword)
 }
 
 // Redirect 短链重定向（含平台检测和密码检查）
@@ -78,7 +82,7 @@ func (h *Handler) VerifyPassword(c *gin.Context) {
 	platform := ua.Detect(userAgent)
 	ip := c.ClientIP()
 	referer := c.GetHeader("Referer")
-	go h.svc.LogClick(c.Request.Context(), info.ID, ip, userAgent, string(platform), referer)
+	go h.svc.LogClick(context.Background(), info.ID, ip, userAgent, string(platform), referer)
 
 	if ua.NeedsIntermediatePage(platform) {
 		h.renderIntermediatePage(c, info.OriginalURL, platform)
