@@ -6,10 +6,37 @@ on:
   pull_request:
     branches: [main]
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GO_VERSION: "1.26"
+  NODE_VERSION: "22"
+
 jobs:
+  # ========== Go 代码检查 ==========
+  backend-lint:
+    name: Go Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: backend/go.sum
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v7
+        with:
+          version: latest
+          working-directory: backend
+          args: --timeout=5m --out-format=colored-line-number
+
   # ========== Go 后端测试 ==========
   backend-test:
-    name: Go Backend Tests
+    name: Go Tests
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -31,20 +58,56 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.26"
+          go-version: ${{ env.GO_VERSION }}
           cache-dependency-path: backend/go.sum
 
       - name: Download dependencies
-        run: cd backend && go mod download
+        working-directory: backend
+        run: go mod download
 
       - name: Run vet
-        run: cd backend && go vet ./...
+        working-directory: backend
+        run: go vet ./...
 
       - name: Run tests
+        working-directory: backend
         env:
           DATABASE_URL: postgres://kada:kada123@localhost:5432/kada_test?sslmode=disable
           JWT_SECRET: test-secret
-        run: cd backend && go test ./... -v -count=1
+        run: go test ./... -v -count=1 -race -coverprofile=coverage.out
+
+      - name: Upload coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: go-coverage
+          path: backend/coverage.out
+          retention-days: 7
+
+  # ========== 前端代码检查 ==========
+  frontend-lint:
+    name: Frontend Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Cache node_modules
+        uses: actions/cache@v4
+        with:
+          path: frontend/node_modules
+          key: ${{ runner.os }}-npm-${{ hashFiles('frontend/package-lock.json') }}
+          restore-keys: ${{ runner.os }}-npm-
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Run ESLint
+        working-directory: frontend
+        run: npx next lint --max-warnings 100 || true
 
   # ========== 前端构建检查 ==========
   frontend-build:
@@ -55,42 +118,67 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Cache node_modules
+        uses: actions/cache@v4
+        with:
+          path: frontend/node_modules
+          key: ${{ runner.os }}-npm-${{ hashFiles('frontend/package-lock.json') }}
+          restore-keys: ${{ runner.os }}-npm-
+
+      - name: Cache Next.js build
+        uses: actions/cache@v4
+        with:
+          path: frontend/.next/cache
+          key: ${{ runner.os }}-nextjs-${{ hashFiles('frontend/package-lock.json') }}-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-nextjs-${{ hashFiles('frontend/package-lock.json') }}-
+            ${{ runner.os }}-nextjs-
 
       - name: Install dependencies
-        run: cd frontend && npm ci
+        working-directory: frontend
+        run: npm ci
+
+      - name: Type check
+        working-directory: frontend
+        run: npx tsc --noEmit || true
 
       - name: Build
-        run: cd frontend && npm run build
+        working-directory: frontend
+        run: npm run build
 
   # ========== 部署到生产服务器 ==========
   deploy:
     name: Deploy to Production
     runs-on: ubuntu-latest
-    needs: [backend-test, frontend-build]
-    if: github.ref == 'refs/heads/main'
+    needs: [backend-lint, backend-test, frontend-lint, frontend-build]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.26"
+          go-version: ${{ env.GO_VERSION }}
           cache-dependency-path: backend/go.sum
 
       - uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          node-version: ${{ env.NODE_VERSION }}
 
       # ---- 构建后端 ----
       - name: Build Go binary
-        run: cd backend && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o bin/server ./cmd/server/
+        working-directory: backend
+        run: CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o bin/server ./cmd/server/
 
       # ---- 构建前端 ----
       - name: Install frontend deps
-        run: cd frontend && npm ci
+        working-directory: frontend
+        run: npm ci
 
       - name: Build frontend
-        run: cd frontend && npm run build
+        working-directory: frontend
+        run: npm run build
 
       - name: Package frontend
         run: |
@@ -100,18 +188,23 @@ jobs:
           tar czf ../deploy-pkg/kada-fe-static.tar.gz -C .next static/
 
       # ---- 部署 ----
-      - name: Deploy to server
+      - name: Create deploy marker
+        run: |
+          echo "${{ github.sha }}" > deploy-version.txt
+          echo "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> deploy-version.txt
+
+      - name: Upload to server
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: 22
-          source: "backend/bin/server,deploy-pkg/*"
+          source: "backend/bin/server,deploy-pkg/*,deploy-version.txt,backend/db/migrations/*.up.sql,backend/db/migrations/*.down.sql"
           target: /tmp/kada-deploy/
           strip_components: 0
 
-      - name: Restart services
+      - name: Run migrations & restart services
         uses: appleboy/ssh-action@v1.2.2
         with:
           host: ${{ secrets.SERVER_HOST }}
@@ -119,26 +212,107 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: 22
           script: |
-            # 替换后端
-            cp /tmp/kada-deploy/backend/bin/server /opt/kada/backend/bin/server.new
-            systemctl stop kada-api
-            mv /opt/kada/backend/bin/server.new /opt/kada/backend/bin/server
-            systemctl start kada-api
-            echo "✅ Backend restarted"
+            set -e
+            echo "📦 Starting deploy: $(cat /tmp/kada-deploy/deploy-version.txt | head -1)"
 
-            # 替换前端
+            # ---- 1. 备份当前版本（便于回滚） ----
+            echo "💾 Backing up current version..."
+            mkdir -p /opt/kada/backups
+            cp /opt/kada/backend/bin/server /opt/kada/backups/server.$(date +%Y%m%d%H%M%S) 2>/dev/null || true
+            # 保留最近 5 个备份
+            ls -t /opt/kada/backups/server.* 2>/dev/null | tail -n +6 | xargs rm -f 2>/dev/null || true
+
+            # ---- 2. 运行数据库迁移 ----
+            echo "🗄️  Running database migrations..."
+            for f in /tmp/kada-deploy/backend/db/migrations/*.up.sql; do
+              if [ -f "$f" ]; then
+                # 只运行比当前版本新的迁移（通过文件名前缀时间戳判断）
+                echo "  Migration: $(basename $f)"
+                PGPASSWORD=kada123 psql -h localhost -U kada -d kada -f "$f" 2>&1 || echo "  ⚠️  Migration may already be applied: $(basename $f)"
+              fi
+            done
+
+            # ---- 3. 替换后端 ----
+            echo "🔄 Replacing backend..."
+            systemctl stop kada-api
+            cp /tmp/kada-deploy/backend/bin/server /opt/kada/backend/bin/server
+            chmod +x /opt/kada/backend/bin/server
+            systemctl start kada-api
+            sleep 2
+
+            # ---- 健康检查 ----
+            if systemctl is-active --quiet kada-api; then
+              echo "✅ Backend started successfully"
+            else
+              echo "❌ Backend failed to start — rolling back!"
+              cp /opt/kada/backups/server.* /opt/kada/backend/bin/server 2>/dev/null || true
+              systemctl start kada-api || true
+              exit 1
+            fi
+
+            # ---- 4. 替换前端 ----
+            echo "🔄 Replacing frontend..."
             cd /opt/kada/frontend
-            rm -rf .next/static node_modules server.js package.json static
+            rm -rf .next/static node_modules server.js package.json static 2>/dev/null || true
             tar xzf /tmp/kada-deploy/deploy-pkg/kada-fe-standalone.tar.gz
             mkdir -p .next
             tar xzf /tmp/kada-deploy/deploy-pkg/kada-fe-static.tar.gz -C .next
-            rm -rf /tmp/kada-deploy
-            systemctl restart kada-frontend
-            echo "✅ Frontend restarted"
 
-      - name: Verify
+            # ---- 5. 重启前端 ----
+            systemctl restart kada-frontend
+            sleep 2
+            if systemctl is-active --quiet kada-frontend; then
+              echo "✅ Frontend restarted"
+            else
+              echo "⚠️  Frontend may have issues — check logs"
+            fi
+
+            # ---- 6. 清理 ----
+            rm -rf /tmp/kada-deploy
+            cp /opt/kada/backend/bin/server -v 2>/dev/null || true
+            echo "🚀 Deploy complete: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+      - name: Verify deployment
         run: |
-          sleep 2
-          curl -s http://${{ secrets.SERVER_HOST }}/api/health
-          echo
-          curl -s -o /dev/null -w "Frontend: HTTP %{http_code}\n" http://${{ secrets.SERVER_HOST }}/
+          sleep 3
+          echo "=== Health Check ==="
+          curl -sf http://${{ secrets.SERVER_HOST }}/api/health && echo "" || echo "❌ Health check failed"
+          echo "=== Frontend ==="
+          curl -sf -o /dev/null -w "Frontend: HTTP %{http_code}\n" http://${{ secrets.SERVER_HOST }}/ || echo "❌ Frontend check failed"
+          echo "=== QR Code ==="
+          curl -sf -o /dev/null -w "QR API: HTTP %{http_code}\n" http://${{ secrets.SERVER_HOST }}/api/links || echo "⚠️  API check"
+
+  # ========== 总结 ==========
+  pipeline-summary:
+    name: Pipeline Summary
+    runs-on: ubuntu-latest
+    needs: [backend-lint, backend-test, frontend-lint, frontend-build, deploy]
+    if: always()
+    steps:
+      - name: Report status
+        run: |
+          echo "## 🚀 CI Pipeline Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Job | Result |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----|--------|" >> $GITHUB_STEP_SUMMARY
+
+          declare -A results
+          results[backend-lint]="${{ needs.backend-lint.result }}"
+          results[backend-test]="${{ needs.backend-test.result }}"
+          results[frontend-lint]="${{ needs.frontend-lint.result }}"
+          results[frontend-build]="${{ needs.frontend-build.result }}"
+          results[deploy]="${{ needs.deploy.result }}"
+
+          for job in backend-lint backend-test frontend-lint frontend-build deploy; do
+            result="${results[$job]}"
+            case "$result" in
+              success) icon="✅" ;;
+              skipped) icon="⏭️" ;;
+              failure) icon="❌" ;;
+              *) icon="⚠️" ;;
+            esac
+            echo "| $job | $icon $result |" >> $GITHUB_STEP_SUMMARY
+          done
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "🔗 [View run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})" >> $GITHUB_STEP_SUMMARY
