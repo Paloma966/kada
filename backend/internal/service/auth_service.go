@@ -66,11 +66,11 @@ func (s *AuthService) SendSMSCode(ctx context.Context, phone string) error {
 }
 
 // LoginByPhone 手机号+验证码登录
-	var err error
 func (s *AuthService) LoginByPhone(ctx context.Context, phone, code string) (*domain.AuthResponse, error) {
 	// 查数据库校验验证码
 	var count int
-	if err := s.db.QueryRow(ctx, `
+	var err error
+	if err = s.db.QueryRow(ctx, `
 		SELECT COUNT(*) FROM sms_codes
 		WHERE phone = $1 AND code = $2 AND used = FALSE AND expires_at > NOW()
 	`, phone, code).Scan(&count); err != nil || count == 0 {
@@ -127,7 +127,8 @@ func (s *AuthService) LoginByEmail(ctx context.Context, email, password string) 
 		return nil, errors.New("该账号未设置密码，请使用手机号登录")
 	}
 
-	if err := bcrypt.CompareHashAndPassword([]byte(passwordHash), []byte(password)); err != nil {
+	err = bcrypt.CompareHashAndPassword([]byte(passwordHash), []byte(password))
+	if err != nil {
 		return nil, errors.New("邮箱或密码错误")
 	}
 
@@ -214,9 +215,9 @@ func (s *AuthService) UpdateUser(ctx context.Context, userID int64, name *string
 // generateToken 生成 JWT
 func (s *AuthService) generateToken(user domain.UserInfo) (string, error) {
 	claims := middleware.Claims{
-		UserID:   user.ID,
-		Phone:    user.Phone,
-		Email:    user.Email,
+		UserID: user.ID,
+		Phone:  user.Phone,
+		Email:  user.Email,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(s.jwtExpire)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
