@@ -57,7 +57,7 @@ func (h *Handler) Update(c *gin.Context) {
 		return
 	}
 	var req domain.CreateFolderRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
+	if bindErr := c.ShouldBindJSON(&req); bindErr != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "请提供文件夹名称"})
 		return
 	}

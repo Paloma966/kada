@@ -205,10 +205,10 @@ func (h *Handler) Events(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"events":     events,
-		"total":      total,
-		"page":       page,
-		"page_size":  pageSize,
+		"events":    events,
+		"total":     total,
+		"page":      page,
+		"page_size": pageSize,
 	})
 }
 
