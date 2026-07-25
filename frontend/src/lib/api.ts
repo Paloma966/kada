@@ -133,6 +133,15 @@ export const linksAPI = {
       token,
       body: JSON.stringify({ ids, tag_id: tagId }),
     }),
+
+  preview: (token: string, url: string): Promise<{
+    preview: { title: string; description: string; image_url: string; favicon_url: string };
+  }> =>
+    fetchAPI("/api/links/preview", {
+      method: "POST",
+      token,
+      body: JSON.stringify({ url }),
+    }),
 };
 
 // ========== Analytics API ==========
