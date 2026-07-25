@@ -1,9 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Globe, Clock, Shield, Smartphone, Tags, Link2, Folder, X, Building2 } from "lucide-react";
+import { Globe, Clock, Shield, Smartphone, Tags, Link2, Folder, X, Building2, ExternalLink } from "lucide-react";
 import useSWR from "swr";
 import { linksAPI, domainsAPI, utmAPI, foldersAPI, tagsAPI, workspacesAPI } from "@/lib/api";
 import { getToken } from "@/lib/auth";
@@ -26,6 +26,37 @@ export default function CreateLinkPage() {
   const [iosUrl, setIosUrl] = useState("");
   const [androidUrl, setAndroidUrl] = useState("");
   const [loading, setLoading] = useState(false);
+  const [previewing, setPreviewing] = useState(false);
+  const [preview, setPreview] = useState<{ title: string; description: string; image_url: string; favicon_url: string } | null>(null);
+  const previewTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+
+  // Debounced URL preview fetch
+  useEffect(() => {
+    if (!originalUrl || !token || !originalUrl.startsWith("http")) {
+      setPreview(null);
+      return;
+    }
+    clearTimeout(previewTimer.current);
+    previewTimer.current = setTimeout(async () => {
+      setPreviewing(true);
+      try {
+        const res = await linksAPI.preview(token, originalUrl);
+        setPreview(res.preview);
+        // Auto-fill if empty
+        if (!title && res.preview.title && res.preview.title !== originalUrl) {
+          setTitle(res.preview.title.slice(0, 200));
+        }
+        if (!description && res.preview.description) {
+          setDescription(res.preview.description.slice(0, 500));
+        }
+      } catch {
+        setPreview(null);
+      } finally {
+        setPreviewing(false);
+      }
+    }, 800);
+    return () => clearTimeout(previewTimer.current);
+  }, [originalUrl]);
 
   const { data: domainData } = useSWR(token ? "domains" : null, () => domainsAPI.list(token!));
   const { data: utmData } = useSWR(token ? "utm-templates" : null, () => utmAPI.list(token!));
@@ -100,6 +131,50 @@ export default function CreateLinkPage() {
                   placeholder="https://example.com/your-long-url"
                   required
                 />
+                {/* Preview card */}
+                {(previewing || preview) && (
+                  <div className="mt-3 rounded-xl border border-gray-100 bg-gray-50/50 overflow-hidden">
+                    {previewing ? (
+                      <div className="flex items-center gap-3 p-3">
+                        <div className="size-10 rounded-lg bg-gray-200 animate-pulse shrink-0" />
+                        <div className="flex-1 space-y-2">
+                          <div className="h-4 w-48 bg-gray-200 rounded animate-pulse" />
+                          <div className="h-3 w-64 bg-gray-100 rounded animate-pulse" />
+                        </div>
+                      </div>
+                    ) : preview ? (
+                      <div className="p-3">
+                        <div className="flex items-start gap-3">
+                          {preview.image_url && (
+                            <img src={preview.image_url} alt=""
+                              className="size-16 rounded-lg object-cover border border-gray-200 shrink-0"
+                              onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+                          )}
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              {preview.favicon_url && (
+                                <img src={preview.favicon_url} alt=""
+                                  className="size-4 rounded shrink-0"
+                                  onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+                              )}
+                              <p className="text-sm font-medium text-gray-900 truncate">
+                                {preview.title || originalUrl}
+                              </p>
+                            </div>
+                            {preview.description && (
+                              <p className="text-xs text-gray-500 mt-0.5 line-clamp-2">{preview.description}</p>
+                            )}
+                            <a href={originalUrl} target="_blank"
+                              className="inline-flex items-center gap-1 text-xs text-indigo-500 hover:text-indigo-600 mt-1">
+                              <ExternalLink className="size-3" />
+                              {new URL(originalUrl).hostname}
+                            </a>
+                          </div>
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
+                )}
               </div>
 
               <div>

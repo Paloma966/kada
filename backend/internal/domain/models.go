@@ -252,3 +252,16 @@ type UpdateWorkspaceRequest struct {
 type WorkspaceListResponse struct {
 	Workspaces []Workspace `json:"workspaces"`
 }
+
+// ==================== 链接预览 ====================
+
+type LinkPreviewRequest struct {
+	URL string `json:"url" binding:"required,url"`
+}
+
+type LinkPreview struct {
+	Title       string `json:"title"`
+	Description string `json:"description"`
+	ImageURL    string `json:"image_url"`
+	FaviconURL  string `json:"favicon_url"`
+}
