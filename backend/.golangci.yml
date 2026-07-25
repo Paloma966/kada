@@ -1,0 +1,50 @@
+# golangci-lint configuration
+# https://golangci-lint.run/usage/configuration/
+
+run:
+  timeout: 5m
+  tests: true
+  modules-download-mode: readonly
+
+linters:
+  enable:
+    - errcheck      # 检查未处理的错误
+    - gosimple      # 简化代码建议
+    - govet         # Go vet 检查
+    - ineffassign   # 检测无效赋值
+    - staticcheck   # 静态分析
+    - unused        # 未使用的变量/函数
+    - misspell      # 拼写检查
+    - gofmt         # 格式检查
+    - goimports     # import 排序检查
+    - unconvert     # 不必要的类型转换
+
+linters-settings:
+  errcheck:
+    check-type-assertions: true
+    check-blank: true
+
+  govet:
+    enable-all: true
+    disable:
+      - fieldalignment
+
+  misspell:
+    locale: US
+
+  gofmt:
+    simplify: true
+
+  goimports:
+    local-prefixes: github.com/chun/kada-backend
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
+
+  exclude-rules:
+    # 排除测试文件的一些检查
+    - path: _test\.go
+      linters:
+        - errcheck
+        - unused
