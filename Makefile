@@ -1,5 +1,6 @@
 .PHONY: help dev dev-fe build build-fe test lint docker-up docker-down docker-logs \
-        docker-build db-migrate db-create db-reset sqlc-gen install-tools clean
+        docker-build db-migrate db-create db-reset sqlc-gen install-tools clean \
+        lint-ci lint-fe-ci test-race build-pkg release-dry-run
 
 help:  ## 显示帮助信息
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -106,6 +107,28 @@ deploy-nginx:  ## 更新Nginx配置
 	ssh root@47.122.124.48 "docker restart kada-nginx"
 
 deploy-all: deploy deploy-fe  ## 同时部署后端和前端
+
+# ========== CI/CD 辅助 ==========
+
+lint-ci:  ## 运行 golangci-lint（本地 CI 模拟）
+	cd backend && golangci-lint run --timeout=5m ./...
+
+lint-fe-ci:  ## 运行前端 lint（本地 CI 模拟）
+	cd frontend && npx next lint --max-warnings 100 || true
+
+test-race:  ## 运行 Go 测试 + 竞态检测（CI 模式）
+	cd backend && go test ./... -v -count=1 -race -coverprofile=coverage.out
+
+build-pkg: build build-fe  ## 构建并打包（模拟 CI deploy）
+	cd frontend && mkdir -p ../deploy-pkg && \
+		tar czf ../deploy-pkg/kada-fe-standalone.tar.gz -C .next/standalone . && \
+		tar czf ../deploy-pkg/kada-fe-static.tar.gz -C .next static/
+	@echo "✅ Packages ready in deploy-pkg/"
+
+release-dry-run:  ## 模拟 release 流程（测试 Docker 构建）
+	docker build -t kada-backend:test ./backend
+	docker build -t kada-frontend:test ./frontend
+	@echo "✅ Docker images built locally"
 
 # ========== 清理 ==========
 
