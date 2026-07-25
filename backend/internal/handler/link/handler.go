@@ -7,20 +7,23 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/chun/kada-backend/internal/domain"
+	"github.com/chun/kada-backend/internal/infra/preview"
 	"github.com/chun/kada-backend/internal/middleware"
 	"github.com/chun/kada-backend/internal/service"
 )
 
 type Handler struct {
-	svc *service.LinkService
+	svc     *service.LinkService
+	fetcher *preview.Fetcher
 }
 
 func NewHandler(svc *service.LinkService) *Handler {
-	return &Handler{svc: svc}
+	return &Handler{svc: svc, fetcher: preview.NewFetcher()}
 }
 
 func (h *Handler) RegisterRoutes(r *gin.RouterGroup, authMW gin.HandlerFunc) {
 	r.Use(authMW)
+	r.POST("/links/preview", h.Preview)
 	r.POST("/links", h.Create)
 	r.GET("/links", h.List)
 	r.POST("/links/batch-delete", h.BatchDelete)
@@ -177,4 +180,25 @@ func (h *Handler) ExportCSV(c *gin.Context) {
 	c.Header("Content-Type", "text/csv; charset=utf-8")
 	c.Header("Content-Disposition", `attachment; filename="kada-links.csv"`)
 	c.String(http.StatusOK, csvStr)
+}
+
+// Preview 抓取目标 URL 的 OG 元数据（标题、描述、图片）
+func (h *Handler) Preview(c *gin.Context) {
+	var req domain.LinkPreviewRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请提供有效的 URL"})
+		return
+	}
+
+	preview, err := h.fetcher.Fetch(c.Request.Context(), req.URL)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"preview": domain.LinkPreview{
+				Title: req.URL,
+			},
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"preview": preview})
 }
