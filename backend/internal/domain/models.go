@@ -21,8 +21,8 @@ type LoginByEmailRequest struct {
 }
 
 type AuthResponse struct {
-	Token string    `json:"token"`
-	User  UserInfo  `json:"user"`
+	Token string   `json:"token"`
+	User  UserInfo `json:"user"`
 }
 
 type UserInfo struct {
@@ -123,13 +123,13 @@ type PaginatedLinks struct {
 type Platform string
 
 const (
-	PlatformBrowser      Platform = "browser"
-	PlatformWechat       Platform = "wechat"
-	PlatformQQ           Platform = "qq"
-	PlatformWeibo        Platform = "weibo"
-	PlatformXiaohongshu  Platform = "xiaohongshu"
-	PlatformSMS          Platform = "sms"
-	PlatformUnknown      Platform = "unknown"
+	PlatformBrowser     Platform = "browser"
+	PlatformWechat      Platform = "wechat"
+	PlatformQQ          Platform = "qq"
+	PlatformWeibo       Platform = "weibo"
+	PlatformXiaohongshu Platform = "xiaohongshu"
+	PlatformSMS         Platform = "sms"
+	PlatformUnknown     Platform = "unknown"
 )
 
 // DeepLink 表示一个 deeplink 尝试方案

@@ -129,8 +129,8 @@ func (s *LinkService) GetByID(ctx context.Context, linkID, userID int64) (*domai
 	// 查询文件夹名
 	if info.FolderID != nil {
 		var folderName string
-		err := s.db.QueryRow(ctx, `SELECT name FROM folders WHERE id = $1`, *info.FolderID).Scan(&folderName)
-		if err == nil {
+		folderErr := s.db.QueryRow(ctx, `SELECT name FROM folders WHERE id = $1`, *info.FolderID).Scan(&folderName)
+		if folderErr == nil {
 			info.FolderName = &folderName
 		}
 	}
@@ -469,8 +469,8 @@ func (s *LinkService) ExportCSV(ctx context.Context, userID int64) (string, erro
 		if !active {
 			status = "停用"
 		}
-		sb.WriteString(fmt.Sprintf("%s,%s,%s,%s,%d,%s,%s\n",
-			code, escapeCSV(url), escapeCSV(title), domain, clicks, status, created.Format("2006-01-02 15:04")))
+		fmt.Fprintf(&sb, "%s,%s,%s,%s,%d,%s,%s\n",
+			code, escapeCSV(url), escapeCSV(title), domain, clicks, status, created.Format("2006-01-02 15:04"))
 	}
 	return sb.String(), nil
 }

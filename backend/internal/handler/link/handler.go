@@ -98,7 +98,7 @@ func (h *Handler) Update(c *gin.Context) {
 	}
 
 	var req domain.UpdateLinkRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
+	if bindErr := c.ShouldBindJSON(&req); bindErr != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "请求参数错误"})
 		return
 	}
@@ -150,8 +150,8 @@ func (h *Handler) BatchDelete(c *gin.Context) {
 // BatchTag 批量打标签
 func (h *Handler) BatchTag(c *gin.Context) {
 	var req struct {
-		IDs  []int64 `json:"ids" binding:"required"`
-		TagID int64  `json:"tag_id" binding:"required"`
+		IDs   []int64 `json:"ids" binding:"required"`
+		TagID int64   `json:"tag_id" binding:"required"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "请提供链接ID和标签ID"})

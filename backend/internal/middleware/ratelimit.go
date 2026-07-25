@@ -16,8 +16,8 @@ type RateLimiter struct {
 
 // RateLimitConfig 速率限制配置
 type RateLimitConfig struct {
-	Window  time.Duration // 时间窗口
-	Limit   int           // 窗口内最大请求数
+	Window  time.Duration               // 时间窗口
+	Limit   int                         // 窗口内最大请求数
 	KeyFunc func(c *gin.Context) string // 自定义 key 生成函数（默认使用 IP）
 }
 

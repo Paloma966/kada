@@ -14,7 +14,7 @@ func TestGenerateShortCode(t *testing.T) {
 		}
 		// 检查是否只包含十六进制字符
 		for _, c := range code {
-			if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')) {
+			if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
 				t.Errorf("invalid character in short code: %c in %s", c, code)
 			}
 		}
