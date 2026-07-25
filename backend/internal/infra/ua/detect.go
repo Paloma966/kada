@@ -1,6 +1,8 @@
 package ua
 
 import (
+	"fmt"
+	"net/url"
 	"strings"
 
 	"github.com/chun/kada-backend/internal/domain"
@@ -59,4 +61,48 @@ func PlatformName(platform domain.Platform) string {
 	default:
 		return "浏览器"
 	}
+}
+
+// PlatformTips 返回平台专属引导文案
+func PlatformTips(platform domain.Platform) string {
+	switch platform {
+	case domain.PlatformWechat:
+		return "请在微信内打开链接，或点击右上角菜单选择「在浏览器中打开」"
+	case domain.PlatformQQ:
+		return "QQ 内置浏览器可能限制页面跳转，建议使用外部浏览器打开"
+	case domain.PlatformXiaohongshu:
+		return "小红书暂不支持直接跳转外链，请复制链接后在浏览器中打开"
+	case domain.PlatformWeibo:
+		return "微博内打开链接可能受限，建议在浏览器中打开"
+	default:
+		return "正在为您打开链接..."
+	}
+}
+
+// GetDeeplinks 为目标 URL 生成各平台的 deeplink 尝试方案
+func GetDeeplinks(targetURL string) []domain.DeepLink {
+	// 去掉 protocol 前缀，用于 intent scheme
+	stripped := strings.TrimPrefix(targetURL, "https://")
+	stripped = strings.TrimPrefix(stripped, "http://")
+	encoded := url.QueryEscape(targetURL)
+
+	links := []domain.DeepLink{
+		{
+			Name:   "直接打开",
+			Scheme: targetURL,
+		},
+		{
+			Name:   "Chrome",
+			Scheme: fmt.Sprintf("intent://%s#Intent;scheme=https;package=com.android.chrome;end", stripped),
+		},
+		{
+			Name:   "系统浏览器",
+			Scheme: fmt.Sprintf("intent://%s#Intent;scheme=https;end", stripped),
+		},
+	}
+
+	// 微信内部跳转：尝试通过微信 URL scheme 中转
+	_ = encoded // reserved for WeChat-specific schemes
+
+	return links
 }
