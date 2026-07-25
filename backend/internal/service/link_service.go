@@ -95,7 +95,7 @@ func (s *LinkService) Create(ctx context.Context, userID int64, req domain.Creat
 		s.db.Exec(ctx, `INSERT INTO link_tags (link_id, tag_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`, info.ID, tagID)
 	}
 
-	info.ShortURL = s.buildShortURL(info.Domain, info.ShortCode)
+	info.ShortURL = s.BuildShortURL(info.Domain, info.ShortCode)
 
 	// 写入缓存
 	if s.cache != nil {
@@ -153,7 +153,7 @@ func (s *LinkService) GetByID(ctx context.Context, linkID, userID int64) (*domai
 		info.Tags = []domain.LinkTagInfo{}
 	}
 
-	info.ShortURL = s.buildShortURL(info.Domain, info.ShortCode)
+	info.ShortURL = s.BuildShortURL(info.Domain, info.ShortCode)
 	return &info, nil
 }
 
@@ -189,7 +189,7 @@ func (s *LinkService) GetByCode(ctx context.Context, shortCode string) (*domain.
 		return nil, errors.New("链接已过期")
 	}
 
-	info.ShortURL = s.buildShortURL(info.Domain, info.ShortCode)
+	info.ShortURL = s.BuildShortURL(info.Domain, info.ShortCode)
 
 	// 写入缓存
 	if s.cache != nil {
@@ -239,7 +239,7 @@ func (s *LinkService) CheckPassword(ctx context.Context, shortCode, password str
 		return false, &info, nil
 	}
 
-	info.ShortURL = s.buildShortURL(info.Domain, info.ShortCode)
+	info.ShortURL = s.BuildShortURL(info.Domain, info.ShortCode)
 	return true, &info, nil
 }
 
@@ -306,7 +306,7 @@ func (s *LinkService) List(ctx context.Context, userID int64, page, pageSize int
 		rows.Scan(&l.ID, &l.ShortCode, &l.OriginalURL, &l.Title, &l.Description,
 			&l.ImageURL, &l.Domain, &l.ClickCount, &l.IsActive,
 			&l.ExpiresAt, &l.CreatedAt, &l.UpdatedAt, &l.FolderID)
-		l.ShortURL = s.buildShortURL(l.Domain, l.ShortCode)
+		l.ShortURL = s.BuildShortURL(l.Domain, l.ShortCode)
 		links = append(links, l)
 	}
 
@@ -402,7 +402,7 @@ func (s *LinkService) Update(ctx context.Context, linkID, userID int64, req doma
 		}
 	}
 
-	info.ShortURL = s.buildShortURL(info.Domain, info.ShortCode)
+	info.ShortURL = s.BuildShortURL(info.Domain, info.ShortCode)
 	return &info, nil
 }
 
@@ -492,8 +492,8 @@ func (s *LinkService) LogClick(ctx context.Context, linkID int64, ip, userAgent,
 	s.db.Exec(ctx, `UPDATE links SET click_count = click_count + 1 WHERE id = $1`, linkID)
 }
 
-// buildShortURL 构建完整短链接
-func (s *LinkService) buildShortURL(domain, code string) string {
+// BuildShortURL 构建完整短链接
+func (s *LinkService) BuildShortURL(domain, code string) string {
 	return "https://" + domain + "/r/" + code
 }
 

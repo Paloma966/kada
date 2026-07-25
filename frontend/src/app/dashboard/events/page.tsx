@@ -2,19 +2,36 @@
 
 import { useState } from "react";
 import useSWR from "swr";
-import { ExternalLink, MousePointerClick, ChevronLeft, ChevronRight } from "lucide-react";
+import { ExternalLink, MousePointerClick, ChevronLeft, ChevronRight, Smartphone, Globe, Copy, QrCode, ExternalLinkIcon } from "lucide-react";
 import { analyticsAPI } from "@/lib/api";
 import { getToken } from "@/lib/auth";
 
-const platformLabels: Record<string, string> = {
-  browser: "浏览器",
-  wechat: "微信",
-  qq: "QQ",
-  weibo: "微博",
-  xiaohongshu: "小红书",
-  sms: "短信",
-  unknown: "其他",
+const platformConfig: Record<string, { label: string; color: string; icon: string }> = {
+  browser: { label: "浏览器", color: "bg-blue-50 text-blue-700", icon: "🌐" },
+  wechat: { label: "微信", color: "bg-green-50 text-green-700", icon: "💬" },
+  qq: { label: "QQ", color: "bg-sky-50 text-sky-700", icon: "🐧" },
+  weibo: { label: "微博", color: "bg-red-50 text-red-700", icon: "📢" },
+  xiaohongshu: { label: "小红书", color: "bg-rose-50 text-rose-700", icon: "📕" },
+  sms: { label: "短信", color: "bg-amber-50 text-amber-700", icon: "📩" },
+  unknown: { label: "其他", color: "bg-gray-50 text-gray-600", icon: "❓" },
 };
+
+const actionLabels: Record<string, string> = {
+  copy_link: "📋 复制链接",
+  qr_view: "📱 查看二维码",
+  open_browser: "🚀 浏览器打开",
+  deeplink_try: "📲 DeepLink 尝试",
+  open_link: "🔗 直接打开",
+};
+
+function parseReferer(referer: string): { isAction: boolean; action?: string; refererUrl?: string } {
+  if (!referer) return { isAction: false };
+  if (referer.startsWith("action:")) {
+    const action = referer.slice(7);
+    return { isAction: true, action };
+  }
+  return { isAction: false, refererUrl: referer };
+}
 
 export default function EventsPage() {
   const token = getToken();
@@ -33,7 +50,7 @@ export default function EventsPage() {
     <div className="space-y-5">
       <div>
         <h1 className="text-2xl font-bold text-gray-900">事件</h1>
-        <p className="text-sm text-gray-500 mt-1">点击事件记录</p>
+        <p className="text-sm text-gray-500 mt-1">点击事件与平台行为记录</p>
       </div>
 
       <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
@@ -44,8 +61,8 @@ export default function EventsPage() {
                 <th className="text-left px-5 py-3 text-xs font-medium text-gray-500 uppercase">时间</th>
                 <th className="text-left px-5 py-3 text-xs font-medium text-gray-500 uppercase">短链</th>
                 <th className="text-left px-5 py-3 text-xs font-medium text-gray-500 uppercase">平台</th>
+                <th className="text-left px-5 py-3 text-xs font-medium text-gray-500 uppercase">行为</th>
                 <th className="text-left px-5 py-3 text-xs font-medium text-gray-500 uppercase">IP</th>
-                <th className="text-left px-5 py-3 text-xs font-medium text-gray-500 uppercase">来源</th>
               </tr>
             </thead>
             <tbody>
@@ -62,6 +79,7 @@ export default function EventsPage() {
                   <td colSpan={5} className="px-5 py-16 text-center">
                     <MousePointerClick className="size-8 text-gray-300 mx-auto mb-2" />
                     <p className="text-sm text-gray-500">暂无点击事件</p>
+                    <p className="text-xs text-gray-400 mt-1">当有人点击您的短链时，事件会显示在这里</p>
                   </td>
                 </tr>
               ) : (
@@ -73,30 +91,48 @@ export default function EventsPage() {
                   ip: string;
                   referer: string;
                   created_at: string;
-                }) => (
-                  <tr key={e.id} className="border-b border-gray-50 hover:bg-gray-50/50 transition">
-                    <td className="px-5 py-3 text-gray-600 whitespace-nowrap font-mono text-xs">
-                      {new Date(e.created_at).toLocaleString("zh-CN")}
-                    </td>
-                    <td className="px-5 py-3">
-                      <div className="flex items-center gap-1.5">
-                        <code className="text-indigo-600 font-mono text-xs">{e.short_code}</code>
-                        <a href={e.original_url} target="_blank" className="text-gray-300 hover:text-gray-500">
-                          <ExternalLink className="size-3" />
-                        </a>
-                      </div>
-                    </td>
-                    <td className="px-5 py-3">
-                      <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">
-                        {platformLabels[e.platform] || e.platform || "未知"}
-                      </span>
-                    </td>
-                    <td className="px-5 py-3 text-gray-500 font-mono text-xs">{e.ip || "-"}</td>
-                    <td className="px-5 py-3 text-gray-400 text-xs max-w-[180px] truncate">
-                      {e.referer || "直接访问"}
-                    </td>
-                  </tr>
-                ))
+                }) => {
+                  const pConfig = platformConfig[e.platform] || platformConfig.unknown;
+                  const { isAction, action, refererUrl } = parseReferer(e.referer);
+                  return (
+                    <tr key={e.id} className="border-b border-gray-50 hover:bg-gray-50/50 transition">
+                      <td className="px-5 py-3 text-gray-600 whitespace-nowrap font-mono text-xs">
+                        {new Date(e.created_at).toLocaleString("zh-CN", {
+                          month: "2-digit", day: "2-digit",
+                          hour: "2-digit", minute: "2-digit",
+                        })}
+                      </td>
+                      <td className="px-5 py-3">
+                        <div className="flex items-center gap-1.5">
+                          <code className="text-indigo-600 font-mono text-xs bg-indigo-50 px-1.5 py-0.5 rounded">{e.short_code}</code>
+                          <a href={e.original_url} target="_blank" className="text-gray-300 hover:text-gray-500" title={e.original_url}>
+                            <ExternalLink className="size-3" />
+                          </a>
+                        </div>
+                      </td>
+                      <td className="px-5 py-3">
+                        <span className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full ${pConfig.color}`}>
+                          <span>{pConfig.icon}</span>
+                          <span>{pConfig.label}</span>
+                        </span>
+                      </td>
+                      <td className="px-5 py-3">
+                        {isAction ? (
+                          <span className="text-xs px-2 py-0.5 rounded-full bg-violet-50 text-violet-700">
+                            {actionLabels[action || ""] || `📌 ${action}`}
+                          </span>
+                        ) : refererUrl ? (
+                          <span className="text-xs text-gray-400 max-w-[160px] truncate block" title={refererUrl}>
+                            来源: {refererUrl}
+                          </span>
+                        ) : (
+                          <span className="text-xs text-gray-400">🔗 直接访问</span>
+                        )}
+                      </td>
+                      <td className="px-5 py-3 text-gray-400 font-mono text-xs">{e.ip || "-"}</td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>

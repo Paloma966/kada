@@ -132,6 +132,12 @@ const (
 	PlatformUnknown      Platform = "unknown"
 )
 
+// DeepLink 表示一个 deeplink 尝试方案
+type DeepLink struct {
+	Name   string `json:"name"`   // 方案名称，如 "Chrome Intent"
+	Scheme string `json:"scheme"` // URL scheme，如 "intent://..."
+}
+
 // ==================== 文件夹 ====================
 
 type Folder struct {

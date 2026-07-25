@@ -86,17 +86,17 @@ func TestEscapeCSV(t *testing.T) {
 
 func TestBuildShortURL(t *testing.T) {
 	svc := &LinkService{baseURL: "https://kada.click"}
-	url := svc.buildShortURL("kada.click", "abc123")
+	url := svc.BuildShortURL("kada.click", "abc123")
 	expected := "https://kada.click/r/abc123"
 	if url != expected {
-		t.Errorf("buildShortURL = %q, want %q", url, expected)
+		t.Errorf("BuildShortURL = %q, want %q", url, expected)
 	}
 
 	// 自定义域名
-	url2 := svc.buildShortURL("custom.domain.com", "xyz789")
+	url2 := svc.BuildShortURL("custom.domain.com", "xyz789")
 	expected2 := "https://custom.domain.com/r/xyz789"
 	if url2 != expected2 {
-		t.Errorf("buildShortURL = %q, want %q", url2, expected2)
+		t.Errorf("BuildShortURL = %q, want %q", url2, expected2)
 	}
 }
 
