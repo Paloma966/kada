@@ -11,14 +11,22 @@ import (
 
 	"github.com/chun/kada-backend/internal/domain"
 	"github.com/chun/kada-backend/internal/infra/ua"
-	"github.com/chun/kada-backend/internal/service"
 )
 
-type Handler struct {
-	svc *service.LinkService
+// LinkService 短链服务接口（方便测试 mock）
+type LinkService interface {
+	GetByCode(ctx context.Context, shortCode string) (*domain.LinkInfo, error)
+	HasPassword(ctx context.Context, shortCode string) bool
+	CheckPassword(ctx context.Context, shortCode, password string) (bool, *domain.LinkInfo, error)
+	LogClick(ctx context.Context, linkID int64, ip, userAgent, platform, referer string)
+	BuildShortURL(domain, code string) string
 }
 
-func NewHandler(svc *service.LinkService) *Handler {
+type Handler struct {
+	svc LinkService
+}
+
+func NewHandler(svc LinkService) *Handler {
 	return &Handler{svc: svc}
 }
 

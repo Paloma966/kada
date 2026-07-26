@@ -1,20 +1,30 @@
 package auth
 
 import (
+	"context"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
 
 	"github.com/chun/kada-backend/internal/domain"
 	"github.com/chun/kada-backend/internal/middleware"
-	"github.com/chun/kada-backend/internal/service"
 )
 
-type Handler struct {
-	svc *service.AuthService
+// AuthService 认证服务接口（方便测试 mock）
+type AuthService interface {
+	SendSMSCode(ctx context.Context, phone string) error
+	LoginByPhone(ctx context.Context, phone, code string) (*domain.AuthResponse, error)
+	LoginByEmail(ctx context.Context, email, password string) (*domain.AuthResponse, error)
+	RegisterByEmail(ctx context.Context, email, password, name string) (*domain.AuthResponse, error)
+	GetUserByID(ctx context.Context, userID int64) (*domain.UserInfo, error)
+	UpdateUser(ctx context.Context, userID int64, name *string, email *string) (*domain.UserInfo, error)
 }
 
-func NewHandler(svc *service.AuthService) *Handler {
+type Handler struct {
+	svc AuthService
+}
+
+func NewHandler(svc AuthService) *Handler {
 	return &Handler{svc: svc}
 }
 
