@@ -123,7 +123,7 @@ func (s *LinkService) GetByID(ctx context.Context, linkID, userID int64) (*domai
 		&info.IosURL, &info.AndroidURL, &info.PasswordHash,
 	)
 	if err != nil {
-		return nil, errors.New("链接不存在或已失效")
+		return nil, domain.ErrLinkNotFound
 	}
 
 	// 查询文件夹名
@@ -181,7 +181,7 @@ func (s *LinkService) GetByCode(ctx context.Context, shortCode string) (*domain.
 		&info.ExpiresAt, &info.CreatedAt, &info.UpdatedAt,
 	)
 	if err != nil {
-		return nil, errors.New("链接不存在或已失效")
+		return nil, domain.ErrLinkNotFound
 	}
 
 	// 检查是否过期
@@ -224,7 +224,7 @@ func (s *LinkService) CheckPassword(ctx context.Context, shortCode, password str
 		&info.ExpiresAt, &passwordHash, &info.CreatedAt, &info.UpdatedAt,
 	)
 	if err != nil {
-		return false, nil, errors.New("链接不存在或已失效")
+		return false, nil, domain.ErrLinkNotFound
 	}
 
 	if info.ExpiresAt != nil && info.ExpiresAt.Before(time.Now()) {

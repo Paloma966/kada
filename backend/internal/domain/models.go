@@ -1,6 +1,11 @@
 package domain
 
-import "time"
+import (
+	"errors"
+	"time"
+)
+
+var ErrLinkNotFound = errors.New("link not found")
 
 // ==================== 请求/响应模型 ====================
 
