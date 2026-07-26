@@ -15,12 +15,12 @@ import (
 
 // mockAuthService 用于 handler 测试
 type mockAuthService struct {
-	sendSMSCode    func(ctx context.Context, phone string) error
-	loginByPhone   func(ctx context.Context, phone, code string) (*domain.AuthResponse, error)
-	loginByEmail   func(ctx context.Context, email, password string) (*domain.AuthResponse, error)
+	sendSMSCode     func(ctx context.Context, phone string) error
+	loginByPhone    func(ctx context.Context, phone, code string) (*domain.AuthResponse, error)
+	loginByEmail    func(ctx context.Context, email, password string) (*domain.AuthResponse, error)
 	registerByEmail func(ctx context.Context, email, password, name string) (*domain.AuthResponse, error)
-	getUserByID    func(ctx context.Context, userID int64) (*domain.UserInfo, error)
-	updateUser     func(ctx context.Context, userID int64, name *string, email *string) (*domain.UserInfo, error)
+	getUserByID     func(ctx context.Context, userID int64) (*domain.UserInfo, error)
+	updateUser      func(ctx context.Context, userID int64, name *string, email *string) (*domain.UserInfo, error)
 }
 
 func (m *mockAuthService) SendSMSCode(ctx context.Context, phone string) error {

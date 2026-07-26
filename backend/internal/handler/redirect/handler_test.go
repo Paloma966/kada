@@ -13,11 +13,11 @@ import (
 
 // mockLinkService 用于 redirect handler 测试
 type mockLinkService struct {
-	getByCode      func(ctx context.Context, code string) (*domain.LinkInfo, error)
-	hasPassword    func(ctx context.Context, code string) bool
-	checkPassword  func(ctx context.Context, code, password string) (bool, *domain.LinkInfo, error)
-	logClick       func(ctx context.Context, linkID int64, ip, userAgent, platform, referer string)
-	buildShortURL  func(domain, code string) string
+	getByCode     func(ctx context.Context, code string) (*domain.LinkInfo, error)
+	hasPassword   func(ctx context.Context, code string) bool
+	checkPassword func(ctx context.Context, code, password string) (bool, *domain.LinkInfo, error)
+	logClick      func(ctx context.Context, linkID int64, ip, userAgent, platform, referer string)
+	buildShortURL func(domain, code string) string
 }
 
 func (m *mockLinkService) GetByCode(ctx context.Context, code string) (*domain.LinkInfo, error) {
