@@ -139,10 +139,6 @@ func parseHTML(r io.Reader) domain.LinkPreview {
 		}
 	}
 
-	// 如果没有 OG 标签，尝试从 <title> 获取
-	if meta.Title == "" {
-		// 已经在上层 fallback 处理
-	}
-
+	// 如果没有 OG 标签，上层会用域名作为 fallback 标题
 	return meta
 }
