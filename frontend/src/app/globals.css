@@ -1,5 +1,13 @@
 @import "tailwindcss";
 
+@theme {
+  --color-brand: #4f46e5;        /* indigo-600 主色 */
+  --color-brand-dark: #4338ca;   /* indigo-700 */
+  --color-brand-soft: #eef2ff;   /* indigo-50 */
+  --color-hairline: #e5e5e5;     /* neutral-200 发丝边框 */
+  --color-surface: #fafafa;      /* neutral-50 页面底色 */
+}
+
 :root {
   --background: #ffffff;
   --foreground: #171717;
@@ -8,5 +16,6 @@
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
 }
