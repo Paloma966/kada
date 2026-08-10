@@ -24,9 +24,9 @@ function makeGlowTexture(inner: string): THREE.Texture {
 
 function disposeObject(root: THREE.Object3D) {
   root.traverse((child) => {
-    const obj = child as THREE.Mesh & { geometry?: THREE.BufferGeometry };
-    if (obj.geometry) obj.geometry.dispose();
-    const material = obj.material as THREE.Material | THREE.Material[] | undefined;
+    const geometry = (child as { geometry?: THREE.BufferGeometry }).geometry;
+    if (geometry) geometry.dispose();
+    const material = (child as { material?: THREE.Material | THREE.Material[] }).material;
     if (Array.isArray(material)) material.forEach((m) => m.dispose());
     else if (material) material.dispose();
   });
@@ -239,6 +239,9 @@ export default function StarfieldCanvas({ className }: { className?: string }) {
       cancelAnimationFrame(raf);
       window.removeEventListener("pointermove", onPointerMove);
       window.removeEventListener("resize", resize);
+      glowTex.dispose();
+      nebulaTex.dispose();
+      nebulaTex2.dispose();
       disposeObject(scene);
       renderer.dispose();
     };
