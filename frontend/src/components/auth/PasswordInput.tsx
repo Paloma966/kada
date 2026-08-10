@@ -14,13 +14,13 @@ export function PasswordInput({ id, className = "", ...props }: PasswordInputPro
       <input
         id={id}
         type={show ? "text" : "password"}
-        className={`w-full rounded-lg border bg-white py-2.5 pl-4 pr-11 text-sm text-neutral-900 placeholder:text-neutral-400 transition focus:outline-none focus:ring-2 ${className}`}
+        className={`w-full rounded-lg border bg-white/10 py-2.5 pl-4 pr-11 text-sm text-white placeholder:text-neutral-400/70 transition focus:outline-none focus:ring-2 ${className}`}
         {...props}
       />
       <button
         type="button"
         onClick={() => setShow((s) => !s)}
-        className="absolute inset-y-0 right-0 flex items-center pr-3 text-neutral-400 transition hover:text-neutral-600"
+        className="absolute inset-y-0 right-0 flex items-center pr-3 text-neutral-400 transition hover:text-neutral-200"
         tabIndex={-1}
         aria-label={show ? "隐藏密码" : "显示密码"}
       >
