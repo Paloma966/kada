@@ -102,7 +102,7 @@ export function buildOphiuchus(
     east = cross(w, up);
   }
   const e = { x: east.x / norm(east), y: east.y / norm(east), z: east.z / norm(east) };
-  const n = cross(w, e);
+  const n = cross(e, w);
   const rand = createSeededRandom(20260810);
   const positions = dirs.map((d) => ({
     x: dot(d, e) * scale,
