@@ -79,4 +79,11 @@ describe("buildOphiuchus", () => {
     expect(width).toBeGreaterThan(5);
     expect(height).toBeGreaterThan(5);
   });
+
+  it("places Rasalhague (north, alpha) above Sabik (south, eta)", () => {
+    const { positions } = buildOphiuchus(30);
+    const alphaIdx = OPHIUCHUS_STARS.findIndex((s) => s.id === "alpha");
+    const etaIdx = OPHIUCHUS_STARS.findIndex((s) => s.id === "eta");
+    expect(positions[alphaIdx].y).toBeGreaterThan(positions[etaIdx].y);
+  });
 });

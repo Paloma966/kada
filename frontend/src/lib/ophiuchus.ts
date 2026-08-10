@@ -109,5 +109,5 @@ export function buildOphiuchus(
     y: dot(d, n) * scale,
     z: (dot(d, w) - 1) * scale + (rand() * 2 - 1) * depthJitter,
   }));
-  return { positions, lines: OPHIUCHUS_LINES };
+  return { positions, lines: OPHIUCHUS_LINES.slice() };
 }
