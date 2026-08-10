@@ -22,6 +22,7 @@ export default function LoginPage() {
   const [code, setCode] = useState("");
   const [codeSent, setCodeSent] = useState(false);
   const [countdown, setCountdown] = useState(0);
+  const [sending, setSending] = useState(false);
   const [phoneError, setPhoneError] = useState("");
   const [codeError, setCodeError] = useState("");
 
@@ -39,6 +40,7 @@ export default function LoginPage() {
       return;
     }
     setPhoneError("");
+    setSending(true);
     try {
       await authAPI.sendSMSCode(phone);
       setCodeSent(true);
@@ -55,6 +57,8 @@ export default function LoginPage() {
       }, 1000);
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "发送失败");
+    } finally {
+      setSending(false);
     }
   };
 
@@ -186,7 +190,7 @@ export default function LoginPage() {
               <button
                 type="button"
                 onClick={handleSendCode}
-                disabled={countdown > 0 || !phoneValid}
+                disabled={countdown > 0 || !phoneValid || sending}
                 className="shrink-0 rounded-lg bg-indigo-500/20 px-4 py-2.5 text-sm font-medium text-indigo-200 transition hover:bg-indigo-500/30 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {countdown > 0 ? `${countdown}s` : codeSent ? "重新发送" : "获取验证码"}
