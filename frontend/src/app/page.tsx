@@ -5,7 +5,8 @@ import StarfieldCanvas from "@/components/StarfieldCanvas";
 export default function HomePage() {
   return (
     <main className="relative h-dvh w-full overflow-hidden overscroll-none bg-deep-space text-white">
-      <StarfieldCanvas className="absolute inset-0" />
+      {/* canvas 是替换元素，inset-0 不会拉伸，必须显式 h-full w-full 才能铺满视口 */}
+      <StarfieldCanvas className="absolute inset-0 h-full w-full" />
 
       <div className="absolute inset-0 z-10 flex flex-col">
         <header className="flex items-center justify-between px-6 py-5 sm:px-8">
