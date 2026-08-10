@@ -56,7 +56,7 @@ export default function StarfieldCanvas({ className }: { className?: string }) {
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 
     // ---- 远端星星：包围相机的大壳层，缓慢自转 ----
-    const far = buildStarLayer({ count: 2000, minR: 45, maxR: 140, seed: 101 });
+    const far = buildStarLayer({ count: 1500, minR: 45, maxR: 140, seed: 101 });
     const farGeo = new THREE.BufferGeometry();
     farGeo.setAttribute("position", new THREE.BufferAttribute(far.positions, 3));
     farGeo.setAttribute("color", new THREE.BufferAttribute(far.colors, 3));
@@ -77,7 +77,7 @@ export default function StarfieldCanvas({ className }: { className?: string }) {
     scene.add(farGroup);
 
     // ---- 近端星星：更靠前，视差更明显 ----
-    const near = buildStarLayer({ count: 320, minR: 12, maxR: 34, seed: 202 });
+    const near = buildStarLayer({ count: 240, minR: 12, maxR: 34, seed: 202 });
     const nearGeo = new THREE.BufferGeometry();
     nearGeo.setAttribute("position", new THREE.BufferAttribute(near.positions, 3));
     nearGeo.setAttribute("color", new THREE.BufferAttribute(near.colors, 3));
@@ -95,7 +95,7 @@ export default function StarfieldCanvas({ className }: { className?: string }) {
 
     // ---- 蛇夫座星座：星点 + 辉光精灵 + 连线 ----
     const constellation = new THREE.Group();
-    const oph = buildOphiuchus(30, 1.5);
+    const oph = buildOphiuchus(45, 1.5);
     const starPos = new Float32Array(oph.positions.length * 3);
     oph.positions.forEach((p, i) => {
       starPos[i * 3] = p.x;

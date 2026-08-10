@@ -43,9 +43,11 @@ export function buildStarLayer(opts: {
     positions[i * 3 + 1] = dir.y * r;
     positions[i * 3 + 2] = dir.z * r;
     const c = STAR_COLORS[Math.floor(rand() * STAR_COLORS.length)];
-    colors[i * 3] = c[0];
-    colors[i * 3 + 1] = c[1];
-    colors[i * 3 + 2] = c[2];
+    // 每颗星随机亮度（0.35~1.0），让星星有明暗层次
+    const brightness = 0.35 + rand() * 0.65;
+    colors[i * 3] = c[0] * brightness;
+    colors[i * 3 + 1] = c[1] * brightness;
+    colors[i * 3 + 2] = c[2] * brightness;
   }
   return { positions, colors };
 }
