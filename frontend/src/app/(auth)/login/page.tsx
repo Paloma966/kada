@@ -127,21 +127,21 @@ export default function LoginPage() {
       footer={
         <>
           还没有账号？{" "}
-          <Link href="/register" className="font-medium text-indigo-600 hover:text-indigo-500">
+          <Link href="/register" className="font-medium text-indigo-300 hover:text-indigo-200">
             立即注册
           </Link>
         </>
       }
     >
       {/* 手机号 / 邮箱 分段切换 */}
-      <div className="mb-6 grid grid-cols-2 gap-1 rounded-lg bg-neutral-100 p-1">
+      <div className="mb-6 grid grid-cols-2 gap-1 rounded-lg bg-white/10 p-1">
         <button
           type="button"
           onClick={() => setTab("phone")}
           className={`rounded-md py-2 text-sm font-medium transition ${
             tab === "phone"
               ? "bg-white text-neutral-900 shadow-sm"
-              : "text-neutral-500 hover:text-neutral-700"
+              : "text-neutral-300 hover:text-white"
           }`}
         >
           手机号登录
@@ -152,7 +152,7 @@ export default function LoginPage() {
           className={`rounded-md py-2 text-sm font-medium transition ${
             tab === "email"
               ? "bg-white text-neutral-900 shadow-sm"
-              : "text-neutral-500 hover:text-neutral-700"
+              : "text-neutral-300 hover:text-white"
           }`}
         >
           邮箱登录
@@ -187,7 +187,7 @@ export default function LoginPage() {
                 type="button"
                 onClick={handleSendCode}
                 disabled={countdown > 0 || !phoneValid}
-                className="shrink-0 rounded-lg bg-indigo-50 px-4 py-2.5 text-sm font-medium text-indigo-600 transition hover:bg-indigo-100 disabled:cursor-not-allowed disabled:opacity-50"
+                className="shrink-0 rounded-lg bg-indigo-500/20 px-4 py-2.5 text-sm font-medium text-indigo-200 transition hover:bg-indigo-500/30 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {countdown > 0 ? `${countdown}s` : codeSent ? "重新发送" : "获取验证码"}
               </button>
