@@ -28,10 +28,14 @@ func (f *fakeWriter) WriteClick(_ context.Context, _ int64, _, _, _, _ string) e
 
 func TestLogClick_PublishSuccess(t *testing.T) {
 	pub := &fakePublisher{}
-	svc := &LinkService{kafka: pub, clickWriter: &fakeWriter{}}
+	w := &fakeWriter{}
+	svc := &LinkService{kafka: pub, clickWriter: w}
 	svc.LogClick(context.Background(), 1, "1.2.3.4", "ua", "browser", "ref")
 	if pub.calls != 1 {
 		t.Fatalf("expected publisher called once, got %d", pub.calls)
+	}
+	if w.calls != 0 {
+		t.Fatalf("expected no direct write when publish succeeds, got %d", w.calls)
 	}
 }
 

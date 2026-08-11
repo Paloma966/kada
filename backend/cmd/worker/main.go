@@ -7,7 +7,9 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
+	"time"
 
 	"github.com/segmentio/kafka-go"
 
@@ -22,7 +24,9 @@ func processClickMessage(msg []byte, writer service.ClickWriter) error {
 	if err := json.Unmarshal(msg, &e); err != nil {
 		return err
 	}
-	return writer.WriteClick(context.Background(), e.LinkID, e.IP, e.UserAgent, e.Platform, e.Referer)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	return writer.WriteClick(ctx, e.LinkID, e.IP, e.UserAgent, e.Platform, e.Referer)
 }
 
 func main() {
@@ -32,7 +36,13 @@ func main() {
 	if topic == "" {
 		topic = "clicks"
 	}
-	if brokers == "" {
+	var brokerList []string
+	for _, b := range strings.Split(brokers, ",") {
+		if b = strings.TrimSpace(b); b != "" {
+			brokerList = append(brokerList, b)
+		}
+	}
+	if len(brokerList) == 0 {
 		log.Fatal("KAFKA_BROKERS is required for worker")
 	}
 
@@ -44,7 +54,7 @@ func main() {
 
 	store := service.NewClickStore(db)
 	reader := kafka.NewReader(kafka.ReaderConfig{
-		Brokers:  []string{brokers},
+		Brokers:  brokerList,
 		Topic:    topic,
 		GroupID:  "click-worker",
 		MinBytes: 10e3,

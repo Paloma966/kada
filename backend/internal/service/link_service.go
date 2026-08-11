@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log"
 	"regexp"
 	"strconv"
 	"strings"
@@ -484,21 +485,24 @@ func escapeCSV(s string) string {
 // LogClick 发布点击事件到 Kafka；Kafka 不可用时回退直写，保证点击不丢
 func (s *LinkService) LogClick(ctx context.Context, linkID int64, ip, userAgent, platform, referer string) {
 	if s.kafka != nil {
-		err := s.kafka.PublishClick(ctx, mq.ClickEvent{
+		if err := s.kafka.PublishClick(ctx, mq.ClickEvent{
 			LinkID:    linkID,
 			IP:        ip,
 			UserAgent: userAgent,
 			Platform:  platform,
 			Referer:   referer,
 			CreatedAt: time.Now(),
-		})
-		if err == nil {
+		}); err != nil {
+			// Kafka 失败 → 落到直写
+			log.Printf("kafka publish failed, falling back to direct write: %v", err)
+		} else {
 			return
 		}
-		// Kafka 失败 → 落到直写
 	}
 	if s.clickWriter != nil {
-		_ = s.clickWriter.WriteClick(ctx, linkID, ip, userAgent, platform, referer)
+		if err := s.clickWriter.WriteClick(ctx, linkID, ip, userAgent, platform, referer); err != nil {
+			log.Printf("click direct write failed: %v", err)
+		}
 	}
 }
 
