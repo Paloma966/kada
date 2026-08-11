@@ -22,6 +22,7 @@ import (
 	"github.com/chun/kada-backend/internal/infra"
 	"github.com/chun/kada-backend/internal/infra/sms"
 	"github.com/chun/kada-backend/internal/middleware"
+	"github.com/chun/kada-backend/internal/mq"
 	"github.com/chun/kada-backend/internal/service"
 )
 
@@ -64,9 +65,12 @@ func main() {
 		cacheSvc = service.NewCacheService(redisClient)
 	}
 
+	// Kafka 点击事件发布者（无 broker 时返回 nil = 禁用）
+	kafkaPub := mq.NewKafkaClickPublisher(cfg.Brokers(), cfg.KafkaTopic)
+
 	// 初始化 Service 层
 	authSvc := service.NewAuthService(db, cfg.JWTSecret, cfg.JWTExpires, smsSender)
-	linkSvc := service.NewLinkService(db, cfg.BaseURL, cacheSvc)
+	linkSvc := service.NewLinkService(db, cfg.BaseURL, cacheSvc, kafkaPub, service.NewClickStore(db))
 	domainSvc := service.NewDomainService(db)
 	folderSvc := service.NewFolderService(db)
 	tagSvc := service.NewTagService(db)
