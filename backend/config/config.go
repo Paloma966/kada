@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"strings"
 )
 
 type Config struct {
@@ -22,6 +23,10 @@ type Config struct {
 	// 微信
 	WechatAppID     string
 	WechatAppSecret string
+
+	// Kafka（点击事件流；空 = 禁用）
+	KafkaBrokers string
+	KafkaTopic   string
 }
 
 func Load() *Config {
@@ -39,7 +44,20 @@ func Load() *Config {
 		SMSTemplateCode:    getEnv("SMS_TEMPLATE_CODE", ""),
 		WechatAppID:        getEnv("WECHAT_APP_ID", ""),
 		WechatAppSecret:    getEnv("WECHAT_APP_SECRET", ""),
+		KafkaBrokers:       getEnv("KAFKA_BROKERS", ""),
+		KafkaTopic:         getEnv("KAFKA_TOPIC", "clicks"),
 	}
+}
+
+// Brokers 拆分逗号分隔的 broker 列表，去空白与空项
+func (c *Config) Brokers() []string {
+	var out []string
+	for _, b := range strings.Split(c.KafkaBrokers, ",") {
+		if b = strings.TrimSpace(b); b != "" {
+			out = append(out, b)
+		}
+	}
+	return out
 }
 
 func getEnv(key, fallback string) string {

@@ -15,23 +15,22 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/chun/kada-backend/internal/domain"
+	"github.com/chun/kada-backend/internal/mq"
 )
 
 // shortCodePattern 短码只允许字母、数字、下划线和连字符
 var shortCodePattern = regexp.MustCompile(`^[a-zA-Z0-9_-]{4,20}$`)
 
 type LinkService struct {
-	db      *pgxpool.Pool
-	baseURL string
-	cache   *CacheService
+	db          *pgxpool.Pool
+	baseURL     string
+	cache       *CacheService
+	kafka       mq.ClickPublisher // Kafka 发布者；nil 表示禁用
+	clickWriter ClickWriter       // 直写（降级回退用）
 }
 
-func NewLinkService(db *pgxpool.Pool, baseURL string, cache ...*CacheService) *LinkService {
-	var c *CacheService
-	if len(cache) > 0 {
-		c = cache[0]
-	}
-	return &LinkService{db: db, baseURL: baseURL, cache: c}
+func NewLinkService(db *pgxpool.Pool, baseURL string, cache *CacheService, kafka mq.ClickPublisher, clickWriter ClickWriter) *LinkService {
+	return &LinkService{db: db, baseURL: baseURL, cache: cache, kafka: kafka, clickWriter: clickWriter}
 }
 
 // Create 创建短链接
@@ -482,14 +481,25 @@ func escapeCSV(s string) string {
 	return s
 }
 
-// LogClick 记录点击
+// LogClick 发布点击事件到 Kafka；Kafka 不可用时回退直写，保证点击不丢
 func (s *LinkService) LogClick(ctx context.Context, linkID int64, ip, userAgent, platform, referer string) {
-	s.db.Exec(ctx, `
-		INSERT INTO click_logs (link_id, ip, user_agent, platform, referer)
-		VALUES ($1, $2, $3, $4, $5)
-	`, linkID, ip, userAgent, platform, referer)
-
-	s.db.Exec(ctx, `UPDATE links SET click_count = click_count + 1 WHERE id = $1`, linkID)
+	if s.kafka != nil {
+		err := s.kafka.PublishClick(ctx, mq.ClickEvent{
+			LinkID:    linkID,
+			IP:        ip,
+			UserAgent: userAgent,
+			Platform:  platform,
+			Referer:   referer,
+			CreatedAt: time.Now(),
+		})
+		if err == nil {
+			return
+		}
+		// Kafka 失败 → 落到直写
+	}
+	if s.clickWriter != nil {
+		_ = s.clickWriter.WriteClick(ctx, linkID, ip, userAgent, platform, referer)
+	}
 }
 
 // BuildShortURL 构建完整短链接
