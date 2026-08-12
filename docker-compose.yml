@@ -17,8 +17,7 @@ services:
 
   redis:
     image: redis:7-alpine
-    ports:
-      - "127.0.0.1:6379:6379"
+    # 不发布宿主端口：宿主已有本地 redis 占用 6379，此 redis 仅供 docker 内网 backend 使用
     volumes:
       - redisdata:/data
     healthcheck:

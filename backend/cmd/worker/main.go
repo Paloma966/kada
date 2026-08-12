@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"log"
+	"net"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -17,6 +19,34 @@ import (
 	"github.com/chun/kada-backend/internal/mq"
 	"github.com/chun/kada-backend/internal/service"
 )
+
+// ensureTopic 幂等创建 topic（numPartitions=1 / replicationFactor=1）。
+// 必须在创建 reader 之前调用：若 reader 在 topic 自动创建期间加入消费组，
+// kafka-go 会拿到空分配并永久卡死（segmentio/kafka-go#585）。
+func ensureTopic(ctx context.Context, brokerList []string, topic string) error {
+	conn, err := kafka.DialContext(ctx, "tcp", brokerList[0])
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+
+	controller, err := conn.Controller()
+	if err != nil {
+		return err
+	}
+	ctrlAddr := net.JoinHostPort(controller.Host, strconv.Itoa(controller.Port))
+	ctrlConn, err := kafka.DialContext(ctx, "tcp", ctrlAddr)
+	if err != nil {
+		return err
+	}
+	defer ctrlConn.Close()
+
+	return ctrlConn.CreateTopics(kafka.TopicConfig{
+		Topic:             topic,
+		NumPartitions:     1,
+		ReplicationFactor: 1,
+	})
+}
 
 // processClickMessage 反序列化并落库一条点击消息
 func processClickMessage(msg []byte, writer service.ClickWriter) error {
@@ -45,6 +75,13 @@ func main() {
 	if len(brokerList) == 0 {
 		log.Fatal("KAFKA_BROKERS is required for worker")
 	}
+
+	// 加入消费组前先确保 topic 存在，避免 #585 空分配卡死
+	topicCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	if err := ensureTopic(topicCtx, brokerList, topic); err != nil {
+		log.Printf("⚠️ ensure kafka topic %q failed: %v（worker 将继续尝试消费）", topic, err)
+	}
+	cancel()
 
 	db, err := infra.NewDB(databaseURL)
 	if err != nil {
