@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/chun/kada-backend/internal/mq"
 )
@@ -21,7 +22,7 @@ type fakeWriter struct {
 	calls int
 }
 
-func (f *fakeWriter) WriteClick(_ context.Context, _ int64, _, _, _, _ string) error {
+func (f *fakeWriter) WriteClick(_ context.Context, _ int64, _, _, _, _ string, _ time.Time) error {
 	f.calls++
 	return nil
 }
