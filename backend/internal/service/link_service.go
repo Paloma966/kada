@@ -500,7 +500,7 @@ func (s *LinkService) LogClick(ctx context.Context, linkID int64, ip, userAgent,
 		}
 	}
 	if s.clickWriter != nil {
-		if err := s.clickWriter.WriteClick(ctx, linkID, ip, userAgent, platform, referer); err != nil {
+		if err := s.clickWriter.WriteClick(ctx, linkID, ip, userAgent, platform, referer, time.Now()); err != nil {
 			log.Printf("click direct write failed: %v", err)
 		}
 	}

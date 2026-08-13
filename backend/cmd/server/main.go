@@ -67,6 +67,9 @@ func main() {
 
 	// Kafka 点击事件发布者（无 broker 时返回 nil = 禁用）
 	kafkaPub := mq.NewKafkaClickPublisher(cfg.Brokers(), cfg.KafkaTopic)
+	if kafkaPub != nil {
+		defer kafkaPub.Close()
+	}
 
 	// 初始化 Service 层
 	authSvc := service.NewAuthService(db, cfg.JWTSecret, cfg.JWTExpires, smsSender)
