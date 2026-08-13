@@ -1,7 +1,9 @@
 FROM golang:1.26-alpine AS builder
 RUN apk add --no-cache git
 WORKDIR /app
-ENV GOPROXY=https://goproxy.cn,direct
+# 默认走 goproxy.cn，可在构建时用 --build-arg GOPROXY=https://proxy.golang.org,direct 覆盖
+ARG GOPROXY=https://goproxy.cn,direct
+ENV GOPROXY=${GOPROXY}
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .

@@ -51,8 +51,13 @@ func Load() *Config {
 
 // Brokers 拆分逗号分隔的 broker 列表，去空白与空项
 func (c *Config) Brokers() []string {
+	return SplitBrokers(c.KafkaBrokers)
+}
+
+// SplitBrokers 拆分逗号分隔的 broker 列表，去空白与空项（server 与 worker 共用）
+func SplitBrokers(raw string) []string {
 	var out []string
-	for _, b := range strings.Split(c.KafkaBrokers, ",") {
+	for _, b := range strings.Split(raw, ",") {
 		if b = strings.TrimSpace(b); b != "" {
 			out = append(out, b)
 		}

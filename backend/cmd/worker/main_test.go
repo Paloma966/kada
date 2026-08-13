@@ -13,8 +13,8 @@ type recorderWriter struct {
 	got []mq.ClickEvent
 }
 
-func (r *recorderWriter) WriteClick(_ context.Context, linkID int64, ip, ua, platform, referer string) error {
-	r.got = append(r.got, mq.ClickEvent{LinkID: linkID, IP: ip, UserAgent: ua, Platform: platform, Referer: referer})
+func (r *recorderWriter) WriteClick(_ context.Context, linkID int64, ip, ua, platform, referer string, createdAt time.Time) error {
+	r.got = append(r.got, mq.ClickEvent{LinkID: linkID, IP: ip, UserAgent: ua, Platform: platform, Referer: referer, CreatedAt: createdAt})
 	return nil
 }
 
@@ -27,6 +27,9 @@ func TestProcessClickMessage_Valid(t *testing.T) {
 	}
 	if len(w.got) != 1 || w.got[0].LinkID != 5 {
 		t.Fatalf("expected 1 write with link 5, got %+v", w.got)
+	}
+	if !w.got[0].CreatedAt.Equal(e.CreatedAt) {
+		t.Fatalf("expected CreatedAt to be preserved, got %v want %v", w.got[0].CreatedAt, e.CreatedAt)
 	}
 }
 
