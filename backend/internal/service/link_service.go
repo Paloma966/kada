@@ -43,6 +43,11 @@ func (s *LinkService) Create(ctx context.Context, userID int64, req domain.Creat
 		return nil, errors.New("目标链接仅支持 http/https 协议")
 	}
 
+	// 校验文件夹/工作区归属（此前任意 ID 可挂接，跨用户泄漏名称）
+	if err := s.validateOwnedRefs(ctx, userID, req.FolderID, req.WorkspaceID); err != nil {
+		return nil, err
+	}
+
 	var shortCode string
 
 	if req.ShortCode != nil && *req.ShortCode != "" {
@@ -116,8 +121,13 @@ func (s *LinkService) Create(ctx context.Context, userID int64, req domain.Creat
 		return nil, errors.New("创建短链接失败")
 	}
 
-	// 关联标签
+	// 关联标签（仅允许挂接自己的标签，防止跨用户泄漏标签名/颜色）
 	for _, tagID := range req.TagIDs {
+		var tagOwner int64
+		if err := s.db.QueryRow(ctx, `SELECT user_id FROM tags WHERE id = $1`, tagID).Scan(&tagOwner); err != nil || tagOwner != userID {
+			log.Printf("skip non-owned tag %d for link %d (user %d)", tagID, info.ID, userID)
+			continue
+		}
 		if _, err := s.db.Exec(ctx, `INSERT INTO link_tags (link_id, tag_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`, info.ID, tagID); err != nil {
 			log.Printf("attach tag %d to link %d failed: %v", tagID, info.ID, err)
 		}
@@ -358,6 +368,11 @@ func (s *LinkService) Update(ctx context.Context, linkID, userID int64, req doma
 		return nil, errors.New("目标链接仅支持 http/https 协议")
 	}
 
+	// 校验文件夹归属（req 无 WorkspaceID 字段）
+	if err := s.validateOwnedRefs(ctx, userID, req.FolderID, nil); err != nil {
+		return nil, err
+	}
+
 	var expiresAt *time.Time
 	if req.ExpiresAt != nil && *req.ExpiresAt != "" {
 		t, err := time.Parse(time.RFC3339, *req.ExpiresAt)
@@ -432,6 +447,12 @@ func (s *LinkService) Update(ctx context.Context, linkID, userID int64, req doma
 			log.Printf("clear link tags failed: %v", err)
 		}
 		for _, tagID := range req.TagIDs {
+			// 仅允许挂接自己的标签
+			var tagOwner int64
+			if err := s.db.QueryRow(ctx, `SELECT user_id FROM tags WHERE id = $1`, tagID).Scan(&tagOwner); err != nil || tagOwner != userID {
+				log.Printf("skip non-owned tag %d for link %d (user %d)", tagID, linkID, userID)
+				continue
+			}
 			if _, err := s.db.Exec(ctx, `INSERT INTO link_tags (link_id, tag_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`, linkID, tagID); err != nil {
 				log.Printf("attach tag %d to link %d failed: %v", tagID, linkID, err)
 			}
@@ -480,6 +501,11 @@ func (s *LinkService) BatchDelete(ctx context.Context, ids []int64, userID int64
 
 // BatchTag 批量打标签
 func (s *LinkService) BatchTag(ctx context.Context, ids []int64, tagID int64, userID int64) error {
+	// 标签必须属于当前用户
+	var tagOwner int64
+	if err := s.db.QueryRow(ctx, `SELECT user_id FROM tags WHERE id = $1`, tagID).Scan(&tagOwner); err != nil || tagOwner != userID {
+		return errors.New("标签不存在或无权限")
+	}
 	for _, linkID := range ids {
 		// 验证链接属于该用户
 		var ownerID int64
@@ -489,6 +515,23 @@ func (s *LinkService) BatchTag(ctx context.Context, ids []int64, tagID int64, us
 		}
 		if _, err := s.db.Exec(ctx, `INSERT INTO link_tags (link_id, tag_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`, linkID, tagID); err != nil {
 			log.Printf("batch tag link %d with tag %d failed: %v", linkID, tagID, err)
+		}
+	}
+	return nil
+}
+
+// validateOwnedRefs 校验文件夹/工作区归属当前用户（nil 或 0 视为未设置）
+func (s *LinkService) validateOwnedRefs(ctx context.Context, userID int64, folderID, workspaceID *int64) error {
+	if folderID != nil && *folderID != 0 {
+		var owner int64
+		if err := s.db.QueryRow(ctx, `SELECT user_id FROM folders WHERE id = $1`, *folderID).Scan(&owner); err != nil || owner != userID {
+			return errors.New("文件夹不存在或无权限")
+		}
+	}
+	if workspaceID != nil && *workspaceID != 0 {
+		var owner int64
+		if err := s.db.QueryRow(ctx, `SELECT user_id FROM workspaces WHERE id = $1`, *workspaceID).Scan(&owner); err != nil || owner != userID {
+			return errors.New("工作区不存在或无权限")
 		}
 	}
 	return nil
