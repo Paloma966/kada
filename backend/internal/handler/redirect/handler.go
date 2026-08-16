@@ -12,6 +12,7 @@ import (
 	"github.com/chun/kada-backend/internal/domain"
 	"github.com/chun/kada-backend/internal/infra/ua"
 	"github.com/chun/kada-backend/internal/infra/urlcheck"
+	"github.com/chun/kada-backend/internal/middleware"
 )
 
 // LinkService 短链服务接口（方便测试 mock）
@@ -67,7 +68,7 @@ func (h *Handler) Redirect(c *gin.Context) {
 
 	userAgent := c.GetHeader("User-Agent")
 	platform := ua.Detect(userAgent)
-	ip := c.ClientIP()
+	ip := middleware.RealIP(c)
 	referer := c.GetHeader("Referer")
 
 	// 记录点击
@@ -126,7 +127,7 @@ func (h *Handler) LogClickAction(c *gin.Context) {
 
 	userAgent := c.GetHeader("User-Agent")
 	platform := ua.Detect(userAgent)
-	ip := c.ClientIP()
+	ip := middleware.RealIP(c)
 
 	// 记录 action 事件（platform 保持不变，action 存入 referer 字段）
 	go h.svc.LogClick(context.Background(), link.ID, ip, userAgent, string(platform), "action:"+req.Action)
@@ -155,7 +156,7 @@ func (h *Handler) VerifyPassword(c *gin.Context) {
 	// 密码正确，记录点击并跳转
 	userAgent := c.GetHeader("User-Agent")
 	platform := ua.Detect(userAgent)
-	ip := c.ClientIP()
+	ip := middleware.RealIP(c)
 	referer := c.GetHeader("Referer")
 	go h.svc.LogClick(context.Background(), info.ID, ip, userAgent, string(platform), referer)
 
