@@ -93,18 +93,32 @@ func (s *AuthService) SendSMSCode(ctx context.Context, phone string) error {
 
 // LoginByPhone 手机号+验证码登录
 func (s *AuthService) LoginByPhone(ctx context.Context, phone, code string) (*domain.AuthResponse, error) {
-	// 查数据库校验验证码
-	var count int
-	var err error
-	if err = s.db.QueryRow(ctx, `
-		SELECT COUNT(*) FROM sms_codes
-		WHERE phone = $1 AND code = $2 AND used = FALSE AND expires_at > NOW()
-	`, phone, code).Scan(&count); err != nil || count == 0 {
-		return nil, errors.New("验证码错误或已过期")
+	if !phonePattern.MatchString(phone) {
+		return nil, errors.New("手机号格式不正确")
 	}
 
-	// 标记验证码已使用
-	_, _ = s.db.Exec(ctx, `UPDATE sms_codes SET used = TRUE WHERE phone = $1 AND code = $2`, phone, code)
+	// 原子消耗验证码：单条 UPDATE 同时完成「未使用、未过期、尝试次数未超限」校验，
+	// 消除并发请求双用同一验证码的竞态
+	var codeID int64
+	err := s.db.QueryRow(ctx, `
+		UPDATE sms_codes SET used = TRUE
+		WHERE id = (
+			SELECT id FROM sms_codes
+			WHERE phone = $1 AND code = $2 AND used = FALSE
+			  AND expires_at > NOW() AND attempts < 5
+			ORDER BY id
+			LIMIT 1
+		)
+		RETURNING id
+	`, phone, code).Scan(&codeID)
+	if err != nil {
+		// 失败尝试计数（验证码仍存在且未使用时），5 次后该验证码作废
+		_, _ = s.db.Exec(ctx, `
+			UPDATE sms_codes SET attempts = attempts + 1
+			WHERE phone = $1 AND code = $2 AND used = FALSE AND expires_at > NOW()
+		`, phone, code)
+		return nil, errors.New("验证码错误或已过期")
+	}
 
 	// 查找或创建用户
 	var user domain.UserInfo
