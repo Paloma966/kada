@@ -65,11 +65,12 @@ func (s *LinkService) Create(ctx context.Context, userID int64, req domain.Creat
 	}
 
 	var expiresAt *time.Time
-	if req.ExpiresAt != nil {
+	if req.ExpiresAt != nil && *req.ExpiresAt != "" {
 		t, err := time.Parse(time.RFC3339, *req.ExpiresAt)
-		if err == nil {
-			expiresAt = &t
+		if err != nil {
+			return nil, errors.New("过期时间格式无效，请使用 RFC3339 格式（如 2025-01-01T00:00:00Z）")
 		}
+		expiresAt = &t
 	}
 
 	var passwordHash *string
@@ -347,11 +348,12 @@ func (s *LinkService) Update(ctx context.Context, linkID, userID int64, req doma
 	}
 
 	var expiresAt *time.Time
-	if req.ExpiresAt != nil {
+	if req.ExpiresAt != nil && *req.ExpiresAt != "" {
 		t, err := time.Parse(time.RFC3339, *req.ExpiresAt)
-		if err == nil {
-			expiresAt = &t
+		if err != nil {
+			return nil, errors.New("过期时间格式无效，请使用 RFC3339 格式（如 2025-01-01T00:00:00Z）")
 		}
+		expiresAt = &t
 	}
 
 	var passwordHash *string
