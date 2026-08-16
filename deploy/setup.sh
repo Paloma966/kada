@@ -1,9 +1,12 @@
 #!/bin/bash
 set -e
 
+# 目标服务器（不再硬编码，使用前确认）
+DEPLOY_HOST="${DEPLOY_HOST:-root@YOUR_SERVER_IP}"
+
 echo "========================================="
 echo "  Kada 服务器一键部署脚本"
-echo "  IP: 47.122.124.48"
+echo "  Target: $DEPLOY_HOST"
 echo "========================================="
 
 # ========== 1. 更新系统 + 装基础工具 ==========
@@ -25,15 +28,15 @@ mkdir -p /opt/kada
 cd /opt/kada
 
 # 方式A: 从你的开发机 scp 过来（推荐，保留 .env 等配置）
-# 先在你的开发机上跑: scp -r /home/chun/dev/projects/kada/* root@47.122.124.48:/opt/kada/
+# 先在你的开发机上跑: scp -r /home/chun/dev/projects/kada/* "$DEPLOY_HOST":/opt/kada/
 
 # 方式B: 或者用 git（如果有仓库的话）
 # git clone https://github.com/yourusername/kada.git /opt/kada
 
 echo "请用开发机 scp 上传代码:"
-echo "  scp -r /home/chun/dev/projects/kada/backend root@47.122.124.48:/opt/kada/"
-echo "  scp -r /home/chun/dev/projects/kada/docker-compose.yml root@47.122.124.48:/opt/kada/"
-echo "  scp -r /home/chun/dev/projects/kada/nginx root@47.122.124.48:/opt/kada/"
+echo "  scp -r /home/chun/dev/projects/kada/backend \"$DEPLOY_HOST\":/opt/kada/"
+echo "  scp -r /home/chun/dev/projects/kada/docker-compose.yml \"$DEPLOY_HOST\":/opt/kada/"
+echo "  scp -r /home/chun/dev/projects/kada/nginx \"$DEPLOY_HOST\":/opt/kada/"
 
 # ========== 4. 配置防火墙 ==========
 echo "[4/6] 配置防火墙..."
