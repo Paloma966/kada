@@ -166,6 +166,7 @@ export function LinkCard({ link, onDelete, selectable, selected, onSelect }: Lin
               <a
                 href={link.short_url}
                 target="_blank"
+                rel="noopener noreferrer"
                 onClick={(e) => e.stopPropagation()}
                 className="p-1.5 text-gray-400 hover:text-indigo-500 hover:bg-indigo-50 rounded-lg transition-colors"
                 title="打开链接"

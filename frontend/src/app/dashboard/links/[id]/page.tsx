@@ -303,7 +303,7 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
           </button>
           <button onClick={() => setShowQR(true)}
             className="p-1.5 rounded-lg text-indigo-400 hover:text-indigo-600 transition shrink-0"><QrCode className="size-3.5" /></button>
-          <a href={link.short_url} target="_blank"
+          <a href={link.short_url} target="_blank" rel="noopener noreferrer"
             className="p-1.5 rounded-lg text-indigo-400 hover:text-indigo-600 transition shrink-0"><ExternalLink className="size-3.5" /></a>
         </div>
 
@@ -589,7 +589,7 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
           {/* Target URL */}
           <div className="mt-3 pt-3 border-t">
             <p className="text-xs font-medium text-gray-500 mb-1">目标 URL</p>
-            <a href={link.original_url} target="_blank" className="text-indigo-600 text-sm break-all hover:underline">
+            <a href={link.original_url} target="_blank" rel="noopener noreferrer" className="text-indigo-600 text-sm break-all hover:underline">
               {link.original_url}
             </a>
           </div>

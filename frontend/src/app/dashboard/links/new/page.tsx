@@ -164,7 +164,7 @@ export default function CreateLinkPage() {
                             {preview.description && (
                               <p className="text-xs text-gray-500 mt-0.5 line-clamp-2">{preview.description}</p>
                             )}
-                            <a href={originalUrl} target="_blank"
+                            <a href={originalUrl} target="_blank" rel="noopener noreferrer"
                               className="inline-flex items-center gap-1 text-xs text-indigo-500 hover:text-indigo-600 mt-1">
                               <ExternalLink className="size-3" />
                               {new URL(originalUrl).hostname}
