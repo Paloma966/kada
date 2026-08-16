@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -142,6 +143,64 @@ func TestRedirect_QQReturnsGuidePage(t *testing.T) {
 
 	if w.Code != http.StatusOK {
 		t.Errorf("expected 200 for QQ guide page, got %d", w.Code)
+	}
+}
+
+// ========== 不安全协议拦截 ==========
+
+func TestRedirect_UnsafeSchemeBlocked(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	svc := &mockLinkService{
+		getByCode: func(ctx context.Context, code string) (*domain.LinkInfo, error) {
+			return &domain.LinkInfo{
+				ID:          1,
+				ShortCode:   code,
+				OriginalURL: "javascript:alert(document.cookie)",
+				Domain:      "kada.click",
+				IsActive:    true,
+			}, nil
+		},
+	}
+	h := NewHandler(svc)
+
+	r := gin.New()
+	r.GET("/r/:code", h.Redirect)
+
+	// 微信 UA 会走引导页，攻击面最大
+	req := httptest.NewRequest("GET", "/r/evil123", nil)
+	req.Header.Set("User-Agent", "Mozilla/5.0 MicroMessenger/8.0")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for javascript: target, got %d", w.Code)
+	}
+	if body := w.Body.String(); !strings.Contains(body, "协议不受支持") && !strings.Contains(body, "链接不可用") {
+		t.Errorf("expected blocked page, got: %s", body)
+	}
+}
+
+func TestVerifyPassword_UnsafeSchemeBlocked(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	svc := &mockLinkService{
+		checkPassword: func(ctx context.Context, code, password string) (bool, *domain.LinkInfo, error) {
+			return true, &domain.LinkInfo{OriginalURL: "data:text/html,<script>alert(1)</script>"}, nil
+		},
+	}
+	h := NewHandler(svc)
+
+	r := gin.New()
+	r.POST("/r/:code/verify-password", h.VerifyPassword)
+
+	req := httptest.NewRequest("POST", "/r/evil123/verify-password", strings.NewReader("password=x"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for data: target, got %d", w.Code)
 	}
 }
 

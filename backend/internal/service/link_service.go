@@ -16,6 +16,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/chun/kada-backend/internal/domain"
+	"github.com/chun/kada-backend/internal/infra/urlcheck"
 	"github.com/chun/kada-backend/internal/mq"
 )
 
@@ -36,6 +37,10 @@ func NewLinkService(db *pgxpool.Pool, baseURL string, cache *CacheService, kafka
 
 // Create 创建短链接
 func (s *LinkService) Create(ctx context.Context, userID int64, req domain.CreateLinkRequest) (*domain.LinkInfo, error) {
+	if !urlcheck.IsSafeTarget(req.OriginalURL) {
+		return nil, errors.New("目标链接仅支持 http/https 协议")
+	}
+
 	var shortCode string
 
 	if req.ShortCode != nil && *req.ShortCode != "" {
@@ -317,6 +322,10 @@ func (s *LinkService) List(ctx context.Context, userID int64, page, pageSize int
 
 // Update 更新链接
 func (s *LinkService) Update(ctx context.Context, linkID, userID int64, req domain.UpdateLinkRequest) (*domain.LinkInfo, error) {
+	if req.OriginalURL != nil && *req.OriginalURL != "" && !urlcheck.IsSafeTarget(*req.OriginalURL) {
+		return nil, errors.New("目标链接仅支持 http/https 协议")
+	}
+
 	var expiresAt *time.Time
 	if req.ExpiresAt != nil {
 		t, err := time.Parse(time.RFC3339, *req.ExpiresAt)
