@@ -4,14 +4,17 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"net"
 	"os"
 	"os/signal"
 	"strconv"
+	"sync"
 	"syscall"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/segmentio/kafka-go"
 
 	"github.com/chun/kada-backend/config"
@@ -19,6 +22,49 @@ import (
 	"github.com/chun/kada-backend/internal/mq"
 	"github.com/chun/kada-backend/internal/service"
 )
+
+// maxDeliveryAttempts 单条消息最大处理尝试次数。
+// 超过则提交 offset 丢弃该消息：否则毒消息会让单分区单消费组永久卡死。
+const maxDeliveryAttempts = 3
+
+// isPermanentError 判断不可重试的永久性错误（毒消息）。
+func isPermanentError(err error) bool {
+	// 非法 JSON：重试永远失败
+	var syntaxErr *json.SyntaxError
+	if errors.As(err, &syntaxErr) {
+		return true
+	}
+	// 外键违反（23503）：如链接已删除，重试永远失败
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.Code == "23503" {
+		return true
+	}
+	return false
+}
+
+// attemptTracker 在内存中跟踪每条消息的处理尝试次数（重启后重置，可接受）
+type attemptTracker struct {
+	mu   sync.Mutex
+	seen map[string]int
+}
+
+func newAttemptTracker() *attemptTracker {
+	return &attemptTracker{seen: make(map[string]int)}
+}
+
+func (t *attemptTracker) record(topic string, partition int, offset int64) int {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	key := fmt.Sprintf("%s-%d-%d", topic, partition, offset)
+	t.seen[key]++
+	return t.seen[key]
+}
+
+func (t *attemptTracker) reset(topic string, partition int, offset int64) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	delete(t.seen, fmt.Sprintf("%s-%d-%d", topic, partition, offset))
+}
 
 // ensureTopic 幂等创建 topic（numPartitions=1 / replicationFactor=1）。
 // 必须在创建 reader 之前调用：若 reader 在 topic 自动创建期间加入消费组，
@@ -110,6 +156,7 @@ func main() {
 	defer stop()
 
 	log.Printf("🧵 click-worker consuming topic %q from %s", topic, brokers)
+	tracker := newAttemptTracker()
 	for {
 		// 用 FetchMessage 而非 ReadMessage：ReadMessage 会自动提交 offset，
 		// 处理失败也会被提交导致点击永久丢失。这里仅在落库成功后才提交。
@@ -122,13 +169,29 @@ func main() {
 			log.Printf("fetch message failed: %v", err)
 			continue
 		}
-		if err := processClickMessage(m.Value, store); err != nil {
-			// 处理失败不提交 offset，消息会重新投递，避免点击丢失
-			log.Printf("process message failed: %v", err)
+
+		procErr := processClickMessage(m.Value, store)
+		if procErr == nil {
+			tracker.reset(m.Topic, m.Partition, m.Offset)
+			if err := reader.CommitMessages(ctx, m); err != nil {
+				log.Printf("commit message failed: %v", err)
+			}
 			continue
 		}
-		if err := reader.CommitMessages(ctx, m); err != nil {
-			log.Printf("commit message failed: %v", err)
+
+		attempts := tracker.record(m.Topic, m.Partition, m.Offset)
+		if isPermanentError(procErr) || attempts >= maxDeliveryAttempts {
+			// 毒消息（非法 JSON / 外键违反）或重试超限：提交 offset 跳过，
+			// 防止单分区消费组被同一条消息永久卡死。
+			log.Printf("dropping click message after %d attempts (permanent error): %v", attempts, procErr)
+			if err := reader.CommitMessages(ctx, m); err != nil {
+				log.Printf("commit message failed: %v", err)
+			}
+			tracker.reset(m.Topic, m.Partition, m.Offset)
+			continue
 		}
+
+		log.Printf("process message failed (attempt %d/%d): %v", attempts, maxDeliveryAttempts, procErr)
+		time.Sleep(time.Second) // 短暂退避，避免空转
 	}
 }
