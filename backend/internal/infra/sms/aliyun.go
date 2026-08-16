@@ -52,8 +52,17 @@ func (s *AliyunSender) SendVerificationCode(phone string) (code string, err erro
 			*response.Body.Code, *response.Body.Message)
 	}
 
-	log.Printf("📱 验证码已发送: %s, Code: %s", phone, code)
+	// 安全：不记录验证码明文，手机号脱敏
+	log.Printf("📱 验证码已发送至 %s", maskPhone(phone))
 	return code, nil
+}
+
+// maskPhone 手机号脱敏：138****1234
+func maskPhone(phone string) string {
+	if len(phone) < 7 {
+		return "***"
+	}
+	return phone[:3] + "****" + phone[len(phone)-4:]
 }
 
 func (s *AliyunSender) CheckVerificationCode(phone, code string) (bool, error) {
