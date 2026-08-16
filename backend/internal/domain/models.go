@@ -176,13 +176,14 @@ type CreateTagRequest struct {
 // ==================== 域名 ====================
 
 type Domain struct {
-	ID         int64      `json:"id"`
-	UserID     int64      `json:"user_id"`
-	Name       string     `json:"name"`
-	Verified   bool       `json:"verified"`
-	VerifiedAt *time.Time `json:"verified_at"`
-	CreatedAt  time.Time  `json:"created_at"`
-	UpdatedAt  time.Time  `json:"updated_at"`
+	ID               int64      `json:"id"`
+	UserID           int64      `json:"user_id"`
+	Name             string     `json:"name"`
+	Verified         bool       `json:"verified"`
+	VerifiedAt       *time.Time `json:"verified_at"`
+	CreatedAt        time.Time  `json:"created_at"`
+	UpdatedAt        time.Time  `json:"updated_at"`
+	VerificationCode string     `json:"verification_code,omitempty"`
 }
 
 type CreateDomainRequest struct {
