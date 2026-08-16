@@ -123,7 +123,7 @@ func (h *Handler) RegisterByEmail(c *gin.Context) {
 func (h *Handler) UpdateMe(c *gin.Context) {
 	var req struct {
 		Name  *string `json:"name"`
-		Email *string `json:"email"`
+		Email *string `json:"email" binding:"omitempty,email"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "请提供有效的更新信息"})
