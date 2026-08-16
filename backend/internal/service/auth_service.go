@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"os"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -50,7 +51,10 @@ func (s *AuthService) SendSMSCode(ctx context.Context, phone string) error {
 		}
 	} else {
 		code = generateSMSCode()
-		fmt.Printf("📱 [DEV] Phone: %s, Code: %s\n", phone, code)
+		// 安全：验证码明文只允许在非 release 模式下打印，生产日志绝不落验证码
+		if os.Getenv("GIN_MODE") != "release" {
+			fmt.Printf("📱 [DEV] Phone: %s, Code: %s\n", phone, code)
+		}
 	}
 
 	// 存储验证码到数据库（5分钟有效）
