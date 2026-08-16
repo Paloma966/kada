@@ -114,7 +114,7 @@ lint-ci:  ## 运行 golangci-lint（本地 CI 模拟）
 	cd backend && golangci-lint run --timeout=5m ./...
 
 lint-fe-ci:  ## 运行前端 lint（本地 CI 模拟）
-	cd frontend && npx next lint --max-warnings 100 || true
+	cd frontend && npm run lint
 
 test-race:  ## 运行 Go 测试 + 竞态检测（CI 模式）
 	cd backend && go test ./... -v -count=1 -race -coverprofile=coverage.out

@@ -42,7 +42,9 @@ func (s *FolderService) List(ctx context.Context, userID int64) ([]domain.Folder
 	var folders []domain.Folder
 	for rows.Next() {
 		var f domain.Folder
-		rows.Scan(&f.ID, &f.UserID, &f.Name, &f.CreatedAt, &f.UpdatedAt, &f.LinkCount)
+		if err := rows.Scan(&f.ID, &f.UserID, &f.Name, &f.CreatedAt, &f.UpdatedAt, &f.LinkCount); err != nil {
+			return nil, errors.New("查询文件夹列表失败")
+		}
 		folders = append(folders, f)
 	}
 	if folders == nil {

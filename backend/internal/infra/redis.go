@@ -31,6 +31,9 @@ func NewRedis(redisURL string) (*redis.Client, error) {
 }
 
 func CloseRedis(client *redis.Client) {
-	client.Close()
+	if err := client.Close(); err != nil {
+		log.Printf("close redis failed: %v", err)
+		return
+	}
 	log.Println("Redis connection closed")
 }

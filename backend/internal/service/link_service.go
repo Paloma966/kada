@@ -50,8 +50,8 @@ func (s *LinkService) Create(ctx context.Context, userID int64, req domain.Creat
 			return nil, errors.New("短码格式无效：只允许字母、数字、下划线和连字符，长度4-20位")
 		}
 		var exists bool
-		s.db.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM links WHERE short_code = $1)`, *req.ShortCode).Scan(&exists)
-		if exists {
+		// 快速路径检查：失败时不做判断，最终由唯一约束仲裁
+		if err := s.db.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM links WHERE short_code = $1)`, *req.ShortCode).Scan(&exists); err == nil && exists {
 			return nil, errors.New("该短码已被占用，请换一个")
 		}
 		shortCode = *req.ShortCode
@@ -118,7 +118,9 @@ func (s *LinkService) Create(ctx context.Context, userID int64, req domain.Creat
 
 	// 关联标签
 	for _, tagID := range req.TagIDs {
-		s.db.Exec(ctx, `INSERT INTO link_tags (link_id, tag_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`, info.ID, tagID)
+		if _, err := s.db.Exec(ctx, `INSERT INTO link_tags (link_id, tag_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`, info.ID, tagID); err != nil {
+			log.Printf("attach tag %d to link %d failed: %v", tagID, info.ID, err)
+		}
 	}
 
 	info.ShortURL = s.BuildShortURL(info.Domain, info.ShortCode)
@@ -171,7 +173,10 @@ func (s *LinkService) GetByID(ctx context.Context, linkID, userID int64) (*domai
 		defer rows.Close()
 		for rows.Next() {
 			var t domain.LinkTagInfo
-			rows.Scan(&t.ID, &t.Name, &t.Color)
+			if err := rows.Scan(&t.ID, &t.Name, &t.Color); err != nil {
+				log.Printf("scan link tags failed: %v", err)
+				continue
+			}
 			info.Tags = append(info.Tags, t)
 		}
 	}
@@ -304,7 +309,10 @@ func (s *LinkService) List(ctx context.Context, userID int64, page, pageSize int
 	}
 
 	var total int64
-	s.db.QueryRow(ctx, `SELECT COUNT(*) FROM links l `+where, args...).Scan(&total)
+	if err := s.db.QueryRow(ctx, `SELECT COUNT(*) FROM links l `+where, args...).Scan(&total); err != nil {
+		log.Printf("count links failed: %v", err)
+		total = 0
+	}
 
 	orderBy := "l.created_at DESC"
 	switch sort {
@@ -329,9 +337,12 @@ func (s *LinkService) List(ctx context.Context, userID int64, page, pageSize int
 	var links []domain.LinkInfo
 	for rows.Next() {
 		var l domain.LinkInfo
-		rows.Scan(&l.ID, &l.ShortCode, &l.OriginalURL, &l.Title, &l.Description,
+		if err := rows.Scan(&l.ID, &l.ShortCode, &l.OriginalURL, &l.Title, &l.Description,
 			&l.ImageURL, &l.Domain, &l.ClickCount, &l.IsActive,
-			&l.ExpiresAt, &l.CreatedAt, &l.UpdatedAt, &l.FolderID)
+			&l.ExpiresAt, &l.CreatedAt, &l.UpdatedAt, &l.FolderID); err != nil {
+			log.Printf("scan links failed: %v", err)
+			continue
+		}
 		l.ShortURL = s.BuildShortURL(l.Domain, l.ShortCode)
 		links = append(links, l)
 	}
@@ -362,9 +373,9 @@ func (s *LinkService) Update(ctx context.Context, linkID, userID int64, req doma
 		passwordHash = &hash
 	}
 
-	// 获取旧短码（用于缓存失效）
+	// 获取旧短码（用于缓存失效）；失败不影响主流程
 	var oldShortCode string
-	s.db.QueryRow(ctx, `SELECT short_code FROM links WHERE id = $1`, linkID).Scan(&oldShortCode)
+	_ = s.db.QueryRow(ctx, `SELECT short_code FROM links WHERE id = $1`, linkID).Scan(&oldShortCode)
 
 	// 校验自定义短码
 	if req.ShortCode != nil && *req.ShortCode != "" {
@@ -372,8 +383,8 @@ func (s *LinkService) Update(ctx context.Context, linkID, userID int64, req doma
 			return nil, errors.New("短码格式无效：只允许字母、数字、下划线和连字符，长度4-20位")
 		}
 		var exists bool
-		s.db.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM links WHERE short_code = $1 AND id != $2)`, *req.ShortCode, linkID).Scan(&exists)
-		if exists {
+		// 快速路径检查：失败时不做判断，最终由唯一约束仲裁
+		if err := s.db.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM links WHERE short_code = $1 AND id != $2)`, *req.ShortCode, linkID).Scan(&exists); err == nil && exists {
 			return nil, errors.New("该短码已被占用，请换一个")
 		}
 	}
@@ -417,9 +428,13 @@ func (s *LinkService) Update(ctx context.Context, linkID, userID int64, req doma
 
 	// 更新标签关联
 	if req.TagIDs != nil {
-		s.db.Exec(ctx, `DELETE FROM link_tags WHERE link_id = $1`, linkID)
+		if _, err := s.db.Exec(ctx, `DELETE FROM link_tags WHERE link_id = $1`, linkID); err != nil {
+			log.Printf("clear link tags failed: %v", err)
+		}
 		for _, tagID := range req.TagIDs {
-			s.db.Exec(ctx, `INSERT INTO link_tags (link_id, tag_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`, linkID, tagID)
+			if _, err := s.db.Exec(ctx, `INSERT INTO link_tags (link_id, tag_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`, linkID, tagID); err != nil {
+				log.Printf("attach tag %d to link %d failed: %v", tagID, linkID, err)
+			}
 		}
 	}
 
@@ -439,9 +454,9 @@ func (s *LinkService) Update(ctx context.Context, linkID, userID int64, req doma
 
 // Delete 删除链接
 func (s *LinkService) Delete(ctx context.Context, linkID, userID int64) error {
-	// 获取短码用于缓存失效
+	// 获取短码用于缓存失效；失败不影响主流程
 	var shortCode string
-	s.db.QueryRow(ctx, `SELECT short_code FROM links WHERE id = $1`, linkID).Scan(&shortCode)
+	_ = s.db.QueryRow(ctx, `SELECT short_code FROM links WHERE id = $1`, linkID).Scan(&shortCode)
 
 	_, err := s.db.Exec(ctx, `DELETE FROM links WHERE id = $1 AND user_id = $2`, linkID, userID)
 	if err != nil {
@@ -472,7 +487,9 @@ func (s *LinkService) BatchTag(ctx context.Context, ids []int64, tagID int64, us
 		if err != nil || ownerID != userID {
 			continue
 		}
-		s.db.Exec(ctx, `INSERT INTO link_tags (link_id, tag_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`, linkID, tagID)
+		if _, err := s.db.Exec(ctx, `INSERT INTO link_tags (link_id, tag_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`, linkID, tagID); err != nil {
+			log.Printf("batch tag link %d with tag %d failed: %v", linkID, tagID, err)
+		}
 	}
 	return nil
 }
@@ -495,7 +512,10 @@ func (s *LinkService) ExportCSV(ctx context.Context, userID int64) (string, erro
 		var clicks int64
 		var active bool
 		var created time.Time
-		rows.Scan(&code, &url, &title, &domain, &clicks, &active, &created)
+		if err := rows.Scan(&code, &url, &title, &domain, &clicks, &active, &created); err != nil {
+			log.Printf("export csv scan failed: %v", err)
+			continue
+		}
 		status := "启用"
 		if !active {
 			status = "停用"

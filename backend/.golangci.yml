@@ -13,6 +13,7 @@ linters:
     - unused
     - misspell
     - unconvert
+    - gosec
   settings:
     errcheck:
       check-type-assertions: false

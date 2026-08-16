@@ -128,10 +128,12 @@ func main() {
 		if topicErr == nil {
 			break
 		}
+		// #nosec G706 -- topic 来自环境配置、topicErr 为内部连接错误，非用户输入
 		log.Printf("⚠️ ensure kafka topic %q failed (attempt %d/10): %v", topic, attempt, topicErr)
 		time.Sleep(2 * time.Second)
 	}
 	if topicErr != nil {
+		// #nosec G706 -- topic 来自环境配置、topicErr 为内部连接错误，非用户输入
 		log.Fatalf("cannot ensure kafka topic %q exists: %v", topic, topicErr)
 	}
 
@@ -155,6 +157,7 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	// #nosec G706 -- topic/brokers 来自环境配置，非用户输入
 	log.Printf("🧵 click-worker consuming topic %q from %s", topic, brokers)
 	tracker := newAttemptTracker()
 	for {

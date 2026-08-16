@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"html/template"
+	"log"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -106,7 +107,9 @@ func (h *Handler) QRCode(c *gin.Context) {
 
 	c.Header("Content-Type", "image/png")
 	c.Header("Cache-Control", "public, max-age=86400")
-	c.Writer.Write(png)
+	if _, err := c.Writer.Write(png); err != nil {
+		log.Printf("write qrcode png failed: %v", err)
+	}
 }
 
 // LogClickAction 记录用户在引导页上的行为（复制、扫码、deeplink 尝试等）
@@ -195,7 +198,9 @@ func (h *Handler) renderIntermediatePage(c *gin.Context, targetURL, code string,
 	_ = deeplinks // 注入到模板中使用
 
 	c.Header("Content-Type", "text/html; charset=utf-8")
-	c.Writer.Write([]byte(renderGuidePage(data, deeplinks)))
+	if _, err := c.Writer.Write([]byte(renderGuidePage(data, deeplinks))); err != nil {
+		log.Printf("write guide page failed: %v", err)
+	}
 }
 
 // renderGuidePage 渲染引导页（含 deeplinks）
@@ -209,7 +214,9 @@ func renderGuidePage(data struct {
 }, deeplinks []domain.DeepLink) string {
 	var buf bytes.Buffer
 	page := template.Must(template.New("guide").Parse(guidePageHTML))
-	page.Execute(&buf, data)
+	if err := page.Execute(&buf, data); err != nil {
+		log.Printf("execute guide template failed: %v", err)
+	}
 	return buf.String()
 }
 
