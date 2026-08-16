@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math/big"
 	"os"
+	"regexp"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -35,10 +36,31 @@ func NewAuthService(db *pgxpool.Pool, jwtSecret, jwtExpire string, sms SMSSender
 	return &AuthService{db: db, jwtSecret: jwtSecret, jwtExpire: d, sms: sms}
 }
 
+// phonePattern 中国大陆手机号：1 开头 + 3-9 + 9 位数字
+var phonePattern = regexp.MustCompile(`^1[3-9]\d{9}$`)
+
 // SendSMSCode 发送短信验证码
 func (s *AuthService) SendSMSCode(ctx context.Context, phone string) error {
-	if len(phone) != 11 {
+	if !phonePattern.MatchString(phone) {
 		return errors.New("手机号格式不正确")
+	}
+
+	// 每手机号 60 秒冷却：防止对单一手机号短信轰炸
+	var recent int
+	if err := s.db.QueryRow(ctx, `
+		SELECT COUNT(*) FROM sms_codes
+		WHERE phone = $1 AND created_at > NOW() - INTERVAL '60 seconds'
+	`, phone).Scan(&recent); err == nil && recent > 0 {
+		return errors.New("发送过于频繁，请 60 秒后再试")
+	}
+
+	// 每手机号每日上限 10 条：防止批量轰炸造成短信费用损失
+	var daily int
+	if err := s.db.QueryRow(ctx, `
+		SELECT COUNT(*) FROM sms_codes
+		WHERE phone = $1 AND created_at > NOW() - INTERVAL '24 hours'
+	`, phone).Scan(&daily); err == nil && daily >= 10 {
+		return errors.New("该手机号今日发送次数已达上限，请明天再试")
 	}
 
 	var code string
