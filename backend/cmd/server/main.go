@@ -45,11 +45,13 @@ func main() {
 	}
 	defer infra.CloseDB(db)
 
-	// 连接 Redis
+	// 连接 Redis：初始 ping 失败也保留客户端（go-redis 自动重连）。
+	// 限流在 Redis 恢复前 fail-open，恢复后自动生效，无需重启进程。
 	redisClient, err := infra.NewRedis(cfg.RedisURL)
 	if err != nil {
-		log.Printf("⚠️  Redis 连接失败（继续运行）: %v", err)
-	} else {
+		log.Printf("⚠️  Redis 暂时不可用（限流将暂时放行，恢复后自动生效）: %v", err)
+	}
+	if redisClient != nil {
 		defer infra.CloseRedis(redisClient)
 	}
 

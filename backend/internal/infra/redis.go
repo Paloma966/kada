@@ -21,7 +21,9 @@ func NewRedis(redisURL string) (*redis.Client, error) {
 	defer cancel()
 
 	if err := client.Ping(ctx).Err(); err != nil {
-		return nil, fmt.Errorf("failed to connect to Redis: %w", err)
+		// 初始 ping 失败也返回客户端：go-redis 内部自动重连。
+		// 调用方（限流器）在 Redis 恢复前 fail-open，恢复后自动生效，无需重启进程。
+		return client, fmt.Errorf("failed to ping Redis: %w", err)
 	}
 
 	log.Println("✅ Redis connected")
