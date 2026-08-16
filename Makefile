@@ -75,16 +75,10 @@ db-reset:  ## 重置数据库（危险操作！）
 	docker compose down -v && docker compose up -d postgres redis && \
 	sleep 3 && cd backend && go run ./cmd/migrate/
 
-# ========== sqlc ==========
-
-sqlc-gen:  ## 生成 sqlc 代码
-	cd backend && sqlc generate
-
 # ========== 工具安装 ==========
 
 install-tools:  ## 安装开发工具
 	go install github.com/golang-migrate/migrate/v4/cmd/migrate@latest
-	go install github.com/sqlc-dev/sqlc/cmd/sqlc@latest
 
 # ========== 部署 ==========
 # 目标服务器不再硬编码，使用时显式传入：
