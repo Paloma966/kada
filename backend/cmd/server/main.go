@@ -33,6 +33,11 @@ func main() {
 	// 加载配置
 	cfg := config.Load()
 
+	// 安全：release 模式禁止使用默认/弱 JWT 密钥，否则任何人均可伪造登录令牌
+	if os.Getenv("GIN_MODE") == "release" && config.IsWeakJWTSecret(cfg.JWTSecret) {
+		log.Fatal("❌ 生产环境禁止使用默认 JWT_SECRET，请设置强随机密钥（如 openssl rand -hex 32）")
+	}
+
 	// 连接数据库
 	db, err := infra.NewDB(cfg.DatabaseURL)
 	if err != nil {

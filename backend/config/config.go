@@ -71,3 +71,22 @@ func getEnv(key, fallback string) string {
 	}
 	return fallback
 }
+
+// weakJWTSecrets 已知弱默认密钥：release 模式下启动将直接失败
+var weakJWTSecrets = []string{
+	"",
+	"kada-dev-secret-change-in-production",
+	"changeme",
+	"secret",
+	"jwt-secret",
+}
+
+// IsWeakJWTSecret 判断是否为已知弱密钥
+func IsWeakJWTSecret(s string) bool {
+	for _, w := range weakJWTSecrets {
+		if s == w {
+			return true
+		}
+	}
+	return false
+}
