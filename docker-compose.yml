@@ -3,7 +3,8 @@ services:
     image: postgres:16-alpine
     environment:
       POSTGRES_USER: kada
-      POSTGRES_PASSWORD: kada123
+      # 生产必须通过 .env 覆盖（见 .env.example）
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-kada123}
       POSTGRES_DB: kada
     volumes:
       - pgdata:/var/lib/postgresql/data
@@ -29,7 +30,7 @@ services:
     build: ./backend
     environment:
       GIN_MODE: release
-      DATABASE_URL: postgres://kada:kada123@postgres:5432/kada?sslmode=disable
+      DATABASE_URL: postgres://kada:${POSTGRES_PASSWORD:-kada123}@postgres:5432/kada?sslmode=disable
       REDIS_URL: redis://redis:6379
       KAFKA_BROKERS: kafka:9092
       KAFKA_TOPIC: clicks
@@ -91,7 +92,7 @@ services:
     build: ./backend
     command: ["/worker"]
     environment:
-      DATABASE_URL: postgres://kada:kada123@postgres:5432/kada?sslmode=disable
+      DATABASE_URL: postgres://kada:${POSTGRES_PASSWORD:-kada123}@postgres:5432/kada?sslmode=disable
       KAFKA_BROKERS: kafka:9092
       KAFKA_TOPIC: clicks
     depends_on:
