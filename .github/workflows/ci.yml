@@ -167,9 +167,11 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
 
       # ---- 构建后端 ----
-      - name: Build Go binary
+      - name: Build Go binaries
         working-directory: backend
-        run: CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o bin/server ./cmd/server/
+        run: |
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o bin/server ./cmd/server/
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o bin/migrate ./cmd/migrate/
 
       # ---- 构建前端 ----
       - name: Install frontend deps
@@ -200,17 +202,20 @@ jobs:
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: 22
-          source: "backend/bin/server,deploy-pkg/*,deploy-version.txt,backend/db/migrations/*.up.sql,backend/db/migrations/*.down.sql"
+          source: "backend/bin/server,backend/bin/migrate,deploy-pkg/*,deploy-version.txt,backend/db/migrations/*.up.sql,backend/db/migrations/*.down.sql"
           target: /tmp/kada-deploy/
           strip_components: 0
 
       - name: Run migrations & restart services
         uses: appleboy/ssh-action@v1.2.2
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
         with:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: 22
+          envs: DATABASE_URL
           script: |
             set -e
             echo "📦 Starting deploy: $(cat /tmp/kada-deploy/deploy-version.txt | head -1)"
@@ -222,15 +227,17 @@ jobs:
             # 保留最近 5 个备份
             ls -t /opt/kada/backups/server.* 2>/dev/null | tail -n +6 | xargs rm -f 2>/dev/null || true
 
-            # ---- 2. 运行数据库迁移 ----
+            # ---- 2. 运行数据库迁移（golang-migrate，与本地 backend/cmd/migrate 同一套机制） ----
+            # 之前用 psql -f 逐个执行 up.sql：已应用迁移报错被吞掉，且不使用
+            # schema_migrations 状态表，迁移可能半应用/重复执行。现在统一走 golang-migrate。
             echo "🗄️  Running database migrations..."
-            for f in /tmp/kada-deploy/backend/db/migrations/*.up.sql; do
-              if [ -f "$f" ]; then
-                # 只运行比当前版本新的迁移（通过文件名前缀时间戳判断）
-                echo "  Migration: $(basename $f)"
-                PGPASSWORD=kada123 psql -h localhost -U kada -d kada -f "$f" 2>&1 || echo "  ⚠️  Migration may already be applied: $(basename $f)"
-              fi
-            done
+            mkdir -p /opt/kada/backend/db/migrations
+            cp -f /tmp/kada-deploy/backend/db/migrations/*.up.sql /opt/kada/backend/db/migrations/ 2>/dev/null || true
+            cp -f /tmp/kada-deploy/backend/db/migrations/*.down.sql /opt/kada/backend/db/migrations/ 2>/dev/null || true
+            cp -f /tmp/kada-deploy/backend/bin/migrate /opt/kada/backend/bin/migrate
+            chmod +x /opt/kada/backend/bin/migrate
+            # DATABASE_URL 建议通过 secrets 提供；为空时 migrate 使用内置本地默认值
+            cd /opt/kada/backend && DATABASE_URL="$DATABASE_URL" ./bin/migrate
 
             # ---- 3. 替换后端 ----
             echo "🔄 Replacing backend..."
