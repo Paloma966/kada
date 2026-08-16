@@ -105,7 +105,7 @@ export default function EventsPage() {
                       <td className="px-5 py-3">
                         <div className="flex items-center gap-1.5">
                           <code className="text-indigo-600 font-mono text-xs bg-indigo-50 px-1.5 py-0.5 rounded">{e.short_code}</code>
-                          <a href={e.original_url} target="_blank" className="text-gray-300 hover:text-gray-500" title={e.original_url}>
+                          <a href={e.original_url} target="_blank" rel="noopener noreferrer" className="text-gray-300 hover:text-gray-500" title={e.original_url}>
                             <ExternalLink className="size-3" />
                           </a>
                         </div>
