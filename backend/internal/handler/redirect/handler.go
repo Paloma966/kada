@@ -89,13 +89,14 @@ func (h *Handler) Redirect(c *gin.Context) {
 func (h *Handler) QRCode(c *gin.Context) {
 	code := c.Param("code")
 
-	_, err := h.svc.GetByCode(c.Request.Context(), code)
+	link, err := h.svc.GetByCode(c.Request.Context(), code)
 	if err != nil {
 		c.String(http.StatusNotFound, "链接不存在或已过期")
 		return
 	}
 
-	shortURL := h.svc.BuildShortURL("", code)
+	// 使用链接实际域名（此前传空串会生成 "https:///r/CODE" 的无效 URL）
+	shortURL := h.svc.BuildShortURL(link.Domain, code)
 
 	png, err := qrcode.Encode(shortURL, qrcode.Medium, 256)
 	if err != nil {
