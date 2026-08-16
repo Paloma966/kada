@@ -61,7 +61,7 @@ func (h *Handler) Get(c *gin.Context) {
 
 	link, err := h.svc.GetByID(c.Request.Context(), id, middleware.GetUserID(c))
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		c.JSON(http.StatusNotFound, gin.H{"error": "链接不存在"})
 		return
 	}
 

@@ -70,7 +70,8 @@ func (s *AuthService) SendSMSCode(ctx context.Context, phone string) error {
 	if s.sms != nil {
 		code, err = s.sms.SendVerificationCode(phone)
 		if err != nil {
-			return fmt.Errorf("短信发送失败: %w", err)
+			log.Printf("send sms code to %s failed: %v", phone, err)
+			return errors.New("短信发送失败，请稍后再试")
 		}
 	} else {
 		code = generateSMSCode()
@@ -86,7 +87,8 @@ func (s *AuthService) SendSMSCode(ctx context.Context, phone string) error {
 		VALUES ($1, $2, '0.0.0.0', $3)
 	`, phone, code, time.Now().Add(5*time.Minute))
 	if err != nil {
-		return fmt.Errorf("存储验证码失败: %w", err)
+		log.Printf("store sms code failed: %v", err)
+		return errors.New("验证码存储失败，请稍后再试")
 	}
 
 	return nil
@@ -134,7 +136,8 @@ func (s *AuthService) LoginByPhone(ctx context.Context, phone, code string) (*do
 			RETURNING id, phone, email, name, avatar
 		`, phone).Scan(&user.ID, &user.Phone, &user.Email, &user.Name, &user.Avatar)
 		if err != nil {
-			return nil, fmt.Errorf("创建用户失败: %w", err)
+			log.Printf("create user by phone %s failed: %v", phone, err)
+			return nil, errors.New("登录失败，请稍后再试")
 		}
 	}
 
@@ -189,7 +192,8 @@ func (s *AuthService) LoginByEmail(ctx context.Context, email, password string) 
 func (s *AuthService) RegisterByEmail(ctx context.Context, email, password, name string) (*domain.AuthResponse, error) {
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
-		return nil, fmt.Errorf("密码加密失败: %w", err)
+		log.Printf("bcrypt hash failed: %v", err)
+		return nil, errors.New("注册失败，请稍后再试")
 	}
 
 	var user domain.UserInfo
@@ -198,7 +202,8 @@ func (s *AuthService) RegisterByEmail(ctx context.Context, email, password, name
 		RETURNING id, phone, email, name, avatar
 	`, email, string(hash), name).Scan(&user.ID, &user.Phone, &user.Email, &user.Name, &user.Avatar)
 	if err != nil {
-		return nil, fmt.Errorf("注册失败，邮箱可能已被使用: %w", err)
+		log.Printf("register by email failed: %v", err)
+		return nil, errors.New("注册失败，邮箱可能已被使用")
 	}
 
 	token, err := s.generateToken(user)
