@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
+	"log"
 	"math/big"
 	"os"
 	"regexp"
@@ -221,32 +222,33 @@ func (s *AuthService) GetUserByID(ctx context.Context, userID int64) (*domain.Us
 
 // UpdateUser 更新用户信息
 func (s *AuthService) UpdateUser(ctx context.Context, userID int64, name *string, email *string) (*domain.UserInfo, error) {
-	var user domain.UserInfo
-
-	// 动态构建 UPDATE
+	// 仅处理非空字段
+	var newName, newEmail *string
 	if name != nil && *name != "" {
-		err := s.db.QueryRow(ctx, `
-			UPDATE users SET name = $1, updated_at = NOW() WHERE id = $2
-			RETURNING id, phone, email, name, avatar
-		`, *name, userID).Scan(&user.ID, &user.Phone, &user.Email, &user.Name, &user.Avatar)
-		if err != nil {
-			return nil, fmt.Errorf("更新用户失败: %w", err)
-		}
+		newName = name
 	}
-
 	if email != nil && *email != "" {
-		err := s.db.QueryRow(ctx, `
-			UPDATE users SET email = $1, updated_at = NOW() WHERE id = $2
-			RETURNING id, phone, email, name, avatar
-		`, *email, userID).Scan(&user.ID, &user.Phone, &user.Email, &user.Name, &user.Avatar)
-		if err != nil {
-			return nil, fmt.Errorf("更新邮箱失败: %w", err)
-		}
+		newEmail = email
 	}
 
-	// 如果都没更新，返回当前用户
-	if name == nil && email == nil {
+	// 没有实际可更新的内容时返回当前用户
+	// （此前实现两个字段均为空串时既不执行 UPDATE 也不走此分支，返回零值结构体）
+	if newName == nil && newEmail == nil {
 		return s.GetUserByID(ctx, userID)
+	}
+
+	var user domain.UserInfo
+	err := s.db.QueryRow(ctx, `
+		UPDATE users SET
+			name = COALESCE($1, name),
+			email = COALESCE($2, email),
+			updated_at = NOW()
+		WHERE id = $3
+		RETURNING id, phone, email, name, avatar
+	`, newName, newEmail, userID).Scan(&user.ID, &user.Phone, &user.Email, &user.Name, &user.Avatar)
+	if err != nil {
+		log.Printf("update user %d failed: %v", userID, err)
+		return nil, errors.New("更新用户信息失败")
 	}
 
 	return &user, nil
