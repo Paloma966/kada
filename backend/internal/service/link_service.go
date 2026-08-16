@@ -480,14 +480,22 @@ func (s *LinkService) ExportCSV(ctx context.Context, userID int64) (string, erro
 			status = "停用"
 		}
 		fmt.Fprintf(&sb, "%s,%s,%s,%s,%d,%s,%s\n",
-			code, escapeCSV(url), escapeCSV(title), domain, clicks, status, created.Format("2006-01-02 15:04"))
+			escapeCSV(code), escapeCSV(url), escapeCSV(title), escapeCSV(domain), clicks, status, created.Format("2006-01-02 15:04"))
 	}
 	return sb.String(), nil
 }
 
+// escapeCSV 转义 CSV 字段：以 = + - @ 或制表符开头的字段加单引号前缀
+// （防止 Excel 公式注入），含逗号/引号/换行的字段用引号包裹。
 func escapeCSV(s string) string {
+	s = strings.ReplaceAll(s, "\r", "")
+	if strings.HasPrefix(s, "=") || strings.HasPrefix(s, "+") ||
+		strings.HasPrefix(s, "-") || strings.HasPrefix(s, "@") ||
+		strings.HasPrefix(s, "\t") {
+		s = "'" + s
+	}
 	if strings.ContainsAny(s, ",\"\n") {
-		return `"` + strings.ReplaceAll(s, `"`, `""`) + `"`
+		s = `"` + strings.ReplaceAll(s, `"`, `""`) + `"`
 	}
 	return s
 }

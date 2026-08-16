@@ -73,6 +73,14 @@ func TestEscapeCSV(t *testing.T) {
 		{"line1\nline2", "\"line1\nline2\""},
 		{"normal text", "normal text"},
 		{"", ""},
+		// 公式注入防护
+		{"=1+1", "'=1+1"},
+		{"+8613800000000", "'+8613800000000"},
+		{"@SUM(A1)", "'@SUM(A1)"},
+		{"-2+3", "'-2+3"},
+		{"=HYPERLINK(\"http://evil\")", `"'=HYPERLINK(""http://evil"")"`},
+		// 用户可控的 domain 字段含逗号/引号时正确包裹
+		{`evil.com,"x`, `"evil.com,""x"`},
 	}
 
 	for _, tt := range tests {
