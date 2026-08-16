@@ -55,10 +55,14 @@ func JWTAuth(secret string, tokenValidator TokenValidator) gin.HandlerFunc {
 			return
 		}
 
-		// JWT 验证
+		// JWT 验证：显式限定 HS256 并要求携带过期时间，
+		// 防御算法混淆（alg=none/RS256 等）与无期限令牌
 		token, err := jwt.ParseWithClaims(tokenStr, &Claims{}, func(t *jwt.Token) (interface{}, error) {
 			return []byte(secret), nil
-		})
+		},
+			jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}),
+			jwt.WithExpirationRequired(),
+		)
 		if err != nil || !token.Valid {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "认证令牌无效或已过期"})
 			c.Abort()
