@@ -71,6 +71,11 @@ func (s *TagService) AddTagToLink(ctx context.Context, userID, linkID, tagID int
 	if err != nil || ownerID != userID {
 		return errors.New("链接不存在或无权限")
 	}
+	// 验证标签也属于该用户（此前可挂接他人标签，泄漏其标签名/颜色）
+	var tagOwner int64
+	if err := s.db.QueryRow(ctx, `SELECT user_id FROM tags WHERE id = $1`, tagID).Scan(&tagOwner); err != nil || tagOwner != userID {
+		return errors.New("标签不存在或无权限")
+	}
 	_, err = s.db.Exec(ctx, `INSERT INTO link_tags (link_id, tag_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`, linkID, tagID)
 	return err
 }
