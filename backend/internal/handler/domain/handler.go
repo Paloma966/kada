@@ -58,7 +58,7 @@ func (h *Handler) Verify(c *gin.Context) {
 	}
 	d, err := h.svc.Verify(c.Request.Context(), middleware.GetUserID(c), id)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"domain": d})
