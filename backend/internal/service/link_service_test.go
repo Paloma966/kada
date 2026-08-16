@@ -1,6 +1,7 @@
 package service
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -105,14 +106,15 @@ func TestHashPassword(t *testing.T) {
 	hash1 := hashPassword(pwd)
 	hash2 := hashPassword(pwd)
 
-	// 相同密码产生相同哈希
-	if hash1 != hash2 {
-		t.Error("hashPassword should be deterministic for same input")
+	// bcrypt 加盐：相同密码产生不同哈希
+	if hash1 == "" || hash2 == "" {
+		t.Fatal("hashPassword returned empty hash")
 	}
-
-	// 哈希长度应为 64（SHA256 十六进制）
-	if len(hash1) != 64 {
-		t.Errorf("expected hash length 64, got %d", len(hash1))
+	if hash1 == hash2 {
+		t.Error("bcrypt hashes should differ due to salt")
+	}
+	if !strings.HasPrefix(hash1, "$2") {
+		t.Errorf("expected bcrypt hash, got %q", hash1)
 	}
 
 	// 验证
@@ -121,5 +123,31 @@ func TestHashPassword(t *testing.T) {
 	}
 	if checkPasswordHash("wrong-password", hash1) {
 		t.Error("checkPasswordHash should return false for wrong password")
+	}
+}
+
+func TestHashPassword_LongPassword(t *testing.T) {
+	// bcrypt 上限 72 字节，超长密码应自动截断并仍可验证
+	pwd := strings.Repeat("a", 100)
+	hash := hashPassword(pwd)
+	if hash == "" {
+		t.Fatal("hashPassword returned empty hash for long password")
+	}
+	if !checkPasswordHash(pwd, hash) {
+		t.Error("checkPasswordHash should accept truncated long password")
+	}
+}
+
+func TestCheckPasswordHash_LegacySHA256(t *testing.T) {
+	// 存量数据为未加盐 SHA-256 十六进制，升级后仍应可验证
+	legacy := sha256Hex("legacy-pass-123")
+	if !checkPasswordHash("legacy-pass-123", legacy) {
+		t.Error("legacy SHA-256 hash should still verify")
+	}
+	if checkPasswordHash("wrong", legacy) {
+		t.Error("legacy SHA-256 hash should reject wrong password")
+	}
+	if checkPasswordHash("legacy-pass-123", "") {
+		t.Error("empty hash should never verify")
 	}
 }
