@@ -122,7 +122,9 @@ func TestSendSMSCode_Success(t *testing.T) {
 	}
 
 	var resp map[string]string
-	json.Unmarshal(w.Body.Bytes(), &resp)
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal response failed: %v", err)
+	}
 	if resp["message"] != "验证码已发送" {
 		t.Errorf("expected message '验证码已发送', got %q", resp["message"])
 	}
@@ -175,7 +177,9 @@ func TestLoginByPhone_Success(t *testing.T) {
 	}
 
 	var resp domain.AuthResponse
-	json.Unmarshal(w.Body.Bytes(), &resp)
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal response failed: %v", err)
+	}
 	if resp.Token == "" {
 		t.Error("expected token in response")
 	}

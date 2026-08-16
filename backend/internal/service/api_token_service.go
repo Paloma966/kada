@@ -64,7 +64,9 @@ func (s *APITokenService) List(ctx context.Context, userID int64) ([]domain.APIT
 	var tokens []domain.APIToken
 	for rows.Next() {
 		var t domain.APIToken
-		rows.Scan(&t.ID, &t.UserID, &t.Name, &t.LastUsed, &t.CreatedAt)
+		if err := rows.Scan(&t.ID, &t.UserID, &t.Name, &t.LastUsed, &t.CreatedAt); err != nil {
+			return nil, errors.New("查询 API Token 列表失败")
+		}
 		tokens = append(tokens, t)
 	}
 	if tokens == nil {

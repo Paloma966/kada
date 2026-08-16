@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { User, Mail, Phone, Pencil, Check, X, Shield, Calendar, Key, Copy, Trash2, Plus, Building2, Globe } from "lucide-react";
 import { toast } from "sonner";
 import useSWR from "swr";
@@ -12,7 +12,8 @@ export default function SettingsPage() {
   const savedUser = getUser();
 
   const [editingName, setEditingName] = useState(false);
-  const [name, setName] = useState("");
+  // 初始值直接取自本地用户资料，无需 effect 同步
+  const [name, setName] = useState(savedUser?.name ?? "");
   const [saving, setSaving] = useState(false);
 
   // API Tokens
@@ -24,12 +25,6 @@ export default function SettingsPage() {
   const [newTokenName, setNewTokenName] = useState("");
   const [creating, setCreating] = useState(false);
   const [newToken, setNewToken] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (savedUser?.name) {
-      setName(savedUser.name);
-    }
-  }, [savedUser?.name]);
 
   const handleSaveName = async () => {
     if (!token || !name.trim()) return;

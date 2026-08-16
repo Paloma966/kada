@@ -44,7 +44,9 @@ func (s *TagService) List(ctx context.Context, userID int64) ([]domain.Tag, erro
 	var tags []domain.Tag
 	for rows.Next() {
 		var t domain.Tag
-		rows.Scan(&t.ID, &t.UserID, &t.Name, &t.Color, &t.CreatedAt)
+		if err := rows.Scan(&t.ID, &t.UserID, &t.Name, &t.Color, &t.CreatedAt); err != nil {
+			return nil, errors.New("查询标签列表失败")
+		}
 		tags = append(tags, t)
 	}
 	if tags == nil {

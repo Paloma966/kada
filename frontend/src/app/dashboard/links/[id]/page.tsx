@@ -98,7 +98,8 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
 
   const fetchLink = () => {
     if (!token) return;
-    setLoading(true);
+    // loading 初始为 true（useState(true)），此处不再同步 setState，
+    // 仅在各异步回调中更新状态
     linksAPI.get(token, id)
       .then((data) => {
         const l = data.link || data;
@@ -124,7 +125,7 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
       .finally(() => setLoading(false));
   };
 
-  useEffect(() => { fetchLink(); }, [id]);
+  useEffect(() => { fetchLink(); }, [id, token]);
 
   // Fetch per-link analytics
   useEffect(() => {
@@ -158,7 +159,6 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
         setQrURL(canvas.toDataURL("image/png"));
       });
     }
-    if (!showQR) setQrURL(null);
   }, [showQR, link, qrURL]);
 
   const copyToClipboard = (text: string) => {
@@ -599,11 +599,11 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
       {/* QR Code Modal */}
       {showQR && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
-          onClick={() => setShowQR(false)}>
+          onClick={() => { setShowQR(false); setQrURL(null); }}>
           <div className="bg-white rounded-2xl shadow-xl p-6 max-w-sm w-full mx-4" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-semibold text-gray-900">二维码</h3>
-              <button onClick={() => setShowQR(false)} className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-100 transition"><X className="size-4" /></button>
+              <button onClick={() => { setShowQR(false); setQrURL(null); }} className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-100 transition"><X className="size-4" /></button>
             </div>
             <div className="flex flex-col items-center gap-4">
               <div className="bg-white border border-gray-100 rounded-xl p-3">
