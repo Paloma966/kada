@@ -165,7 +165,9 @@ func (s *AuthService) LoginByEmail(ctx context.Context, email, password string) 
 	}
 
 	if passwordHash == "" {
-		return nil, errors.New("该账号未设置密码，请使用手机号登录")
+		// 不区分「账号不存在」与「未设置密码」，避免邮箱枚举
+		log.Printf("login attempt for user without password set: id=%d", user.ID)
+		return nil, errors.New("邮箱或密码错误")
 	}
 
 	err = bcrypt.CompareHashAndPassword([]byte(passwordHash), []byte(password))
