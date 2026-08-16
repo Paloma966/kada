@@ -6,12 +6,12 @@ import (
 )
 
 func TestGenerateShortCode(t *testing.T) {
-	// 生成 100 个短码，确保都是 8 位十六进制且不重复
+	// 生成 100 个短码，确保都是 12 位十六进制且不重复
 	codes := make(map[string]bool)
 	for i := 0; i < 100; i++ {
 		code := generateShortCode()
-		if len(code) != 8 {
-			t.Errorf("expected short code length 8, got %d: %s", len(code), code)
+		if len(code) != 12 {
+			t.Errorf("expected short code length 12, got %d: %s", len(code), code)
 		}
 		// 检查是否只包含十六进制字符
 		for _, c := range code {

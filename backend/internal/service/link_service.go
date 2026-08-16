@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"golang.org/x/crypto/bcrypt"
 
@@ -78,22 +79,40 @@ func (s *LinkService) Create(ctx context.Context, userID int64, req domain.Creat
 	}
 
 	var info domain.LinkInfo
-	err := s.db.QueryRow(ctx, `
-		INSERT INTO links (short_code, original_url, title, description, image_url, domain, password_hash, expires_at, user_id, workspace_id, folder_id, utm_source, utm_medium, utm_campaign, utm_term, utm_content, ios_url, android_url)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
-		RETURNING id, short_code, original_url, COALESCE(title,''), COALESCE(description,''), COALESCE(image_url,''), domain, click_count, is_active, expires_at, created_at, updated_at
-	`,
-		shortCode, req.OriginalURL, req.Title, req.Description, req.ImageURL,
-		domain_, passwordHash, expiresAt, userID, req.WorkspaceID, req.FolderID,
-		req.UTMSource, req.UTMMedium, req.UTMCampaign, req.UTMTerm, req.UTMContent,
-		req.IosURL, req.AndroidURL,
-	).Scan(
-		&info.ID, &info.ShortCode, &info.OriginalURL, &info.Title, &info.Description,
-		&info.ImageURL, &info.Domain, &info.ClickCount, &info.IsActive,
-		&info.ExpiresAt, &info.CreatedAt, &info.UpdatedAt,
-	)
-	if err != nil {
-		return nil, errors.New("创建短链接失败: " + err.Error())
+	// 唯一约束是短码冲突的最终仲裁：检查-插入竞态下 INSERT 会报 23505，
+	// 自定义短码返回友好错误，随机短码换码重试
+	for attempt := 0; ; attempt++ {
+		err := s.db.QueryRow(ctx, `
+			INSERT INTO links (short_code, original_url, title, description, image_url, domain, password_hash, expires_at, user_id, workspace_id, folder_id, utm_source, utm_medium, utm_campaign, utm_term, utm_content, ios_url, android_url)
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
+			RETURNING id, short_code, original_url, COALESCE(title,''), COALESCE(description,''), COALESCE(image_url,''), domain, click_count, is_active, expires_at, created_at, updated_at
+		`,
+			shortCode, req.OriginalURL, req.Title, req.Description, req.ImageURL,
+			domain_, passwordHash, expiresAt, userID, req.WorkspaceID, req.FolderID,
+			req.UTMSource, req.UTMMedium, req.UTMCampaign, req.UTMTerm, req.UTMContent,
+			req.IosURL, req.AndroidURL,
+		).Scan(
+			&info.ID, &info.ShortCode, &info.OriginalURL, &info.Title, &info.Description,
+			&info.ImageURL, &info.Domain, &info.ClickCount, &info.IsActive,
+			&info.ExpiresAt, &info.CreatedAt, &info.UpdatedAt,
+		)
+		if err == nil {
+			break
+		}
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			if req.ShortCode != nil && *req.ShortCode != "" {
+				return nil, errors.New("该短码已被占用，请换一个")
+			}
+			if attempt >= 4 {
+				log.Printf("create link failed: %v", err)
+				return nil, errors.New("生成短码失败，请重试")
+			}
+			shortCode = generateShortCode()
+			continue
+		}
+		log.Printf("create link failed: %v", err)
+		return nil, errors.New("创建短链接失败")
 	}
 
 	// 关联标签
@@ -529,9 +548,10 @@ func (s *LinkService) BuildShortURL(domain, code string) string {
 	return "https://" + domain + "/r/" + code
 }
 
-// generateShortCode 生成4字节随机短码（8位十六进制）
+// generateShortCode 生成6字节随机短码（12位十六进制，48bit 熵，
+// 约 1670 万条链接才达 50% 生日碰撞概率）
 func generateShortCode() string {
-	b := make([]byte, 4)
+	b := make([]byte, 6)
 	rand.Read(b)
 	return hex.EncodeToString(b)
 }
