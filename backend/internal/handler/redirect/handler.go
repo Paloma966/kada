@@ -11,6 +11,7 @@ import (
 
 	"github.com/chun/kada-backend/internal/domain"
 	"github.com/chun/kada-backend/internal/infra/ua"
+	"github.com/chun/kada-backend/internal/infra/urlcheck"
 )
 
 // LinkService 短链服务接口（方便测试 mock）
@@ -48,6 +49,12 @@ func (h *Handler) Redirect(c *gin.Context) {
 	link, err := h.svc.GetByCode(c.Request.Context(), code)
 	if err != nil {
 		c.String(http.StatusNotFound, "链接不存在或已过期")
+		return
+	}
+
+	// 防御存量脏数据：目标 URL 必须为 http/https，防止 javascript: 等协议在引导页执行（XSS）
+	if !urlcheck.IsSafeTarget(link.OriginalURL) {
+		h.renderUnsafeTargetPage(c)
 		return
 	}
 
@@ -136,6 +143,12 @@ func (h *Handler) VerifyPassword(c *gin.Context) {
 	if err != nil || !ok {
 		c.Header("Content-Type", "text/html; charset=utf-8")
 		c.String(http.StatusOK, passwordPageHTMLWithError(code, "密码错误"))
+		return
+	}
+
+	// 防御存量脏数据：目标 URL 必须为 http/https
+	if !urlcheck.IsSafeTarget(info.OriginalURL) {
+		h.renderUnsafeTargetPage(c)
 		return
 	}
 
@@ -532,6 +545,18 @@ const guidePageHTML = `<!DOCTYPE html>
     </script>
 </body>
 </html>`
+
+// renderUnsafeTargetPage 目标 URL 协议不受支持时渲染提示页
+func (h *Handler) renderUnsafeTargetPage(c *gin.Context) {
+	c.Header("Content-Type", "text/html; charset=utf-8")
+	c.String(http.StatusBadRequest, `<!DOCTYPE html>
+<html lang="zh-CN">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>链接不可用 - Kada</title>
+<style>body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:#f8fafc;display:flex;justify-content:center;align-items:center;min-height:100vh;margin:0}.card{background:#fff;border-radius:20px;padding:40px 32px;max-width:400px;width:100%;text-align:center;box-shadow:0 1px 3px rgba(0,0,0,.04),0 8px 24px rgba(0,0,0,.06)}.icon{font-size:48px;margin-bottom:16px}.title{font-size:20px;font-weight:700;color:#1e293b;margin-bottom:8px}.subtitle{font-size:14px;color:#64748b}</style>
+</head>
+<body><div class="card"><div class="icon">⚠️</div><div class="title">链接不可用</div><div class="subtitle">该短链的目标地址协议不受支持，已阻止跳转</div></div></body>
+</html>`)
+}
 
 func passwordPageHTML(code string) string {
 	return passwordPageHTMLWithError(code, "")
