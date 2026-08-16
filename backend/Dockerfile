@@ -15,5 +15,8 @@ RUN apk add --no-cache ca-certificates tzdata
 ENV TZ=Asia/Shanghai
 COPY --from=builder /server /server
 COPY --from=builder /worker /worker
+# 非 root 运行
+RUN addgroup -S kada && adduser -S kada -G kada
+USER kada
 EXPOSE 8080
 CMD ["/server"]

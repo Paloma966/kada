@@ -17,5 +17,18 @@ StandardError=journal
 # 内存限制
 MemoryMax=512M
 
+# 安全加固（更彻底的做法是创建专用非 root 用户运行：
+#   adduser --system --no-create-home kada
+# 然后将 User= 改为 kada；此处先以 systemd 沙箱限制 root 进程能力）
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+CapabilityBoundingSet=
+AmbientCapabilities=
+
 [Install]
 WantedBy=multi-user.target
