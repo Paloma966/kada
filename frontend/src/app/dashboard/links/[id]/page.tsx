@@ -10,6 +10,7 @@ import { toast } from "sonner";
 import useSWR from "swr";
 import { linksAPI, foldersAPI, tagsAPI, domainsAPI, workspacesAPI } from "@/lib/api";
 import { getToken } from "@/lib/auth";
+import { safeHref } from "@/lib/utils";
 
 interface TagInfo {
   id: number;
@@ -589,7 +590,7 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
           {/* Target URL */}
           <div className="mt-3 pt-3 border-t">
             <p className="text-xs font-medium text-gray-500 mb-1">目标 URL</p>
-            <a href={link.original_url} target="_blank" rel="noopener noreferrer" className="text-indigo-600 text-sm break-all hover:underline">
+            <a href={safeHref(link.original_url)} target="_blank" rel="noopener noreferrer" className="text-indigo-600 text-sm break-all hover:underline">
               {link.original_url}
             </a>
           </div>
