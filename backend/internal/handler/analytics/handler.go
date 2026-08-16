@@ -1,6 +1,7 @@
 package analytics
 
 import (
+	"log"
 	"net/http"
 	"strconv"
 	"time"
@@ -34,9 +35,13 @@ func (h *Handler) Overview(c *gin.Context) {
 	userID := middleware.GetUserID(c)
 
 	var totalLinks, totalClicks int64
-	h.db.QueryRow(c.Request.Context(),
+	if err := h.db.QueryRow(c.Request.Context(),
 		`SELECT COUNT(*), COALESCE(SUM(click_count), 0) FROM links WHERE user_id = $1`, userID,
-	).Scan(&totalLinks, &totalClicks)
+	).Scan(&totalLinks, &totalClicks); err != nil {
+		log.Printf("analytics overview failed: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询失败"})
+		return
+	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"total_links":  totalLinks,
@@ -80,7 +85,10 @@ func (h *Handler) Platforms(c *gin.Context) {
 	var stats []PlatformStat
 	for rows.Next() {
 		var s PlatformStat
-		rows.Scan(&s.Platform, &s.Count)
+		if err := rows.Scan(&s.Platform, &s.Count); err != nil {
+			log.Printf("platforms scan failed: %v", err)
+			continue
+		}
 		stats = append(stats, s)
 	}
 	if stats == nil {
@@ -127,7 +135,10 @@ func (h *Handler) DailyClicks(c *gin.Context) {
 	for rows.Next() {
 		var s DailyStat
 		var date interface{}
-		rows.Scan(&date, &s.Count)
+		if err := rows.Scan(&date, &s.Count); err != nil {
+			log.Printf("daily scan failed: %v", err)
+			continue
+		}
 		if t, ok := date.(interface{ Format(string) string }); ok {
 			s.Date = t.Format("2006-01-02")
 		}
@@ -153,11 +164,14 @@ func (h *Handler) Events(c *gin.Context) {
 	}
 
 	var total int64
-	h.db.QueryRow(c.Request.Context(), `
+	if err := h.db.QueryRow(c.Request.Context(), `
 		SELECT COUNT(*) FROM click_logs cl
 		JOIN links l ON cl.link_id = l.id
 		WHERE l.user_id = $1
-	`, userID).Scan(&total)
+	`, userID).Scan(&total); err != nil {
+		log.Printf("events count failed: %v", err)
+		total = 0
+	}
 
 	rows, err := h.db.Query(c.Request.Context(), `
 		SELECT cl.id, cl.link_id, l.short_code, l.original_url, cl.platform, cl.ip, cl.referer, cl.created_at
@@ -188,7 +202,10 @@ func (h *Handler) Events(c *gin.Context) {
 	for rows.Next() {
 		var e Event
 		var platform, ip, referer *string
-		rows.Scan(&e.ID, &e.LinkID, &e.ShortCode, &e.OriginalURL, &platform, &ip, &referer, &e.CreatedAt)
+		if err := rows.Scan(&e.ID, &e.LinkID, &e.ShortCode, &e.OriginalURL, &platform, &ip, &referer, &e.CreatedAt); err != nil {
+			log.Printf("events scan failed: %v", err)
+			continue
+		}
 		if platform != nil {
 			e.Platform = *platform
 		}
@@ -244,7 +261,10 @@ func (h *Handler) Customers(c *gin.Context) {
 	var customers []Customer
 	for rows.Next() {
 		var c Customer
-		rows.Scan(&c.IP, &c.ClickCount, &c.LastSeen, &c.UniqueLinks)
+		if err := rows.Scan(&c.IP, &c.ClickCount, &c.LastSeen, &c.UniqueLinks); err != nil {
+			log.Printf("customers scan failed: %v", err)
+			continue
+		}
 		customers = append(customers, c)
 	}
 	if customers == nil {

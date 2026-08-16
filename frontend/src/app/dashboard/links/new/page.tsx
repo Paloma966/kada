@@ -33,7 +33,6 @@ export default function CreateLinkPage() {
   // Debounced URL preview fetch
   useEffect(() => {
     if (!originalUrl || !token || !originalUrl.startsWith("http")) {
-      setPreview(null);
       return;
     }
     clearTimeout(previewTimer.current);
@@ -126,7 +125,10 @@ export default function CreateLinkPage() {
                 <input
                   type="url"
                   value={originalUrl}
-                  onChange={(e) => setOriginalUrl(e.target.value)}
+                  onChange={(e) => {
+                    setOriginalUrl(e.target.value);
+                    setPreview(null);
+                  }}
                   className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition"
                   placeholder="https://example.com/your-long-url"
                   required

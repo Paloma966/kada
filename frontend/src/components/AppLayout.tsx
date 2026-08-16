@@ -11,26 +11,28 @@ import type { User as UserType } from "@/lib/auth";
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
-  const [ready, setReady] = useState(false);
-  const [user, setUser] = useState<UserType | null>(null);
+  // 初始状态直接来自本地存储，避免在 effect 中同步 setState
+  const [ready] = useState(() => {
+    const token = getToken();
+    const u = getUser();
+    return !!token && !!u;
+  });
+  const [user] = useState<UserType | null>(() => getUser());
   const [showDropdown, setShowDropdown] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   useEffect(() => {
-    const token = getToken();
-    const u = getUser();
-    if (!token || !u) {
+    if (!ready) {
       router.push("/login");
-    } else {
-      setUser(u);
-      setReady(true);
     }
-  }, [router]);
+  }, [ready, router]);
 
-  // Close mobile sidebar on route change
-  useEffect(() => {
+  // 路由变化时关闭移动端侧栏（React 推荐的「随 prop 变化调整 state」模式）
+  const [prevPath, setPrevPath] = useState(pathname);
+  if (prevPath !== pathname) {
+    setPrevPath(pathname);
     setSidebarOpen(false);
-  }, [pathname]);
+  }
 
   // Close dropdown when clicking outside
   useEffect(() => {
