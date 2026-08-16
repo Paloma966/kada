@@ -6,8 +6,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgconn"
+
 	"github.com/chun/kada-backend/internal/mq"
 )
+
+type assertErr string
+
+func (e assertErr) Error() string { return string(e) }
 
 type recorderWriter struct {
 	got []mq.ClickEvent
@@ -40,5 +46,43 @@ func TestProcessClickMessage_InvalidJSON(t *testing.T) {
 	}
 	if len(w.got) != 0 {
 		t.Fatalf("expected no write on invalid json, got %d", len(w.got))
+	}
+}
+
+func TestIsPermanentError(t *testing.T) {
+	// 非法 JSON → 永久性错误
+	if err := processClickMessage([]byte("{bad"), &recorderWriter{}); !isPermanentError(err) {
+		t.Error("processClickMessage invalid json should be classified permanent")
+	}
+
+	// 外键违反（23503，如链接已删除）→ 永久性错误
+	fkErr := &pgconn.PgError{Code: "23503", Message: "violates foreign key constraint"}
+	if !isPermanentError(fkErr) {
+		t.Error("foreign key violation should be permanent")
+	}
+
+	// 连接类错误（08006 连接丢失）→ 可重试
+	connErr := &pgconn.PgError{Code: "08006", Message: "connection lost"}
+	if isPermanentError(connErr) {
+		t.Error("connection failure should be retryable")
+	}
+
+	// 普通错误 → 可重试
+	if isPermanentError(assertErr("boom")) {
+		t.Error("plain error should be retryable")
+	}
+}
+
+func TestAttemptTracker(t *testing.T) {
+	tr := newAttemptTracker()
+	if n := tr.record("clicks", 0, 42); n != 1 {
+		t.Errorf("expected attempt 1, got %d", n)
+	}
+	if n := tr.record("clicks", 0, 42); n != 2 {
+		t.Errorf("expected attempt 2, got %d", n)
+	}
+	tr.reset("clicks", 0, 42)
+	if n := tr.record("clicks", 0, 42); n != 1 {
+		t.Errorf("expected attempt 1 after reset, got %d", n)
 	}
 }
