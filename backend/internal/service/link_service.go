@@ -2,8 +2,8 @@ package service
 
 import (
 	"context"
+	"crypto/hmac"
 	"crypto/rand"
-	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"golang.org/x/crypto/bcrypt"
 
 	"github.com/chun/kada-backend/internal/domain"
 	"github.com/chun/kada-backend/internal/infra/urlcheck"
@@ -527,12 +528,38 @@ func generateShortCode() string {
 	return hex.EncodeToString(b)
 }
 
-// hashPassword 简单哈希（可替换为 bcrypt）
+// hashPassword 使用 bcrypt 哈希链接访问密码（bcrypt 上限 72 字节，超长自动截断）
 func hashPassword(pwd string) string {
-	h := sha256.Sum256([]byte(pwd))
-	return hex.EncodeToString(h[:])
+	if len(pwd) > 72 {
+		pwd = pwd[:72]
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(pwd), bcrypt.DefaultCost)
+	if err != nil {
+		// bcrypt 失败极罕见（内部错误），退化为可验证的错误值
+		return ""
+	}
+	return string(hash)
 }
 
+// checkPasswordHash 校验链接访问密码。
+// 新哈希为 bcrypt；兼容存量未加盐 SHA-256 十六进制哈希（64 位 hex）。
 func checkPasswordHash(password, hash string) bool {
-	return hashPassword(password) == hash
+	if hash == "" {
+		return false
+	}
+	if len(hash) == 64 && isHexString(hash) {
+		// 存量 SHA-256 哈希，常数时间比较
+		legacy := sha256Hex(password)
+		return hmac.Equal([]byte(legacy), []byte(hash))
+	}
+	return bcrypt.CompareHashAndPassword([]byte(hash), []byte(password)) == nil
+}
+
+func isHexString(s string) bool {
+	for _, c := range s {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') && (c < 'A' || c > 'F') {
+			return false
+		}
+	}
+	return true
 }
