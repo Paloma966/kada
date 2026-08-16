@@ -2,12 +2,27 @@ package middleware
 
 import (
 	"fmt"
+	"net"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
 )
+
+// RealIP 获取真实客户端 IP。
+// 后端不信任任何客户端可伪造的代理头（X-Forwarded-For 可被伪造用于绕过限流）；
+// 仅接受 nginx 覆写的 X-Real-IP（nginx 以 $remote_addr 设置，客户端无法伪造），
+// 直连（无 nginx）时回退到 RemoteAddr。
+func RealIP(c *gin.Context) string {
+	if ip := c.GetHeader("X-Real-IP"); ip != "" {
+		if parsed := net.ParseIP(strings.TrimSpace(ip)); parsed != nil {
+			return parsed.String()
+		}
+	}
+	return c.ClientIP()
+}
 
 // RateLimiter 基于 Redis 滑动窗口的速率限制中间件
 type RateLimiter struct {
@@ -106,5 +121,5 @@ func (rl *RateLimiter) Redirect() gin.HandlerFunc {
 }
 
 func defaultKeyFunc(c *gin.Context) string {
-	return c.ClientIP()
+	return RealIP(c)
 }

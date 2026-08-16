@@ -108,6 +108,10 @@ func main() {
 	}
 	r := gin.Default()
 
+	// 安全：不信任任何代理传入的 X-Forwarded-For（客户端可伪造，曾被用于绕过限流）。
+	// 真实客户端 IP 通过 nginx 覆写的 X-Real-IP 获取（见 middleware.RealIP）。
+	_ = r.SetTrustedProxies(nil)
+
 	// 全局速率限制（如果 Redis 可用）
 	if rateLimiter != nil {
 		r.Use(rateLimiter.Normal())
