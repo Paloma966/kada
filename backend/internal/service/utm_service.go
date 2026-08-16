@@ -3,7 +3,7 @@ package service
 import (
 	"context"
 	"errors"
-	"fmt"
+	"log"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -27,7 +27,8 @@ func (s *UTMTemplateService) Create(ctx context.Context, userID int64, req domai
 	`, userID, req.Name, req.UTMSource, req.UTMMedium, req.UTMCampaign, req.UTMTerm, req.UTMContent).
 		Scan(&t.ID, &t.UserID, &t.Name, &t.UTMSource, &t.UTMMedium, &t.UTMCampaign, &t.UTMTerm, &t.UTMContent, &t.CreatedAt, &t.UpdatedAt)
 	if err != nil {
-		return nil, fmt.Errorf("创建模板失败: %w", err)
+		log.Printf("create utm template failed: %v", err)
+		return nil, errors.New("创建模板失败")
 	}
 	return &t, nil
 }
