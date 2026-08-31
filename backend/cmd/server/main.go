@@ -58,7 +58,7 @@ func main() {
 	// 初始化阿里云短信认证服务
 	var smsSender service.SMSSender
 	if cfg.SMSAccessKeyID != "" && cfg.SMSAccessKeySecret != "" {
-		smsSender, err = sms.NewAliyunSender(cfg.SMSAccessKeyID, cfg.SMSAccessKeySecret)
+		smsSender, err = sms.NewAliyunSender(cfg.SMSAccessKeyID, cfg.SMSAccessKeySecret, cfg.SMSSignName, cfg.SMSTemplateCode)
 		if err != nil {
 			log.Printf("⚠️  短信服务初始化失败: %v", err)
 		}
