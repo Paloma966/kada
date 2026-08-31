@@ -95,11 +95,11 @@ func (s *AuthService) SendSMSCode(ctx context.Context, phone string) error {
 		}
 	}
 
-	// 存储验证码到数据库（5分钟有效）
+	// 存储验证码哈希到数据库（5分钟有效）：不落明文，泄库也无法直接复用
 	_, err = s.db.Exec(ctx, `
-		INSERT INTO sms_codes (phone, code, ip, expires_at)
+		INSERT INTO sms_codes (phone, code_hash, ip, expires_at)
 		VALUES ($1, $2, '0.0.0.0', $3)
-	`, phone, code, time.Now().Add(5*time.Minute))
+	`, phone, sha256Hex(code), time.Now().Add(5*time.Minute))
 	if err != nil {
 		log.Printf("store sms code failed: %v", err)
 		return errors.New("验证码存储失败，请稍后再试")
@@ -116,24 +116,27 @@ func (s *AuthService) LoginByPhone(ctx context.Context, phone, code string) (*do
 
 	// 原子消耗验证码：单条 UPDATE 同时完成「未使用、未过期、尝试次数未超限」校验，
 	// 消除并发请求双用同一验证码的竞态
+	codeHash := sha256Hex(code)
 	var codeID int64
 	err := s.db.QueryRow(ctx, `
 		UPDATE sms_codes SET used = TRUE
 		WHERE id = (
 			SELECT id FROM sms_codes
-			WHERE phone = $1 AND code = $2 AND used = FALSE
+			WHERE phone = $1 AND code_hash = $2 AND used = FALSE
 			  AND expires_at > NOW() AND attempts < 5
 			ORDER BY id
 			LIMIT 1
 		)
 		RETURNING id
-	`, phone, code).Scan(&codeID)
+	`, phone, codeHash).Scan(&codeID)
 	if err != nil {
-		// 失败尝试计数（验证码仍存在且未使用时），5 次后该验证码作废
+		// 失败尝试计数：按手机号累加当前所有未使用、未过期的待验证码。
+		// 此前按 code 定位行，错误验证码永远匹配不到行，attempts 形同虚设；
+		// 改为按手机号计数后，连续 5 次错误即可作废该手机的待验证码。
 		_, _ = s.db.Exec(ctx, `
 			UPDATE sms_codes SET attempts = attempts + 1
-			WHERE phone = $1 AND code = $2 AND used = FALSE AND expires_at > NOW()
-		`, phone, code)
+			WHERE phone = $1 AND used = FALSE AND expires_at > NOW()
+		`, phone)
 		return nil, errors.New("验证码错误或已过期")
 	}
 
