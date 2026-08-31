@@ -37,8 +37,9 @@ services:
       # 强制要求显式提供强随机密钥（可先复制 .env.example 为 .env 并填写），
       # 后端 release 模式也会拒绝 changeme 等弱密钥
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET 必须设置，例如 openssl rand -hex 32，禁止使用 changeme}
-      JWT_EXPIRES: 72h
-      BASE_URL: http://localhost
+      # config.Load 读取的是 JWT_EXPIRES_IN / API_BASE_URL，须与此保持一致，否则配置被静默忽略
+      JWT_EXPIRES_IN: 72h
+      API_BASE_URL: http://localhost
       PORT: 8080
     depends_on:
       postgres:
