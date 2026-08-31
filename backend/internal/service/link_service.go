@@ -492,9 +492,30 @@ func (s *LinkService) Delete(ctx context.Context, linkID, userID int64) error {
 
 // BatchDelete 批量删除链接
 func (s *LinkService) BatchDelete(ctx context.Context, ids []int64, userID int64) (int64, error) {
+	// 先取出将删除链接的短码，用于删除后失效缓存（与单条 Delete 行为对齐）
+	var codes []string
+	rows, err := s.db.Query(ctx, `SELECT short_code FROM links WHERE id = ANY($1) AND user_id = $2`, ids, userID)
+	if err == nil {
+		defer rows.Close()
+		for rows.Next() {
+			var c string
+			if err := rows.Scan(&c); err != nil {
+				continue
+			}
+			codes = append(codes, c)
+		}
+	}
+
 	tag, err := s.db.Exec(ctx, `DELETE FROM links WHERE id = ANY($1) AND user_id = $2`, ids, userID)
 	if err != nil {
 		return 0, errors.New("批量删除失败")
+	}
+
+	// 失效被删除短码的缓存：否则已删除链接在缓存 TTL 内仍可被跳转
+	if s.cache != nil {
+		for _, c := range codes {
+			s.cache.InvalidateLink(ctx, c)
+		}
 	}
 	return tag.RowsAffected(), nil
 }
