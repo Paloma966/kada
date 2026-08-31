@@ -9,7 +9,7 @@ import (
 
 // ClickWriter 直写点击日志（生产降级回退与 worker 消费共用）
 type ClickWriter interface {
-	WriteClick(ctx context.Context, linkID int64, ip, userAgent, platform, referer string, createdAt time.Time) error
+	WriteClick(ctx context.Context, eventID string, linkID int64, ip, userAgent, platform, referer string, createdAt time.Time) error
 }
 
 // ClickStore pgx 实现的 ClickWriter
@@ -21,20 +21,30 @@ func NewClickStore(db *pgxpool.Pool) *ClickStore {
 	return &ClickStore{db: db}
 }
 
-// WriteClick 事务内：插入点击日志 + 累加计数
-func (s *ClickStore) WriteClick(ctx context.Context, linkID int64, ip, userAgent, platform, referer string, createdAt time.Time) error {
+// WriteClick 事务内：插入点击日志 + 累加计数。
+// 通过 event_id 去重：Kafka 重投、或降级直写与 worker 并发写同一事件时，
+// 第二次 INSERT 命中唯一冲突（RowsAffected=0），不再累加 click_count。
+func (s *ClickStore) WriteClick(ctx context.Context, eventID string, linkID int64, ip, userAgent, platform, referer string, createdAt time.Time) error {
 	tx, err := s.db.Begin(ctx)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	if _, err := tx.Exec(ctx, `
-		INSERT INTO click_logs (link_id, ip, user_agent, platform, referer, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6)
-	`, linkID, ip, userAgent, platform, referer, createdAt); err != nil {
+	tag, err := tx.Exec(ctx, `
+		INSERT INTO click_logs (link_id, ip, user_agent, platform, referer, created_at, event_id)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		ON CONFLICT (event_id) DO NOTHING
+	`, linkID, ip, userAgent, platform, referer, createdAt, eventID)
+	if err != nil {
 		return err
 	}
+
+	// 重复事件：已写入过日志，跳过计数累加，仅提交（保持幂等）
+	if tag.RowsAffected() == 0 {
+		return tx.Commit(ctx)
+	}
+
 	if _, err := tx.Exec(ctx, `
 		UPDATE links SET click_count = click_count + 1 WHERE id = $1
 	`, linkID); err != nil {
