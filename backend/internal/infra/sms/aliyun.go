@@ -12,10 +12,12 @@ import (
 )
 
 type AliyunSender struct {
-	client *dypnsapi.Client
+	client       *dypnsapi.Client
+	signName     string
+	templateCode string
 }
 
-func NewAliyunSender(accessKeyID, accessKeySecret string) (*AliyunSender, error) {
+func NewAliyunSender(accessKeyID, accessKeySecret, signName, templateCode string) (*AliyunSender, error) {
 	config := &openapi.Config{
 		AccessKeyId:     tea.String(accessKeyID),
 		AccessKeySecret: tea.String(accessKeySecret),
@@ -27,8 +29,16 @@ func NewAliyunSender(accessKeyID, accessKeySecret string) (*AliyunSender, error)
 		return nil, fmt.Errorf("创建短信认证客户端失败: %w", err)
 	}
 
+	// 未显式配置时回退到默认值，保证开箱可用；生产应通过环境变量 SMS_SIGN_NAME / SMS_TEMPLATE_CODE 覆盖
+	if signName == "" {
+		signName = "恒创联众"
+	}
+	if templateCode == "" {
+		templateCode = "100001"
+	}
+
 	log.Println("✅ 阿里云短信认证服务已初始化")
-	return &AliyunSender{client: client}, nil
+	return &AliyunSender{client: client, signName: signName, templateCode: templateCode}, nil
 }
 
 func (s *AliyunSender) SendVerificationCode(phone string) (code string, err error) {
@@ -37,8 +47,8 @@ func (s *AliyunSender) SendVerificationCode(phone string) (code string, err erro
 	request := &dypnsapi.SendSmsVerifyCodeRequest{
 		PhoneNumber:   tea.String(phone),
 		SchemeName:    tea.String("SMS"),
-		SignName:      tea.String("恒创联众"),
-		TemplateCode:  tea.String("100001"),
+		SignName:      tea.String(s.signName),
+		TemplateCode:  tea.String(s.templateCode),
 		TemplateParam: tea.String(fmt.Sprintf(`{"code":"%s","min":"5"}`, code)),
 	}
 
