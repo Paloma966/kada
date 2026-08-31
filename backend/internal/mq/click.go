@@ -11,6 +11,7 @@ import (
 
 // ClickEvent 短链点击事件（生产/消费共用的消息载荷）
 type ClickEvent struct {
+	EventID   string    `json:"event_id"` // 幂等键，用于 worker 去重
 	LinkID    int64     `json:"link_id"`
 	IP        string    `json:"ip"`
 	UserAgent string    `json:"user_agent"`

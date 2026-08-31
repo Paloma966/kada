@@ -20,7 +20,7 @@ func (f *fakeWriter) WriteMessages(_ context.Context, msgs ...kafka.Message) err
 
 func TestClickEventRoundTrip(t *testing.T) {
 	e := ClickEvent{
-		LinkID: 42, IP: "1.2.3.4", UserAgent: "Mozilla/5.0",
+		EventID: "evt-idempotent-key", LinkID: 42, IP: "1.2.3.4", UserAgent: "Mozilla/5.0",
 		Platform: "wechat", Referer: "https://x.com",
 		CreatedAt: time.Unix(1700000000, 0).UTC(),
 	}
