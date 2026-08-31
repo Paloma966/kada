@@ -47,6 +47,13 @@ func normalizeEmail(email string) string {
 	return strings.ToLower(strings.TrimSpace(email))
 }
 
+// dummyPasswordHash 用于账号不存在/未设密码时也做一次 bcrypt 比较，
+// 抹平响应时间差，避免攻击者根据耗时枚举已注册邮箱。
+var dummyPasswordHash = func() string {
+	h, _ := bcrypt.GenerateFromPassword([]byte("kada-timing-equalizer"), bcrypt.DefaultCost)
+	return string(h)
+}()
+
 // SendSMSCode 发送短信验证码
 func (s *AuthService) SendSMSCode(ctx context.Context, phone string) error {
 	if !phonePattern.MatchString(phone) {
@@ -173,12 +180,15 @@ func (s *AuthService) LoginByEmail(ctx context.Context, email, password string) 
 		FROM users WHERE email = $1
 	`, email).Scan(&user.ID, &user.Phone, &user.Email, &user.Name, &user.Avatar, &passwordHash)
 	if err != nil {
+		// 账号不存在：同样执行一次 bcrypt 比较，保持响应耗时与密码错误一致，防邮箱枚举
+		_ = bcrypt.CompareHashAndPassword([]byte(dummyPasswordHash), []byte(password))
 		return nil, errors.New("邮箱或密码错误")
 	}
 
 	if passwordHash == "" {
-		// 不区分「账号不存在」与「未设置密码」，避免邮箱枚举
+		// 未设置密码：同样比较一次并返回相同错误文案，避免邮箱枚举与时间侧信道
 		log.Printf("login attempt for user without password set: id=%d", user.ID)
+		_ = bcrypt.CompareHashAndPassword([]byte(dummyPasswordHash), []byte(password))
 		return nil, errors.New("邮箱或密码错误")
 	}
 
