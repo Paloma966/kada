@@ -22,7 +22,7 @@ type fakeWriter struct {
 	calls int
 }
 
-func (f *fakeWriter) WriteClick(_ context.Context, _ int64, _, _, _, _ string, _ time.Time) error {
+func (f *fakeWriter) WriteClick(_ context.Context, _ string, _ int64, _, _, _, _ string, _ time.Time) error {
 	f.calls++
 	return nil
 }

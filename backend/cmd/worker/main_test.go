@@ -19,20 +19,23 @@ type recorderWriter struct {
 	got []mq.ClickEvent
 }
 
-func (r *recorderWriter) WriteClick(_ context.Context, linkID int64, ip, ua, platform, referer string, createdAt time.Time) error {
-	r.got = append(r.got, mq.ClickEvent{LinkID: linkID, IP: ip, UserAgent: ua, Platform: platform, Referer: referer, CreatedAt: createdAt})
+func (r *recorderWriter) WriteClick(_ context.Context, eventID string, linkID int64, ip, ua, platform, referer string, createdAt time.Time) error {
+	r.got = append(r.got, mq.ClickEvent{EventID: eventID, LinkID: linkID, IP: ip, UserAgent: ua, Platform: platform, Referer: referer, CreatedAt: createdAt})
 	return nil
 }
 
 func TestProcessClickMessage_Valid(t *testing.T) {
 	w := &recorderWriter{}
-	e := mq.ClickEvent{LinkID: 5, IP: "8.8.8.8", UserAgent: "ua", Platform: "qq", Referer: "r", CreatedAt: time.Unix(1700000000, 0).UTC()}
+	e := mq.ClickEvent{EventID: "evt-1", LinkID: 5, IP: "8.8.8.8", UserAgent: "ua", Platform: "qq", Referer: "r", CreatedAt: time.Unix(1700000000, 0).UTC()}
 	b, _ := json.Marshal(e)
 	if err := processClickMessage(b, w); err != nil {
 		t.Fatal(err)
 	}
 	if len(w.got) != 1 || w.got[0].LinkID != 5 {
 		t.Fatalf("expected 1 write with link 5, got %+v", w.got)
+	}
+	if w.got[0].EventID != "evt-1" {
+		t.Fatalf("expected EventID to be preserved, got %q", w.got[0].EventID)
 	}
 	if !w.got[0].CreatedAt.Equal(e.CreatedAt) {
 		t.Fatalf("expected CreatedAt to be preserved, got %v want %v", w.got[0].CreatedAt, e.CreatedAt)

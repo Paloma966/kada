@@ -607,8 +607,11 @@ func escapeCSV(s string) string {
 
 // LogClick 发布点击事件到 Kafka；Kafka 不可用时回退直写，保证点击不丢
 func (s *LinkService) LogClick(ctx context.Context, linkID int64, ip, userAgent, platform, referer string) {
+	// 生成幂等键：Kafka 重投或降级直写时用于去重
+	eventID := newEventID()
 	if s.kafka != nil {
 		if err := s.kafka.PublishClick(ctx, mq.ClickEvent{
+			EventID:   eventID,
 			LinkID:    linkID,
 			IP:        ip,
 			UserAgent: userAgent,
@@ -623,7 +626,7 @@ func (s *LinkService) LogClick(ctx context.Context, linkID int64, ip, userAgent,
 		}
 	}
 	if s.clickWriter != nil {
-		if err := s.clickWriter.WriteClick(ctx, linkID, ip, userAgent, platform, referer, time.Now()); err != nil {
+		if err := s.clickWriter.WriteClick(ctx, eventID, linkID, ip, userAgent, platform, referer, time.Now()); err != nil {
 			log.Printf("click direct write failed: %v", err)
 		}
 	}
@@ -632,6 +635,14 @@ func (s *LinkService) LogClick(ctx context.Context, linkID int64, ip, userAgent,
 // BuildShortURL 构建完整短链接
 func (s *LinkService) BuildShortURL(domain, code string) string {
 	return "https://" + domain + "/r/" + code
+}
+
+// newEventID 生成点击事件幂等键（16 字节随机 → 32 位 hex）。
+// 用于 Kafka at-least-once 重投/降级直写去重，避免 click_count 重复累加。
+func newEventID() string {
+	b := make([]byte, 16)
+	rand.Read(b)
+	return hex.EncodeToString(b)
 }
 
 // generateShortCode 生成6字节随机短码（12位十六进制，48bit 熵，
