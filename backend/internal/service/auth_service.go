@@ -9,6 +9,7 @@ import (
 	"math/big"
 	"os"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -39,6 +40,12 @@ func NewAuthService(db *pgxpool.Pool, jwtSecret, jwtExpire string, sms SMSSender
 
 // phonePattern 中国大陆手机号：1 开头 + 3-9 + 9 位数字
 var phonePattern = regexp.MustCompile(`^1[3-9]\d{9}$`)
+
+// normalizeEmail 统一邮箱小写并去空白：
+// 保证注册/登录/更新时以同一规范存储与查询，配合 LOWER(email) 唯一索引实现大小写不敏感。
+func normalizeEmail(email string) string {
+	return strings.ToLower(strings.TrimSpace(email))
+}
 
 // SendSMSCode 发送短信验证码
 func (s *AuthService) SendSMSCode(ctx context.Context, phone string) error {
@@ -155,6 +162,8 @@ func (s *AuthService) LoginByPhone(ctx context.Context, phone, code string) (*do
 
 // LoginByEmail 邮箱+密码登录
 func (s *AuthService) LoginByEmail(ctx context.Context, email, password string) (*domain.AuthResponse, error) {
+	email = normalizeEmail(email)
+
 	var user domain.UserInfo
 	var passwordHash string
 	var err error
@@ -190,6 +199,8 @@ func (s *AuthService) LoginByEmail(ctx context.Context, email, password string) 
 
 // RegisterByEmail 邮箱注册
 func (s *AuthService) RegisterByEmail(ctx context.Context, email, password, name string) (*domain.AuthResponse, error) {
+	email = normalizeEmail(email)
+
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
 		log.Printf("bcrypt hash failed: %v", err)
@@ -235,7 +246,8 @@ func (s *AuthService) UpdateUser(ctx context.Context, userID int64, name *string
 		newName = name
 	}
 	if email != nil && *email != "" {
-		newEmail = email
+		norm := normalizeEmail(*email)
+		newEmail = &norm
 	}
 
 	// 没有实际可更新的内容时返回当前用户
