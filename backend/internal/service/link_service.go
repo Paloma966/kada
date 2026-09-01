@@ -499,7 +499,7 @@ func (s *LinkService) BatchDelete(ctx context.Context, ids []int64, userID int64
 		defer rows.Close()
 		for rows.Next() {
 			var c string
-			if err := rows.Scan(&c); err != nil {
+			if scanErr := rows.Scan(&c); scanErr != nil {
 				continue
 			}
 			codes = append(codes, c)
