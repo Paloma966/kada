@@ -165,8 +165,12 @@ func main() {
 
 	// 启动服务器（http.Server 以便优雅停机）
 	srv := &http.Server{
-		Addr:    ":" + cfg.Port,
-		Handler: r,
+		Addr:              ":" + cfg.Port,
+		Handler:           r,
+		ReadHeaderTimeout: 5 * time.Second, // gosec G112：防止 Slowloris 慢速头攻击
+		ReadTimeout:       10 * time.Second,
+		WriteTimeout:      10 * time.Second,
+		IdleTimeout:       60 * time.Second,
 	}
 	go func() {
 		log.Printf("🚀 Kada API server starting on :%s", cfg.Port)
