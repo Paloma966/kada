@@ -202,11 +202,11 @@ jobs:
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: 22
-          source: "backend/bin/server,backend/bin/migrate,deploy-pkg/*,deploy-version.txt,backend/db/migrations/*.up.sql,backend/db/migrations/*.down.sql"
+          source: "backend/bin/server,backend/bin/migrate,deploy-pkg/*,deploy-version.txt"
           target: /tmp/kada-deploy/
           strip_components: 0
 
-      - name: Run migrations & restart services
+      - name: Migrate schema & restart services
         uses: appleboy/ssh-action@v1.2.2
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
@@ -227,16 +227,13 @@ jobs:
             # Keep the 5 most recent backups
             ls -t /opt/kada/backups/server.* 2>/dev/null | tail -n +6 | xargs rm -f 2>/dev/null || true
 
-            # ---- 2. Run database migrations (golang-migrate — same mechanism as the local backend/cmd/migrate) ----
-            # Previously up.sql was executed one by one with psql -f: errors on already-applied migrations were swallowed
-            # and the schema_migrations state table was unused, so migrations could be half-applied or re-run. Now we use golang-migrate.
-            echo "🗄️  Running database migrations..."
-            mkdir -p /opt/kada/backend/db/migrations
-            cp -f /tmp/kada-deploy/backend/db/migrations/*.up.sql /opt/kada/backend/db/migrations/ 2>/dev/null || true
-            cp -f /tmp/kada-deploy/backend/db/migrations/*.down.sql /opt/kada/backend/db/migrations/ 2>/dev/null || true
+            # ---- 2. Apply the database schema ----
+            # The schema is defined by the GORM models in backend/internal/domain/entity and applied by
+            # cmd/migrate (AutoMigrate). It only ever adds missing tables/columns/indexes — nothing is
+            # dropped — so it is safe to run on every deploy, and it runs BEFORE the new binary starts.
+            echo "🗄️  Applying schema..."
             cp -f /tmp/kada-deploy/backend/bin/migrate /opt/kada/backend/bin/migrate
             chmod +x /opt/kada/backend/bin/migrate
-            # DATABASE_URL should be supplied via secrets; when empty, migrate falls back to its built-in local default
             cd /opt/kada/backend && DATABASE_URL="$DATABASE_URL" ./bin/migrate
 
             # ---- 3. Replace backend ----

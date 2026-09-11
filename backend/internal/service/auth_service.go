@@ -13,10 +13,11 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"golang.org/x/crypto/bcrypt"
+	"gorm.io/gorm"
 
 	"github.com/chun/kada-backend/internal/domain"
+	"github.com/chun/kada-backend/internal/domain/entity"
 	"github.com/chun/kada-backend/internal/middleware"
 )
 
@@ -27,13 +28,13 @@ type SMSSender interface {
 }
 
 type AuthService struct {
-	db        *pgxpool.Pool
+	db        *gorm.DB
 	jwtSecret string
 	jwtExpire time.Duration
 	sms       SMSSender // SMS sender
 }
 
-func NewAuthService(db *pgxpool.Pool, jwtSecret, jwtExpire string, sms SMSSender) *AuthService {
+func NewAuthService(db *gorm.DB, jwtSecret, jwtExpire string, sms SMSSender) *AuthService {
 	d, _ := time.ParseDuration(jwtExpire)
 	return &AuthService{db: db, jwtSecret: jwtSecret, jwtExpire: d, sms: sms}
 }
@@ -61,20 +62,18 @@ func (s *AuthService) SendSMSCode(ctx context.Context, phone string) error {
 	}
 
 	// 60-second cooldown per phone number: prevents SMS bombing of a single number
-	var recent int
-	if err := s.db.QueryRow(ctx, `
-		SELECT COUNT(*) FROM sms_codes
-		WHERE phone = $1 AND created_at > NOW() - INTERVAL '60 seconds'
-	`, phone).Scan(&recent); err == nil && recent > 0 {
+	var recent int64
+	if err := s.db.WithContext(ctx).Model(&entity.SMSVerificationCode{}).
+		Where("phone = ? AND created_at > NOW() - INTERVAL '60 seconds'", phone).
+		Count(&recent).Error; err == nil && recent > 0 {
 		return errors.New("too many requests, please try again in 60 seconds")
 	}
 
 	// daily cap of 10 per phone number: prevents bulk bombing and SMS cost loss
-	var daily int
-	if err := s.db.QueryRow(ctx, `
-		SELECT COUNT(*) FROM sms_codes
-		WHERE phone = $1 AND created_at > NOW() - INTERVAL '24 hours'
-	`, phone).Scan(&daily); err == nil && daily >= 10 {
+	var daily int64
+	if err := s.db.WithContext(ctx).Model(&entity.SMSVerificationCode{}).
+		Where("phone = ? AND created_at > NOW() - INTERVAL '24 hours'", phone).
+		Count(&daily).Error; err == nil && daily >= 10 {
 		return errors.New("this phone number has reached its daily send limit, please try again tomorrow")
 	}
 
@@ -96,11 +95,10 @@ func (s *AuthService) SendSMSCode(ctx context.Context, phone string) error {
 	}
 
 	// store the code hash in the database (valid for 5 minutes): no plaintext is persisted, so a database leak cannot be replayed directly
-	_, err = s.db.Exec(ctx, `
+	if err := s.db.WithContext(ctx).Exec(`
 		INSERT INTO sms_codes (phone, code_hash, ip, expires_at)
-		VALUES ($1, $2, '0.0.0.0', $3)
-	`, phone, sha256Hex(code), time.Now().Add(5*time.Minute))
-	if err != nil {
+		VALUES (?, ?, '0.0.0.0', ?)
+	`, phone, sha256Hex(code), time.Now().Add(5*time.Minute)).Error; err != nil {
 		log.Printf("store sms code failed: %v", err)
 		return errors.New("failed to store verification code, please try again later")
 	}
@@ -118,96 +116,98 @@ func (s *AuthService) LoginByPhone(ctx context.Context, phone, code string) (*do
 	// eliminating the race condition where concurrent requests consume the same code twice
 	codeHash := sha256Hex(code)
 	var codeID int64
-	err := s.db.QueryRow(ctx, `
+	err := s.db.WithContext(ctx).Raw(`
 		UPDATE sms_codes SET used = TRUE
 		WHERE id = (
 			SELECT id FROM sms_codes
-			WHERE phone = $1 AND code_hash = $2 AND used = FALSE
+			WHERE phone = ? AND code_hash = ? AND used = FALSE
 			  AND expires_at > NOW() AND attempts < 5
 			ORDER BY id
 			LIMIT 1
 		)
 		RETURNING id
-	`, phone, codeHash).Scan(&codeID)
-	if err != nil {
+	`, phone, codeHash).Scan(&codeID).Error
+	if err != nil || codeID == 0 {
 		// failed-attempt counting: increments every currently unused, unexpired pending code for the phone number.
 		// previously the row was located by code, so a wrong code never matched a row and attempts was useless;
 		// after switching to counting per phone number, 5 consecutive failures invalidate that phone's pending codes.
-		_, _ = s.db.Exec(ctx, `
+		_ = s.db.WithContext(ctx).Exec(`
 			UPDATE sms_codes SET attempts = attempts + 1
-			WHERE phone = $1 AND used = FALSE AND expires_at > NOW()
-		`, phone)
+			WHERE phone = ? AND used = FALSE AND expires_at > NOW()
+		`, phone).Error
 		return nil, errors.New("invalid or expired verification code")
 	}
 
 	// find or create the user
-	var user domain.UserInfo
-	err = s.db.QueryRow(ctx, `
-		SELECT id, phone, email, name, avatar FROM users WHERE phone = $1
-	`, phone).Scan(&user.ID, &user.Phone, &user.Email, &user.Name, &user.Avatar)
-
-	if err != nil {
-		// new user, register automatically
-		err = s.db.QueryRow(ctx, `
-			INSERT INTO users (phone) VALUES ($1)
-			RETURNING id, phone, email, name, avatar
-		`, phone).Scan(&user.ID, &user.Phone, &user.Email, &user.Name, &user.Avatar)
-		if err != nil {
-			log.Printf("create user by phone %s failed: %v", phone, err)
+	user, userErr := s.userByPhone(ctx, phone)
+	if userErr != nil {
+		if !errors.Is(userErr, gorm.ErrRecordNotFound) {
+			// A read error that is not "no such row" (connection loss, ...) must not be mistaken for a new
+			// account, otherwise the INSERT below would fail with a confusing duplicate-key error.
+			log.Printf("lookup user by phone %s failed: %v", phone, userErr)
 			return nil, errors.New("login failed, please try again later")
 		}
+		// new user, register automatically
+		row := entity.User{Phone: &phone}
+		if createErr := s.db.WithContext(ctx).Create(&row).Error; createErr != nil {
+			log.Printf("create user by phone %s failed: %v", phone, createErr)
+			return nil, errors.New("login failed, please try again later")
+		}
+		user = toUserInfo(row)
 	}
 
 	// update last login
-	_, _ = s.db.Exec(ctx, `UPDATE users SET last_login_at = NOW() WHERE id = $1`, user.ID)
+	_ = s.db.WithContext(ctx).Model(&entity.User{}).
+		Where("id = ?", user.ID).
+		Update("last_login_at", time.Now()).Error
 
 	// generate JWT
-	token, err := s.generateToken(user)
+	token, err := s.generateToken(*user)
 	if err != nil {
 		return nil, err
 	}
 
-	return &domain.AuthResponse{Token: token, User: user}, nil
+	return &domain.AuthResponse{Token: token, User: *user}, nil
 }
 
 // LoginByEmail logs in with email + password
 func (s *AuthService) LoginByEmail(ctx context.Context, email, password string) (*domain.AuthResponse, error) {
 	email = normalizeEmail(email)
 
-	var user domain.UserInfo
-	var passwordHash string
-	var err error
-
-	err = s.db.QueryRow(ctx, `
-		SELECT id, phone, email, name, avatar, COALESCE(password_hash, '')
-		FROM users WHERE email = $1
-	`, email).Scan(&user.ID, &user.Phone, &user.Email, &user.Name, &user.Avatar, &passwordHash)
+	var row entity.User
+	err := s.db.WithContext(ctx).Where("email = ?", email).First(&row).Error
 	if err != nil {
 		// account does not exist: still run one bcrypt comparison so the response time matches a wrong password, preventing email enumeration
 		_ = bcrypt.CompareHashAndPassword([]byte(dummyPasswordHash), []byte(password))
 		return nil, errors.New("invalid email or password")
 	}
 
+	passwordHash := ""
+	if row.PasswordHash != nil {
+		passwordHash = *row.PasswordHash
+	}
 	if passwordHash == "" {
 		// no password set: compare once as well and return the same error text, avoiding email enumeration and a timing side channel
-		log.Printf("login attempt for user without password set: id=%d", user.ID)
+		log.Printf("login attempt for user without password set: id=%d", row.ID)
 		_ = bcrypt.CompareHashAndPassword([]byte(dummyPasswordHash), []byte(password))
 		return nil, errors.New("invalid email or password")
 	}
 
-	err = bcrypt.CompareHashAndPassword([]byte(passwordHash), []byte(password))
-	if err != nil {
+	if compareErr := bcrypt.CompareHashAndPassword([]byte(passwordHash), []byte(password)); compareErr != nil {
 		return nil, errors.New("invalid email or password")
 	}
 
-	_, _ = s.db.Exec(ctx, `UPDATE users SET last_login_at = NOW() WHERE id = $1`, user.ID)
+	_ = s.db.WithContext(ctx).Model(&entity.User{}).
+		Where("id = ?", row.ID).
+		Update("last_login_at", time.Now()).Error
 
-	token, err := s.generateToken(user)
+	user := toUserInfo(row)
+	token, err := s.generateToken(*user)
 	if err != nil {
 		return nil, err
 	}
 
-	return &domain.AuthResponse{Token: token, User: user}, nil
+	return &domain.AuthResponse{Token: token, User: *user}, nil
 }
 
 // RegisterByEmail registers with email
@@ -220,70 +220,88 @@ func (s *AuthService) RegisterByEmail(ctx context.Context, email, password, name
 		return nil, errors.New("registration failed, please try again later")
 	}
 
-	var user domain.UserInfo
-	err = s.db.QueryRow(ctx, `
-		INSERT INTO users (email, password_hash, name) VALUES ($1, $2, $3)
-		RETURNING id, phone, email, name, avatar
-	`, email, string(hash), name).Scan(&user.ID, &user.Phone, &user.Email, &user.Name, &user.Avatar)
-	if err != nil {
+	hashed := string(hash)
+	row := entity.User{Email: &email, PasswordHash: &hashed, Name: &name}
+	if err := s.db.WithContext(ctx).Create(&row).Error; err != nil {
 		log.Printf("register by email failed: %v", err)
 		return nil, errors.New("registration failed, the email may already be in use")
 	}
 
-	token, err := s.generateToken(user)
+	user := toUserInfo(row)
+	token, err := s.generateToken(*user)
 	if err != nil {
 		return nil, err
 	}
 
-	return &domain.AuthResponse{Token: token, User: user}, nil
+	return &domain.AuthResponse{Token: token, User: *user}, nil
 }
 
 // GetUserByID gets user info
 func (s *AuthService) GetUserByID(ctx context.Context, userID int64) (*domain.UserInfo, error) {
-	var err error
-	var user domain.UserInfo
-	err = s.db.QueryRow(ctx, `
-		SELECT id, phone, email, name, avatar FROM users WHERE id = $1
-	`, userID).Scan(&user.ID, &user.Phone, &user.Email, &user.Name, &user.Avatar)
-	if err != nil {
+	var row entity.User
+	if err := s.db.WithContext(ctx).Where("id = ?", userID).First(&row).Error; err != nil {
 		return nil, errors.New("user not found")
 	}
-	return &user, nil
+	return toUserInfo(row), nil
 }
 
 // UpdateUser updates user info
 func (s *AuthService) UpdateUser(ctx context.Context, userID int64, name *string, email *string) (*domain.UserInfo, error) {
 	// only handle non-empty fields
-	var newName, newEmail *string
+	updates := map[string]any{"updated_at": gorm.Expr("NOW()")}
 	if name != nil && *name != "" {
-		newName = name
+		updates["name"] = *name
 	}
 	if email != nil && *email != "" {
-		norm := normalizeEmail(*email)
-		newEmail = &norm
+		updates["email"] = normalizeEmail(*email)
 	}
 
 	// return the current user when there is nothing to update
 	// (previously, when both fields were empty strings, the code neither ran the UPDATE nor took this branch and returned a zero-value struct)
-	if newName == nil && newEmail == nil {
+	if len(updates) == 1 {
 		return s.GetUserByID(ctx, userID)
 	}
 
-	var user domain.UserInfo
-	err := s.db.QueryRow(ctx, `
-		UPDATE users SET
-			name = COALESCE($1, name),
-			email = COALESCE($2, email),
-			updated_at = NOW()
-		WHERE id = $3
-		RETURNING id, phone, email, name, avatar
-	`, newName, newEmail, userID).Scan(&user.ID, &user.Phone, &user.Email, &user.Name, &user.Avatar)
-	if err != nil {
+	var row entity.User
+	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		res := tx.Model(&entity.User{}).Where("id = ?", userID).Updates(updates)
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			return gorm.ErrRecordNotFound
+		}
+		return tx.Where("id = ?", userID).First(&row).Error
+	}); err != nil {
 		log.Printf("update user %d failed: %v", userID, err)
 		return nil, errors.New("failed to update user info")
 	}
 
-	return &user, nil
+	return toUserInfo(row), nil
+}
+
+// userByPhone returns the account for a phone number.
+// The caller distinguishes "no such user" (gorm.ErrRecordNotFound -> sign up) from a real read error.
+func (s *AuthService) userByPhone(ctx context.Context, phone string) (*domain.UserInfo, error) {
+	var row entity.User
+	if err := s.db.WithContext(ctx).Where("phone = ?", phone).First(&row).Error; err != nil {
+		return nil, err
+	}
+	user := toUserInfo(row)
+	return user, nil
+}
+
+// toUserInfo maps the persistence model onto the API model.
+// UserInfo only exposes phone/email/name/avatar, so the password hash can never leak through it.
+func toUserInfo(row entity.User) *domain.UserInfo {
+	return &domain.UserInfo{
+		ID:           row.ID,
+		Phone:        row.Phone,
+		Email:        row.Email,
+		Name:         row.Name,
+		Avatar:       row.Avatar,
+		WechatOpenID: row.WechatOpenID,
+	}
 }
 
 // generateToken generates a JWT

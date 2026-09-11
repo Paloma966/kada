@@ -2,9 +2,11 @@ package sms
 
 import (
 	"crypto/rand"
+	"errors"
 	"fmt"
 	"log"
 	"math/big"
+	"os"
 
 	openapi "github.com/alibabacloud-go/darabonba-openapi/v2/client"
 	dypnsapi "github.com/alibabacloud-go/dypnsapi-20170525/v3/client"
@@ -55,17 +57,45 @@ func (s *AliyunSender) SendVerificationCode(phone string) (code string, err erro
 
 	response, err := s.client.SendSmsVerifyCode(request)
 	if err != nil {
+		log.Printf("aliyun SMS request failed (sign_name=%q template_code=%q phone=%s): %v",
+			s.signName, s.templateCode, maskPhone(phone), err)
 		return "", fmt.Errorf("failed to send verification code: %w", err)
 	}
 
-	if *response.Body.Code != "OK" {
-		return "", fmt.Errorf("failed to send verification code [%s]: %s",
-			*response.Body.Code, *response.Body.Message)
+	// Security: never log the verification code in plaintext; mask the phone number.
+	// Every field below is a pointer in the SDK, so use the tea accessors: when the provider rejects the
+	// request the Body/Model fields may be nil and a plain dereference would panic the whole process.
+	if response == nil || response.Body == nil {
+		log.Printf("aliyun SMS returned no body (sign_name=%q template_code=%q phone=%s)",
+			s.signName, s.templateCode, maskPhone(phone))
+		return "", errors.New(smsProviderError("", ""))
 	}
 
-	// Security: never log the verification code in plaintext; mask the phone number
+	providerCode := tea.StringValue(response.Body.Code)
+	if providerCode != "OK" {
+		providerMessage := tea.StringValue(response.Body.Message)
+		log.Printf("aliyun SMS rejected (sign_name=%q template_code=%q phone=%s): code=%q message=%q",
+			s.signName, s.templateCode, maskPhone(phone), providerCode, providerMessage)
+		return "", errors.New(smsProviderError(providerCode, providerMessage))
+	}
+
 	log.Printf("📱 verification code sent to %s", maskPhone(phone))
 	return code, nil
+}
+
+// smsProviderError turns an Aliyun error payload into an actionable message.
+// The provider code and message are what actually identify the misconfiguration (unapproved signature,
+// unapproved template, disabled AccessKey, overdue account, ...); the cause is appended only outside
+// release mode so production responses never leak internal provider details.
+func smsProviderError(code, message string) string {
+	base := "failed to send SMS, please try again later"
+	if code == "" && message == "" {
+		return base
+	}
+	if os.Getenv("GIN_MODE") == "release" {
+		return fmt.Sprintf("%s (provider code: %s)", base, code)
+	}
+	return fmt.Sprintf("%s (provider code: %s, message: %s)", base, code, message)
 }
 
 // maskPhone masks a phone number: 138****1234
@@ -88,11 +118,11 @@ func (s *AliyunSender) CheckVerificationCode(phone, code string) (bool, error) {
 		return false, fmt.Errorf("failed to verify verification code: %w", err)
 	}
 
-	if *response.Body.Code != "OK" {
+	if tea.StringValue(response.Body.Code) != "OK" {
 		return false, nil
 	}
 
-	return *response.Body.Model.VerifyResult == "PASS", nil
+	return tea.StringValue(response.Body.Model.VerifyResult) == "PASS", nil
 }
 
 func generateCode() string {

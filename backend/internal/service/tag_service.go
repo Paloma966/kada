@@ -4,60 +4,67 @@ import (
 	"context"
 	"errors"
 
-	"github.com/jackc/pgx/v5/pgxpool"
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"github.com/chun/kada-backend/internal/domain"
+	"github.com/chun/kada-backend/internal/domain/entity"
 )
 
+const defaultTagColor = "#6366F1"
+
 type TagService struct {
-	db *pgxpool.Pool
+	db *gorm.DB
 }
 
-func NewTagService(db *pgxpool.Pool) *TagService {
+func NewTagService(db *gorm.DB) *TagService {
 	return &TagService{db: db}
 }
 
 func (s *TagService) Create(ctx context.Context, userID int64, req domain.CreateTagRequest) (*domain.Tag, error) {
-	color := "#6366F1"
+	color := defaultTagColor
 	if req.Color != nil && *req.Color != "" {
 		color = *req.Color
 	}
-	var t domain.Tag
-	err := s.db.QueryRow(ctx,
-		`INSERT INTO tags (user_id, name, color) VALUES ($1, $2, $3) RETURNING id, user_id, name, color, created_at`,
-		userID, req.Name, color,
-	).Scan(&t.ID, &t.UserID, &t.Name, &t.Color, &t.CreatedAt)
-	if err != nil {
+	row := entity.Tag{UserID: userID, Name: req.Name, Color: color}
+	if err := s.db.WithContext(ctx).Create(&row).Error; err != nil {
 		return nil, errors.New("failed to create tag")
 	}
-	return &t, nil
+	return &domain.Tag{
+		ID:        row.ID,
+		UserID:    row.UserID,
+		Name:      row.Name,
+		Color:     row.Color,
+		CreatedAt: row.CreatedAt,
+	}, nil
 }
 
 func (s *TagService) List(ctx context.Context, userID int64) ([]domain.Tag, error) {
-	rows, err := s.db.Query(ctx,
-		`SELECT id, user_id, name, color, created_at FROM tags WHERE user_id = $1 ORDER BY name`, userID)
-	if err != nil {
+	var rows []entity.Tag
+	if err := s.db.WithContext(ctx).
+		Where("user_id = ?", userID).
+		Order("name").
+		Find(&rows).Error; err != nil {
 		return nil, errors.New("failed to list tags")
 	}
-	defer rows.Close()
 
-	var tags []domain.Tag
-	for rows.Next() {
-		var t domain.Tag
-		if err := rows.Scan(&t.ID, &t.UserID, &t.Name, &t.Color, &t.CreatedAt); err != nil {
-			return nil, errors.New("failed to list tags")
-		}
-		tags = append(tags, t)
-	}
-	if tags == nil {
-		tags = []domain.Tag{}
+	tags := make([]domain.Tag, 0, len(rows))
+	for _, r := range rows {
+		tags = append(tags, domain.Tag{
+			ID:        r.ID,
+			UserID:    r.UserID,
+			Name:      r.Name,
+			Color:     r.Color,
+			CreatedAt: r.CreatedAt,
+		})
 	}
 	return tags, nil
 }
 
 func (s *TagService) Delete(ctx context.Context, userID, tagID int64) error {
-	_, err := s.db.Exec(ctx, `DELETE FROM tags WHERE id = $1 AND user_id = $2`, tagID, userID)
-	if err != nil {
+	if err := s.db.WithContext(ctx).
+		Where("id = ? AND user_id = ?", tagID, userID).
+		Delete(&entity.Tag{}).Error; err != nil {
 		return errors.New("failed to delete tag")
 	}
 	return nil
@@ -66,24 +73,43 @@ func (s *TagService) Delete(ctx context.Context, userID, tagID int64) error {
 // AddTagToLink adds a tag to a link
 func (s *TagService) AddTagToLink(ctx context.Context, userID, linkID, tagID int64) error {
 	// verify the link belongs to the user
-	var ownerID int64
-	err := s.db.QueryRow(ctx, `SELECT user_id FROM links WHERE id = $1`, linkID).Scan(&ownerID)
-	if err != nil || ownerID != userID {
+	if !s.ownsLink(ctx, userID, linkID) {
 		return errors.New("link not found or access denied")
 	}
 	// verify the tag also belongs to that user (previously another user's tag could be attached, leaking its name/color)
-	var tagOwner int64
-	if tagErr := s.db.QueryRow(ctx, `SELECT user_id FROM tags WHERE id = $1`, tagID).Scan(&tagOwner); tagErr != nil || tagOwner != userID {
+	if !s.ownsTag(ctx, userID, tagID) {
 		return errors.New("tag not found or access denied")
 	}
-	_, err = s.db.Exec(ctx, `INSERT INTO link_tags (link_id, tag_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`, linkID, tagID)
-	return err
+
+	// Clauses(clause.OnConflict{DoNothing: true}) is the ORM equivalent of ON CONFLICT DO NOTHING, so
+	// re-adding an existing tag stays a no-op instead of failing the unique constraint.
+	return s.db.WithContext(ctx).
+		Clauses(clause.OnConflict{DoNothing: true}).
+		Create(&entity.LinkTag{LinkID: linkID, TagID: tagID}).Error
 }
 
 // RemoveTagFromLink removes a link tag
 func (s *TagService) RemoveTagFromLink(ctx context.Context, userID, linkID, tagID int64) error {
-	_, err := s.db.Exec(ctx,
-		`DELETE FROM link_tags WHERE link_id = $1 AND tag_id = $2 AND link_id IN (SELECT id FROM links WHERE user_id = $3)`,
-		linkID, tagID, userID)
-	return err
+	// The ownership check stays inside the DELETE: the original SQL filtered on
+	// link_id IN (SELECT id FROM links WHERE user_id = $3), which is race-free.
+	return s.db.WithContext(ctx).
+		Where("link_id = ? AND tag_id = ?", linkID, tagID).
+		Where("link_id IN (?)", s.db.WithContext(ctx).Model(&entity.Link{}).Select("id").Where("user_id = ?", userID)).
+		Delete(&entity.LinkTag{}).Error
+}
+
+func (s *TagService) ownsLink(ctx context.Context, userID, linkID int64) bool {
+	var count int64
+	err := s.db.WithContext(ctx).Model(&entity.Link{}).
+		Where("id = ? AND user_id = ?", linkID, userID).
+		Count(&count).Error
+	return err == nil && count > 0
+}
+
+func (s *TagService) ownsTag(ctx context.Context, userID, tagID int64) bool {
+	var count int64
+	err := s.db.WithContext(ctx).Model(&entity.Tag{}).
+		Where("id = ? AND user_id = ?", tagID, userID).
+		Count(&count).Error
+	return err == nil && count > 0
 }

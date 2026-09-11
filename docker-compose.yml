@@ -8,7 +8,6 @@ services:
       POSTGRES_DB: kada
     volumes:
       - pgdata:/var/lib/postgresql/data
-      - ./backend/db/migrations:/docker-entrypoint-initdb.d
     ports:
       - "127.0.0.1:5432:5432"
     healthcheck:
@@ -41,6 +40,10 @@ services:
       JWT_EXPIRES_IN: 72h
       API_BASE_URL: http://localhost
       PORT: 8080
+      # The schema is owned by GORM AutoMigrate (models live in backend/internal/domain/entity).
+      # Production normally runs the migration explicitly (backend/cmd/migrate) and starts the API with
+      # this disabled, so a restart can never change the database. In Compose the API applies it first.
+      DB_AUTO_MIGRATE: "true"
     depends_on:
       postgres:
         condition: service_healthy

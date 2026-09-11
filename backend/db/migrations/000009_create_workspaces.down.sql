@@ -1,2 +1,0 @@
-ALTER TABLE links DROP CONSTRAINT IF EXISTS fk_links_workspace;
-DROP TABLE IF EXISTS workspaces;

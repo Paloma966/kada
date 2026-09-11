@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"errors"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -112,7 +113,13 @@ func (h *Handler) RegisterByEmail(c *gin.Context) {
 
 	resp, err := h.svc.RegisterByEmail(c.Request.Context(), req.Email, req.Password, req.Name)
 	if err != nil {
-		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+		// A taken email is a client error (409); anything else is a server-side failure and must surface as
+		// 500 so a broken database is not reported to the user as "this email is already registered".
+		if errors.Is(err, domain.ErrEmailTaken) {
+			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "registration failed, please try again later"})
 		return
 	}
 

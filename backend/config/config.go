@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -13,6 +14,10 @@ type Config struct {
 	JWTExpires  string
 	BaseURL     string
 	FrontendURL string
+
+	// AutoMigrate controls whether the process is allowed to create/update the schema at startup.
+	// Disable it (DB_AUTO_MIGRATE=false) once the schema is managed out of band.
+	AutoMigrate bool
 
 	// SMS service
 	SMSAccessKeyID     string
@@ -38,6 +43,7 @@ func Load() *Config {
 		JWTExpires:         getEnv("JWT_EXPIRES_IN", "720h"),
 		BaseURL:            getEnv("API_BASE_URL", "https://kada.click"),
 		FrontendURL:        getEnv("FRONTEND_URL", "http://localhost:3000"),
+		AutoMigrate:        getEnvBool("DB_AUTO_MIGRATE", true),
 		SMSAccessKeyID:     getEnv("SMS_ACCESS_KEY_ID", ""),
 		SMSAccessKeySecret: getEnv("SMS_ACCESS_KEY_SECRET", ""),
 		SMSSignName:        getEnv("SMS_SIGN_NAME", "kada"),
@@ -72,6 +78,20 @@ func getEnv(key, fallback string) string {
 	return fallback
 }
 
+// getEnvBool parses a boolean environment variable; anything unparsable (including an empty value)
+// falls back to the default rather than silently disabling the feature.
+func getEnvBool(key string, fallback bool) bool {
+	v := strings.TrimSpace(os.Getenv(key))
+	if v == "" {
+		return fallback
+	}
+	b, err := strconv.ParseBool(v)
+	if err != nil {
+		return fallback
+	}
+	return b
+}
+
 // weakJWTSecrets lists known weak default secrets: startup fails outright in release mode
 var weakJWTSecrets = []string{
 	"",
@@ -90,3 +110,4 @@ func IsWeakJWTSecret(s string) bool {
 	}
 	return false
 }
+

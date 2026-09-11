@@ -10,9 +10,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgxpool"
+	"gorm.io/gorm"
 
 	"github.com/chun/kada-backend/internal/domain"
+	"github.com/chun/kada-backend/internal/domain/entity"
 )
 
 // txtPrefix is the DNS TXT record prefix for domain ownership verification
@@ -30,22 +31,27 @@ func expectedTXT(userID, domainID int64, name string) string {
 }
 
 type DomainService struct {
-	db *pgxpool.Pool
+	db *gorm.DB
 }
 
-func NewDomainService(db *pgxpool.Pool) *DomainService {
+func NewDomainService(db *gorm.DB) *DomainService {
 	return &DomainService{db: db}
 }
 
 // Create adds a custom domain
 func (s *DomainService) Create(ctx context.Context, userID int64, req domain.CreateDomainRequest) (*domain.Domain, error) {
-	var d domain.Domain
-	err := s.db.QueryRow(ctx, `
-		INSERT INTO domains (user_id, name) VALUES ($1, $2)
-		RETURNING id, user_id, name, verified, verified_at, created_at, updated_at
-	`, userID, req.Name).Scan(&d.ID, &d.UserID, &d.Name, &d.Verified, &d.VerifiedAt, &d.CreatedAt, &d.UpdatedAt)
-	if err != nil {
+	row := entity.Domain{UserID: userID, Name: req.Name}
+	if err := s.db.WithContext(ctx).Create(&row).Error; err != nil {
 		return nil, errors.New("failed to add domain, it may already exist")
+	}
+	d := domain.Domain{
+		ID:         row.ID,
+		UserID:     row.UserID,
+		Name:       row.Name,
+		Verified:   row.Verified,
+		VerifiedAt: row.VerifiedAt,
+		CreatedAt:  row.CreatedAt,
+		UpdatedAt:  row.UpdatedAt,
 	}
 	d.VerificationCode = verificationCode(userID, d.ID, d.Name)
 	return &d, nil
@@ -53,50 +59,50 @@ func (s *DomainService) Create(ctx context.Context, userID int64, req domain.Cre
 
 // List gets the user's domain list
 func (s *DomainService) List(ctx context.Context, userID int64) ([]domain.Domain, error) {
-	rows, err := s.db.Query(ctx, `
-		SELECT id, user_id, name, verified, verified_at, created_at, updated_at
-		FROM domains WHERE user_id = $1 ORDER BY created_at DESC
-	`, userID)
-	if err != nil {
-		return nil, err
+	var rows []entity.Domain
+	if err := s.db.WithContext(ctx).
+		Where("user_id = ?", userID).
+		Order("created_at DESC").
+		Find(&rows).Error; err != nil {
+		return nil, errors.New("failed to list domains")
 	}
-	defer rows.Close()
 
-	var domains []domain.Domain
-	for rows.Next() {
-		var d domain.Domain
-		if err := rows.Scan(&d.ID, &d.UserID, &d.Name, &d.Verified, &d.VerifiedAt, &d.CreatedAt, &d.UpdatedAt); err != nil {
-			return nil, err
+	domains := make([]domain.Domain, 0, len(rows))
+	for _, r := range rows {
+		d := domain.Domain{
+			ID:         r.ID,
+			UserID:     r.UserID,
+			Name:       r.Name,
+			Verified:   r.Verified,
+			VerifiedAt: r.VerifiedAt,
+			CreatedAt:  r.CreatedAt,
+			UpdatedAt:  r.UpdatedAt,
 		}
 		if !d.Verified {
 			d.VerificationCode = verificationCode(d.UserID, d.ID, d.Name)
 		}
 		domains = append(domains, d)
 	}
-	if domains == nil {
-		domains = []domain.Domain{}
-	}
 	return domains, nil
 }
 
 // Verify verifies domain ownership by checking the DNS TXT record
 func (s *DomainService) Verify(ctx context.Context, userID, domainID int64) (*domain.Domain, error) {
-	var d domain.Domain
-	err := s.db.QueryRow(ctx, `
-		SELECT id, user_id, name, verified FROM domains WHERE id = $1 AND user_id = $2
-	`, domainID, userID).Scan(&d.ID, &d.UserID, &d.Name, &d.Verified)
-	if err != nil {
+	var row entity.Domain
+	if err := s.db.WithContext(ctx).
+		Where("id = ? AND user_id = ?", domainID, userID).
+		First(&row).Error; err != nil {
 		return nil, errors.New("domain not found")
 	}
 
-	want := expectedTXT(userID, domainID, d.Name)
+	want := expectedTXT(userID, domainID, row.Name)
 
 	// DNS TXT lookup (8-second timeout)
 	dnsCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
 	defer cancel()
-	records, err := net.DefaultResolver.LookupTXT(dnsCtx, d.Name)
+	records, err := net.DefaultResolver.LookupTXT(dnsCtx, row.Name)
 	if err != nil {
-		return nil, fmt.Errorf("DNS lookup failed (%s), please make sure the domain resolves correctly", d.Name)
+		return nil, fmt.Errorf("DNS lookup failed (%s), please make sure the domain resolves correctly", row.Name)
 	}
 	found := false
 	for _, r := range records {
@@ -106,30 +112,46 @@ func (s *DomainService) Verify(ctx context.Context, userID, domainID int64) (*do
 		}
 	}
 	if !found {
-		return nil, fmt.Errorf("verification record not found, please add a TXT record for domain %s in DNS with value: %s", d.Name, want)
+		return nil, fmt.Errorf("verification record not found, please add a TXT record for domain %s in DNS with value: %s", row.Name, want)
 	}
 
 	now := time.Now()
-	err = s.db.QueryRow(ctx, `
-		UPDATE domains SET verified = TRUE, verified_at = $1, updated_at = NOW()
-		WHERE id = $2 AND user_id = $3
-		RETURNING id, user_id, name, verified, verified_at, created_at, updated_at
-	`, now, domainID, userID).Scan(&d.ID, &d.UserID, &d.Name, &d.Verified, &d.VerifiedAt, &d.CreatedAt, &d.UpdatedAt)
-	if err != nil {
+	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		res := tx.Model(&entity.Domain{}).
+			Where("id = ? AND user_id = ?", domainID, userID).
+			Updates(map[string]any{"verified": true, "verified_at": now, "updated_at": gorm.Expr("NOW()")})
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			return gorm.ErrRecordNotFound
+		}
+		return tx.Where("id = ? AND user_id = ?", domainID, userID).First(&row).Error
+	}); err != nil {
 		return nil, errors.New("verification failed")
 	}
-	return &d, nil
+
+	return &domain.Domain{
+		ID:               row.ID,
+		UserID:           row.UserID,
+		Name:             row.Name,
+		Verified:         row.Verified,
+		VerifiedAt:       row.VerifiedAt,
+		CreatedAt:        row.CreatedAt,
+		UpdatedAt:        row.UpdatedAt,
+		VerificationCode: verificationCode(row.UserID, row.ID, row.Name),
+	}, nil
 }
 
 // Delete deletes a domain
 func (s *DomainService) Delete(ctx context.Context, userID, domainID int64) error {
-	tag, err := s.db.Exec(ctx, `
-		DELETE FROM domains WHERE id = $1 AND user_id = $2
-	`, domainID, userID)
-	if err != nil {
-		return err
+	res := s.db.WithContext(ctx).
+		Where("id = ? AND user_id = ?", domainID, userID).
+		Delete(&entity.Domain{})
+	if res.Error != nil {
+		return res.Error
 	}
-	if tag.RowsAffected() == 0 {
+	if res.RowsAffected == 0 {
 		return errors.New("domain not found")
 	}
 	return nil
