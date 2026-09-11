@@ -180,10 +180,12 @@ type UTMTemplate struct {
 
 // APIToken is a long-lived bearer token for programmatic access. Only its sha256 hash is stored.
 type APIToken struct {
-	ID        int64      `gorm:"primaryKey" json:"id"`
-	UserID    int64      `gorm:"not null;index" json:"user_id"`
-	Name      string     `gorm:"type:varchar(100);not null" json:"name"`
-	TokenHash string     `gorm:"type:varchar(64);not null;uniqueIndex;index" json:"-"`
+	ID     int64  `gorm:"primaryKey" json:"id"`
+	UserID int64  `gorm:"not null;index" json:"user_id"`
+	Name   string `gorm:"type:varchar(100);not null" json:"name"`
+	// Only `uniqueIndex` here: adding the plain `index` tag as well makes GORM build a second index over
+	// the same column (CREATE UNIQUE INDEX ... ON api_tokens (token_hash, token_hash)).
+	TokenHash string     `gorm:"type:varchar(64);not null;uniqueIndex" json:"-"`
 	LastUsed  *time.Time `json:"last_used"`
 	CreatedAt time.Time  `json:"created_at"`
 
