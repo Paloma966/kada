@@ -63,10 +63,56 @@ func TestReconcileIsPostgresOnly(t *testing.T) {
 
 	guard := `if db.Name() != "postgres"`
 	if !strings.Contains(body, guard) {
-		t.Errorf("ReconcileLegacyConstraints must return early for non-Postgres engines (expected %s)", guard)
+		t.Errorf("the schema helpers must return early for non-Postgres engines (expected %s)", guard)
 	}
 	// The guard has to come before any DDL is executed, otherwise it is useless.
 	if strings.Index(body, guard) > strings.Index(body, "db.Exec(") {
 		t.Error("the engine guard appears after the first db.Exec call")
+	}
+	if n := strings.Count(body, guard); n < 2 {
+		t.Errorf("expected the engine guard on every DDL helper, found %d", n)
+	}
+}
+
+// AutoMigrate can create tables and columns but not types, so a model field tagged `type:<something>`
+// only works if that type is created beforehand. Forgetting one fails the whole migration on a database
+// that has never run the original SQL migrations, which is how the click_platform enum was missed.
+func TestEveryEnumColumnHasACreatedType(t *testing.T) {
+	// The enum types the entity package references through a `type:` tag.
+	referenced := map[string]bool{
+		"click_platform": true,
+	}
+
+	created := make(map[string]bool)
+	for _, stmt := range EnumTypeStatements() {
+		for name := range referenced {
+			if strings.Contains(stmt, "CREATE TYPE "+name) {
+				created[name] = true
+			}
+		}
+	}
+
+	for name := range referenced {
+		if !created[name] {
+			t.Errorf("the models use the enum type %q but no statement creates it; "+
+				"AutoMigrate cannot create types, so a fresh database will fail", name)
+		}
+	}
+}
+
+// Enum statements run on every start, so a plain CREATE TYPE would fail the second time. The DO block
+// swallows duplicate_object instead.
+func TestEnumTypeStatementsAreIdempotent(t *testing.T) {
+	statements := EnumTypeStatements()
+	if len(statements) == 0 {
+		t.Fatal("expected at least one enum type statement")
+	}
+	for _, stmt := range statements {
+		if !strings.Contains(stmt, "duplicate_object") {
+			t.Errorf("statement is not idempotent, it does not handle duplicate_object: %s", stmt)
+		}
+		if !strings.Contains(stmt, "CREATE TYPE ") {
+			t.Errorf("unexpected statement shape: %s", stmt)
+		}
 	}
 }

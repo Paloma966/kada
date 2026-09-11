@@ -97,10 +97,15 @@ func (SMSVerificationCode) TableName() string { return "sms_codes" }
 // The WeChat column names are declared explicitly because GORM shortens acronyms mid-name:
 // WechatOpenID would map to wechat_open_id, while the column is wechat_openid.
 type User struct {
-	ID            int64      `gorm:"primaryKey" json:"id"`
-	Phone         *string    `gorm:"type:varchar(20);uniqueIndex;index" json:"phone"`
-	Email         *string    `gorm:"type:varchar(255);uniqueIndex;index" json:"email"`
-	WechatOpenID  *string    `gorm:"column:wechat_openid;type:varchar(128);uniqueIndex;index" json:"wechat_openid"`
+	ID int64 `gorm:"primaryKey" json:"id"`
+	// Each of these three columns carries both a named unique index and the column-level `unique` flag.
+	// GORM migrates them independently: `uniqueIndex` only creates the index, while `unique` is what
+	// MigrateColumnUnique compares against the database. Declaring just one of the two makes a database
+	// created by AutoMigrate and one inherited from the old raw SQL schema disagree, and the migrator then
+	// tries to drop a constraint that only exists on one of them.
+	Phone         *string    `gorm:"type:varchar(20);unique;uniqueIndex:idx_users_phone" json:"phone"`
+	Email         *string    `gorm:"type:varchar(255);unique;uniqueIndex:idx_users_email" json:"email"`
+	WechatOpenID  *string    `gorm:"column:wechat_openid;type:varchar(128);unique;uniqueIndex:idx_users_wechat_openid" json:"wechat_openid"`
 	WechatUnionID *string    `gorm:"column:wechat_unionid;type:varchar(128)" json:"wechat_unionid"`
 	Name          *string    `gorm:"type:varchar(100)" json:"name"`
 	Avatar        *string    `gorm:"type:text" json:"avatar"`

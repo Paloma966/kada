@@ -43,6 +43,47 @@ var legacyUniqueConstraints = []legacyUniqueConstraint{
 	{Table: "domains", Column: "name", LegacySQL: "ALTER TABLE domains DROP CONSTRAINT IF EXISTS domains_user_id_name_key"},
 }
 
+// enumTypes are the PostgreSQL enum types the models reference with `type:<name>`.
+//
+// AutoMigrate creates tables and columns, but it cannot create a type: a model field tagged
+// `type:click_platform` fails with `type "click_platform" does not exist` (SQLSTATE 42704) on a database
+// that has never seen the original raw-SQL migrations, which is exactly what happens on a fresh install.
+// The type therefore has to be created before AutoMigrate runs.
+//
+// DO blocks are used so that every statement is idempotent: they are re-run on every startup and on
+// every deploy. See internal/domain/entity for the columns that reference each type.
+var enumTypes = []string{
+	`DO $$ BEGIN
+		CREATE TYPE click_platform AS ENUM ('browser', 'wechat', 'qq', 'weibo', 'xiaohongshu', 'sms', 'unknown');
+	EXCEPTION WHEN duplicate_object THEN NULL;
+	END $$`,
+}
+
+// EnumTypeStatements returns the idempotent DDL that creates the enum types the models reference.
+func EnumTypeStatements() []string {
+	return append([]string(nil), enumTypes...)
+}
+
+// EnsureEnumTypes creates the PostgreSQL enum types the models depend on.
+//
+// It must run BEFORE AutoMigrate. On an existing database the types are already there and the DO blocks
+// are no-ops; on a fresh one they are the only way the click_logs table can be created at all.
+func EnsureEnumTypes(db *gorm.DB) error {
+	if db.Name() != "postgres" {
+		// The CREATE TYPE ... AS ENUM syntax below is PostgreSQL-specific.
+		return nil
+	}
+
+	for _, stmt := range enumTypes {
+		if err := db.Exec(stmt).Error; err != nil {
+			return fmt.Errorf("failed to create an enum type: %w", err)
+		}
+	}
+
+	log.Println("PostgreSQL enum types ensured")
+	return nil
+}
+
 // LegacyConstraintStatements returns the idempotent DDL that reconciles the constraint naming of a
 // database created from the original raw-SQL migrations with the current GORM models.
 //
