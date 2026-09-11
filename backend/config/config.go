@@ -111,3 +111,25 @@ func IsWeakJWTSecret(s string) bool {
 	return false
 }
 
+// placeholderSMSValues are the sample values shipped in .env.example. Copying them verbatim yields a
+// non-empty key pair that still fails every Aliyun call with a signature/credential error, which looks
+// like a code bug logged deep inside a request handler. Detecting them turns it into a startup warning.
+var placeholderSMSValues = []string{
+	"your_access_key_id",
+	"your_access_key_secret",
+	"change-me",
+	"changeme",
+}
+
+// SMSCredentialsConfigured reports whether SMS_ACCESS_KEY_ID/SECRET hold real values.
+func (c *Config) SMSCredentialsConfigured() bool {
+	if c.SMSAccessKeyID == "" || c.SMSAccessKeySecret == "" {
+		return false
+	}
+	for _, p := range placeholderSMSValues {
+		if strings.EqualFold(c.SMSAccessKeyID, p) || strings.EqualFold(c.SMSAccessKeySecret, p) {
+			return false
+		}
+	}
+	return true
+}

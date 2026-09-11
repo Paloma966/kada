@@ -84,7 +84,10 @@ func (s *AuthService) SendSMSCode(ctx context.Context, phone string) error {
 		code, err = s.sms.SendVerificationCode(phone)
 		if err != nil {
 			log.Printf("send sms code to %s failed: %v", phone, err)
-			return errors.New("failed to send SMS, please try again later")
+			// Keep the sender's cause in the error chain instead of flattening every failure into one
+			// opaque message: the provider code is what identifies an unapproved signature/template or a
+			// disabled AccessKey, and without it a failed sign-up is undebuggable.
+			return fmt.Errorf("failed to send SMS: %w", err)
 		}
 	} else {
 		code = generateSMSCode()
@@ -222,9 +225,14 @@ func (s *AuthService) RegisterByEmail(ctx context.Context, email, password, name
 
 	hashed := string(hash)
 	row := entity.User{Email: &email, PasswordHash: &hashed, Name: &name}
-	if err := s.db.WithContext(ctx).Create(&row).Error; err != nil {
-		log.Printf("register by email failed: %v", err)
-		return nil, errors.New("registration failed, the email may already be in use")
+	if createErr := s.db.WithContext(ctx).Create(&row).Error; createErr != nil {
+		log.Printf("register by email failed: %v", createErr)
+		// A duplicate email is a client mistake (409), anything else is a real server-side failure and
+		// must not be disguised as one; the handler maps the sentinel to the right status.
+		if isDuplicateKey(createErr) {
+			return nil, domain.ErrEmailTaken
+		}
+		return nil, fmt.Errorf("registration failed: %w", createErr)
 	}
 
 	user := toUserInfo(row)
