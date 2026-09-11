@@ -2,7 +2,7 @@
 
 import { Copy, ExternalLink, Pencil, Trash2, BarChart3, Check, QrCode, Download, X } from "lucide-react";
 import Link from "next/link";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { toast } from "sonner";
 import { useT } from "@/lib/i18n";
 
@@ -36,7 +36,6 @@ export function LinkCard({ link, onDelete, selectable, selected, onSelect }: Lin
   const [deleting, setDeleting] = useState(false);
   const [showQR, setShowQR] = useState(false);
   const [qrDataURL, setQrDataURL] = useState<string | null>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
 
   const handleCopy = (e: React.MouseEvent) => {
     e.preventDefault();

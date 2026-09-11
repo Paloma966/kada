@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-# Target server (no longer hardcoded — confirm before use)
+# Target server (no longer hardcoded - confirm before use)
 DEPLOY_HOST="${DEPLOY_HOST:-root@YOUR_SERVER_IP}"
 
 echo "========================================="
@@ -27,7 +27,7 @@ echo "[3/6] Fetching the project code..."
 mkdir -p /opt/kada
 cd /opt/kada
 
-# Option A: scp from your dev machine (recommended — keeps .env and other config)
+# Option A: scp from your dev machine (recommended - keeps .env and other config)
 # Run this on your dev machine first: scp -r /home/chun/dev/projects/kada/* "$DEPLOY_HOST":/opt/kada/
 
 # Option B: use git instead (if a repo exists)

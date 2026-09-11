@@ -84,7 +84,7 @@ export default function CustomersPage() {
                   click_count: number;
                   unique_links: number;
                   last_seen: string;
-                }, i: number) => (
+                }) => (
                   <tr key={c.ip} className="border-b border-gray-50 hover:bg-gray-50/50 transition">
                     <td className="px-5 py-3">
                       <code className="text-gray-700 font-mono text-xs">{c.ip}</code>

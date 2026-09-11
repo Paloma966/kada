@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ArrowRightLeft, Plus, Trash2, Check, X, Copy, Bookmark } from "lucide-react";
+import { ArrowRightLeft, Plus, Trash2, Check, X, Copy } from "lucide-react";
 import useSWR from "swr";
 import { toast } from "sonner";
 import { utmAPI } from "@/lib/api";
