@@ -22,7 +22,7 @@ func TestDefaultKeyFunc(t *testing.T) {
 }
 
 func TestNewRateLimiter_NilClient(t *testing.T) {
-	// 即使传入 nil client 也不应 panic
+	// Must not panic even when a nil client is passed
 	rl := NewRateLimiter(nil)
 	if rl == nil {
 		t.Fatal("NewRateLimiter should not return nil")
@@ -36,15 +36,15 @@ func TestRealIP_PrefersXRealIP(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	r := gin.New()
-	_ = r.SetTrustedProxies(nil) // 与生产一致：不信任代理头
+	_ = r.SetTrustedProxies(nil) // same as production: trust no proxy headers
 	var got string
 	r.GET("/test", func(c *gin.Context) { got = RealIP(c) })
 
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest("GET", "/test", nil)
 	req.RemoteAddr = "203.0.113.9:1234"
-	req.Header.Set("X-Forwarded-For", "1.2.3.4") // 伪造值
-	req.Header.Set("X-Real-IP", "5.6.7.8")       // nginx 覆写值
+	req.Header.Set("X-Forwarded-For", "1.2.3.4") // forged value
+	req.Header.Set("X-Real-IP", "5.6.7.8")       // nginx-rewritten value
 	r.ServeHTTP(w, req)
 
 	if got != "5.6.7.8" {
@@ -56,14 +56,14 @@ func TestRealIP_IgnoresSpoofedXFF(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	r := gin.New()
-	_ = r.SetTrustedProxies(nil) // 与生产一致：不信任代理头
+	_ = r.SetTrustedProxies(nil) // same as production: trust no proxy headers
 	var got string
 	r.GET("/test", func(c *gin.Context) { got = RealIP(c) })
 
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest("GET", "/test", nil)
 	req.RemoteAddr = "203.0.113.9:1234"
-	req.Header.Set("X-Forwarded-For", "1.2.3.4") // 仅伪造 XFF
+	req.Header.Set("X-Forwarded-For", "1.2.3.4") // only a forged XFF
 	r.ServeHTTP(w, req)
 
 	if got != "203.0.113.9" {

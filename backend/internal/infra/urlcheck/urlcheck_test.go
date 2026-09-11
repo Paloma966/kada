@@ -15,11 +15,11 @@ func TestIsSafeTarget(t *testing.T) {
 		{"data:text/html,<script>alert(1)</script>", false},
 		{"vbscript:msgbox(1)", false},
 		{"file:///etc/passwd", false},
-		{"//example.com/path", false}, // 协议相对，无 scheme
+		{"//example.com/path", false}, // protocol-relative, no scheme
 		{"ftp://example.com", false},
 		{"", false},
 		{"not a url", false},
-		{"https://", false}, // 无 host
+		{"https://", false}, // no host
 	}
 	for _, tt := range tests {
 		if got := IsSafeTarget(tt.raw); got != tt.want {

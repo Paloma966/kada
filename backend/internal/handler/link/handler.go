@@ -34,11 +34,11 @@ func (h *Handler) RegisterRoutes(r *gin.RouterGroup, authMW gin.HandlerFunc) {
 	r.DELETE("/links/:id", h.Delete)
 }
 
-// Create 创建短链接
+// Create creates a short link.
 func (h *Handler) Create(c *gin.Context) {
 	var req domain.CreateLinkRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "请提供有效的链接信息: " + err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "valid link details are required: " + err.Error()})
 		return
 	}
 
@@ -51,24 +51,24 @@ func (h *Handler) Create(c *gin.Context) {
 	c.JSON(http.StatusCreated, gin.H{"link": link})
 }
 
-// Get 获取单个链接
+// Get returns a single link.
 func (h *Handler) Get(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的链接ID"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid link ID"})
 		return
 	}
 
 	link, err := h.svc.GetByID(c.Request.Context(), id, middleware.GetUserID(c))
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "链接不存在"})
+		c.JSON(http.StatusNotFound, gin.H{"error": "link not found"})
 		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{"link": link})
 }
 
-// List 获取链接列表
+// List returns a paginated list of links.
 func (h *Handler) List(c *gin.Context) {
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
@@ -92,17 +92,17 @@ func (h *Handler) List(c *gin.Context) {
 	})
 }
 
-// Update 更新链接
+// Update updates a link.
 func (h *Handler) Update(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的链接ID"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid link ID"})
 		return
 	}
 
 	var req domain.UpdateLinkRequest
 	if bindErr := c.ShouldBindJSON(&req); bindErr != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "请求参数错误"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request parameters"})
 		return
 	}
 
@@ -115,11 +115,11 @@ func (h *Handler) Update(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"link": link})
 }
 
-// Delete 删除链接
+// Delete deletes a link.
 func (h *Handler) Delete(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的链接ID"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid link ID"})
 		return
 	}
 
@@ -128,16 +128,16 @@ func (h *Handler) Delete(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "链接已删除"})
+	c.JSON(http.StatusOK, gin.H{"message": "link deleted"})
 }
 
-// BatchDelete 批量删除链接
+// BatchDelete deletes links in bulk.
 func (h *Handler) BatchDelete(c *gin.Context) {
 	var req struct {
 		IDs []int64 `json:"ids" binding:"required"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "请提供链接ID列表"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "link ID list is required"})
 		return
 	}
 
@@ -150,14 +150,14 @@ func (h *Handler) BatchDelete(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"deleted": count})
 }
 
-// BatchTag 批量打标签
+// BatchTag applies a tag to links in bulk.
 func (h *Handler) BatchTag(c *gin.Context) {
 	var req struct {
 		IDs   []int64 `json:"ids" binding:"required"`
 		TagID int64   `json:"tag_id" binding:"required"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "请提供链接ID和标签ID"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "link ID and tag ID are required"})
 		return
 	}
 
@@ -166,10 +166,10 @@ func (h *Handler) BatchTag(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "批量打标签成功"})
+	c.JSON(http.StatusOK, gin.H{"message": "tags applied successfully"})
 }
 
-// ExportCSV 导出链接数据为 CSV
+// ExportCSV exports link data as CSV.
 func (h *Handler) ExportCSV(c *gin.Context) {
 	csvStr, err := h.svc.ExportCSV(c.Request.Context(), middleware.GetUserID(c))
 	if err != nil {
@@ -182,11 +182,11 @@ func (h *Handler) ExportCSV(c *gin.Context) {
 	c.String(http.StatusOK, csvStr)
 }
 
-// Preview 抓取目标 URL 的 OG 元数据（标题、描述、图片）
+// Preview fetches the target URL's OG metadata (title, description, image).
 func (h *Handler) Preview(c *gin.Context) {
 	var req domain.LinkPreviewRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "请提供有效的 URL"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "a valid URL is required"})
 		return
 	}
 

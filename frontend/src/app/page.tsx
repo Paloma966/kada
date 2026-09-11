@@ -1,11 +1,17 @@
+"use client";
+
 import Link from "next/link";
 import { Link2 } from "lucide-react";
 import StarfieldCanvas from "@/components/StarfieldCanvas";
+import { LanguageSwitcher } from "@/components/LanguageSwitcher";
+import { useT } from "@/lib/i18n";
 
 export default function HomePage() {
+  const t = useT();
+
   return (
     <main className="relative h-dvh w-full overflow-hidden overscroll-none bg-deep-space text-white">
-      {/* canvas 是替换元素，inset-0 不会拉伸，必须显式 h-full w-full 才能铺满视口 */}
+      {/* canvas is a replaced element, so inset-0 does not stretch it; h-full w-full is required to fill the viewport */}
       <StarfieldCanvas className="absolute inset-0 h-full w-full" />
 
       <div className="absolute inset-0 z-10 flex flex-col">
@@ -21,14 +27,15 @@ export default function HomePage() {
               href="/login"
               className="rounded-lg px-4 py-2 text-sm font-medium text-indigo-100 transition hover:bg-white/10 hover:text-white"
             >
-              登录
+              {t("登录")}
             </Link>
             <Link
               href="/register"
               className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-indigo-500"
             >
-              免费注册
+              {t("免费注册")}
             </Link>
+            <LanguageSwitcher />
           </div>
         </header>
 
@@ -37,7 +44,7 @@ export default function HomePage() {
             KADA
           </h1>
           <p className="mt-6 text-base font-medium tracking-[0.5em] text-indigo-200/90 sm:text-lg">
-            短链接平台
+            {t("短链接平台")}
           </p>
         </div>
       </div>

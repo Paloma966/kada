@@ -61,7 +61,7 @@ describe("buildStarLayer", () => {
   it("produces varying star brightness", () => {
     const layer = buildStarLayer({ count: 100, minR: 10, maxR: 50, seed: 5 });
     const colors = Array.from(layer.colors);
-    // 至少存在两颗亮度不同的星星：某些颜色分量与首个颜色向量明显不同
+    // At least two stars differ in brightness: some color component deviates clearly from the first color vector
     const hasVariation = colors.some((v) => Math.abs(v - colors[0]) > 0.2);
     expect(hasVariation).toBe(true);
   });

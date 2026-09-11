@@ -6,13 +6,17 @@ import { toast } from "sonner";
 import useSWR from "swr";
 import { authAPI, tokensAPI, workspacesAPI } from "@/lib/api";
 import { getToken, getUser, setUser } from "@/lib/auth";
+import { useT, useI18n } from "@/lib/i18n";
 
 export default function SettingsPage() {
   const token = getToken();
   const savedUser = getUser();
+  const t = useT();
+  const { locale } = useI18n();
+  const localeTag = locale === "en" ? "en-US" : "zh-CN";
 
   const [editingName, setEditingName] = useState(false);
-  // 初始值直接取自本地用户资料，无需 effect 同步
+  // The initial value comes straight from the locally stored user profile, so no effect is needed to sync it
   const [name, setName] = useState(savedUser?.name ?? "");
   const [saving, setSaving] = useState(false);
 
@@ -35,9 +39,9 @@ export default function SettingsPage() {
         setUser(data.user);
       }
       setEditingName(false);
-      toast.success("姓名已更新");
+      toast.success(t("姓名已更新"));
     } catch {
-      toast.error("更新失败");
+      toast.error(t("更新失败"));
     } finally {
       setSaving(false);
     }
@@ -51,9 +55,9 @@ export default function SettingsPage() {
       setNewToken(data.token);
       setNewTokenName("");
       mutateTokens();
-      toast.success("Token 创建成功");
+      toast.success(t("Token 创建成功"));
     } catch {
-      toast.error("创建失败");
+      toast.error(t("创建失败"));
     } finally {
       setCreating(false);
     }
@@ -64,9 +68,9 @@ export default function SettingsPage() {
     try {
       await tokensAPI.delete(token, id);
       mutateTokens();
-      toast.success("Token 已删除");
+      toast.success(t("Token 已删除"));
     } catch {
-      toast.error("删除失败");
+      toast.error(t("删除失败"));
     }
   };
 
@@ -88,9 +92,9 @@ export default function SettingsPage() {
       setNewWorkspaceName("");
       setNewWorkspaceSlug("");
       mutateWorkspaces();
-      toast.success("工作区已创建");
+      toast.success(t("工作区已创建"));
     } catch {
-      toast.error("创建失败");
+      toast.error(t("创建失败"));
     } finally {
       setCreatingWs(false);
     }
@@ -101,17 +105,17 @@ export default function SettingsPage() {
     try {
       await workspacesAPI.delete(token, id);
       mutateWorkspaces();
-      toast.success("工作区已删除");
+      toast.success(t("工作区已删除"));
     } catch {
-      toast.error("删除失败");
+      toast.error(t("删除失败"));
     }
   };
 
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">设置</h1>
-        <p className="text-sm text-gray-500 mt-1">管理你的个人信息</p>
+        <h1 className="text-2xl font-bold text-gray-900">{t("设置")}</h1>
+        <p className="text-sm text-gray-500 mt-1">{t("管理你的个人信息")}</p>
       </div>
 
       {/* Profile Card */}
@@ -119,7 +123,7 @@ export default function SettingsPage() {
         <div className="border-b border-gray-100 px-6 py-4">
           <div className="flex items-center gap-2">
             <User className="size-4 text-gray-500" />
-            <h2 className="font-semibold text-gray-900">个人信息</h2>
+            <h2 className="font-semibold text-gray-900">{t("个人信息")}</h2>
           </div>
         </div>
 
@@ -130,7 +134,7 @@ export default function SettingsPage() {
             </div>
             <div>
               <p className="text-sm font-medium text-gray-900">
-                {savedUser?.name || savedUser?.email || "用户"}
+                {savedUser?.name || savedUser?.email || t("用户")}
               </p>
               <p className="text-xs text-gray-500">ID: {savedUser?.id}</p>
             </div>
@@ -141,7 +145,7 @@ export default function SettingsPage() {
             <div className="flex items-center gap-3 min-w-0">
               <User className="size-4 text-gray-400 shrink-0" />
               <div className="min-w-0">
-                <p className="text-xs text-gray-500">姓名</p>
+                <p className="text-xs text-gray-500">{t("姓名")}</p>
                 {editingName ? (
                   <div className="flex items-center gap-2 mt-1">
                     <input
@@ -165,7 +169,7 @@ export default function SettingsPage() {
                 ) : (
                   <div className="flex items-center gap-2 mt-1">
                     <p className="text-sm text-gray-900">
-                      {savedUser?.name || <span className="text-gray-400 italic">未设置</span>}
+                      {savedUser?.name || <span className="text-gray-400 italic">{t("未设置")}</span>}
                     </p>
                     <button onClick={() => { setEditingName(true); setName(savedUser?.name || ""); }}
                       className="p-1 rounded text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition">
@@ -179,11 +183,11 @@ export default function SettingsPage() {
 
           <div className="flex items-center gap-3 py-2">
             <Mail className="size-4 text-gray-400 shrink-0" />
-            <div><p className="text-xs text-gray-500">邮箱</p><p className="text-sm text-gray-900">{savedUser?.email || <span className="text-gray-400 italic">未绑定</span>}</p></div>
+            <div><p className="text-xs text-gray-500">{t("邮箱")}</p><p className="text-sm text-gray-900">{savedUser?.email || <span className="text-gray-400 italic">{t("未绑定")}</span>}</p></div>
           </div>
           <div className="flex items-center gap-3 py-2">
             <Phone className="size-4 text-gray-400 shrink-0" />
-            <div><p className="text-xs text-gray-500">手机号</p><p className="text-sm text-gray-900">{savedUser?.phone || <span className="text-gray-400 italic">未绑定</span>}</p></div>
+            <div><p className="text-xs text-gray-500">{t("手机号")}</p><p className="text-sm text-gray-900">{savedUser?.phone || <span className="text-gray-400 italic">{t("未绑定")}</span>}</p></div>
           </div>
         </div>
       </div>
@@ -201,13 +205,13 @@ export default function SettingsPage() {
           {/* New token shown once */}
           {newToken && (
             <div className="rounded-xl bg-amber-50 border border-amber-200 p-4">
-              <p className="text-sm font-medium text-amber-800 mb-2">新 Token 已创建，仅显示一次，请立即复制保存：</p>
+              <p className="text-sm font-medium text-amber-800 mb-2">{t("新 Token 已创建，仅显示一次，请立即复制保存：")}</p>
               <div className="flex items-center gap-2">
                 <code className="flex-1 bg-white rounded-lg px-3 py-2 text-sm font-mono text-gray-800 border border-amber-200 break-all">
                   {newToken}
                 </code>
                 <button
-                  onClick={() => { navigator.clipboard.writeText(newToken); toast.success("已复制"); }}
+                  onClick={() => { navigator.clipboard.writeText(newToken); toast.success(t("已复制")); }}
                   className="p-2 rounded-lg text-amber-600 hover:bg-amber-100 transition shrink-0"
                 >
                   <Copy className="size-4" />
@@ -215,7 +219,7 @@ export default function SettingsPage() {
               </div>
               <button onClick={() => setNewToken(null)}
                 className="mt-2 text-xs text-amber-600 hover:text-amber-700">
-                我已保存，关闭提示
+                {t("我已保存，关闭提示")}
               </button>
             </div>
           )}
@@ -226,7 +230,7 @@ export default function SettingsPage() {
               type="text" value={newTokenName}
               onChange={(e) => setNewTokenName(e.target.value)}
               className="flex-1 rounded-lg border border-gray-200 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition"
-              placeholder="Token 名称，如：生产环境、本地开发"
+              placeholder={t("Token 名称，如：生产环境、本地开发")}
               onKeyDown={(e) => { if (e.key === "Enter") handleCreateToken(); }}
             />
             <button
@@ -234,24 +238,24 @@ export default function SettingsPage() {
               disabled={creating || !newTokenName.trim()}
               className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed transition shrink-0"
             >
-              <Plus className="size-3.5" /> 创建
+              <Plus className="size-3.5" /> {t("创建")}
             </button>
           </div>
 
           {/* Token list */}
           {tokens.length > 0 ? (
             <div className="space-y-1">
-              {tokens.map((t: { id: number; name: string; last_used?: string; created_at: string }) => (
-                <div key={t.id} className="flex items-center justify-between py-2 px-3 rounded-lg hover:bg-gray-50 transition">
+              {tokens.map((tok: { id: number; name: string; last_used?: string; created_at: string }) => (
+                <div key={tok.id} className="flex items-center justify-between py-2 px-3 rounded-lg hover:bg-gray-50 transition">
                   <div>
-                    <p className="text-sm font-medium text-gray-900">{t.name}</p>
+                    <p className="text-sm font-medium text-gray-900">{tok.name}</p>
                     <p className="text-xs text-gray-400">
-                      创建于 {new Date(t.created_at).toLocaleDateString("zh-CN")}
-                      {t.last_used ? ` · 最近使用 ${new Date(t.last_used).toLocaleDateString("zh-CN")}` : " · 从未使用"}
+                      {t("创建于 {date}", { date: new Date(tok.created_at).toLocaleDateString(localeTag) })}
+                      {tok.last_used ? t(" · 最近使用 {date}", { date: new Date(tok.last_used).toLocaleDateString(localeTag) }) : t(" · 从未使用")}
                     </p>
                   </div>
                   <button
-                    onClick={() => handleDeleteToken(t.id)}
+                    onClick={() => handleDeleteToken(tok.id)}
                     className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition"
                   >
                     <Trash2 className="size-3.5" />
@@ -260,7 +264,7 @@ export default function SettingsPage() {
               ))}
             </div>
           ) : (
-            <p className="text-sm text-gray-400 py-2">暂无 API Token，创建一个用于外部程序调用 API</p>
+            <p className="text-sm text-gray-400 py-2">{t("暂无 API Token，创建一个用于外部程序调用 API")}</p>
           )}
         </div>
       </div>
@@ -270,7 +274,7 @@ export default function SettingsPage() {
         <div className="border-b border-gray-100 px-6 py-4">
           <div className="flex items-center gap-2">
             <Building2 className="size-4 text-gray-500" />
-            <h2 className="font-semibold text-gray-900">工作区</h2>
+            <h2 className="font-semibold text-gray-900">{t("工作区")}</h2>
           </div>
         </div>
 
@@ -281,7 +285,7 @@ export default function SettingsPage() {
               type="text" value={newWorkspaceName}
               onChange={(e) => setNewWorkspaceName(e.target.value)}
               className="flex-1 rounded-lg border border-gray-200 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition"
-              placeholder="工作区名称，如：个人项目"
+              placeholder={t("工作区名称，如：个人项目")}
               onKeyDown={(e) => { if (e.key === "Enter") handleCreateWorkspace(); }}
             />
             <input
@@ -296,7 +300,7 @@ export default function SettingsPage() {
               disabled={creatingWs || !newWorkspaceName.trim() || !newWorkspaceSlug.trim()}
               className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed transition shrink-0"
             >
-              <Plus className="size-3.5" /> 创建
+              <Plus className="size-3.5" /> {t("创建")}
             </button>
           </div>
 
@@ -310,7 +314,7 @@ export default function SettingsPage() {
                     <div>
                       <p className="text-sm font-medium text-gray-900">{w.name}</p>
                       <p className="text-xs text-gray-400">
-                        {w.slug} · {w.link_count ?? 0} 条链接 · {new Date(w.created_at).toLocaleDateString("zh-CN")}
+                        {t("{slug} · {count} 条链接 · {date}", { slug: w.slug, count: w.link_count ?? 0, date: new Date(w.created_at).toLocaleDateString(localeTag) })}
                       </p>
                     </div>
                   </div>
@@ -324,7 +328,7 @@ export default function SettingsPage() {
               ))}
             </div>
           ) : (
-            <p className="text-sm text-gray-400 py-2">暂无工作区，创建一个来组织你的链接</p>
+            <p className="text-sm text-gray-400 py-2">{t("暂无工作区，创建一个来组织你的链接")}</p>
           )}
         </div>
       </div>
@@ -334,17 +338,17 @@ export default function SettingsPage() {
         <div className="border-b border-gray-100 px-6 py-4">
           <div className="flex items-center gap-2">
             <Shield className="size-4 text-gray-500" />
-            <h2 className="font-semibold text-gray-900">账号信息</h2>
+            <h2 className="font-semibold text-gray-900">{t("账号信息")}</h2>
           </div>
         </div>
         <div className="px-6 py-5 space-y-4">
           <div className="flex items-center gap-3 py-2">
             <Calendar className="size-4 text-gray-400 shrink-0" />
-            <div><p className="text-xs text-gray-500">注册时间</p><p className="text-sm text-gray-900">{savedUser?.created_at ? new Date(savedUser.created_at).toLocaleDateString("zh-CN", { year: "numeric", month: "long", day: "numeric" }) : "—"}</p></div>
+            <div><p className="text-xs text-gray-500">{t("注册时间")}</p><p className="text-sm text-gray-900">{savedUser?.created_at ? new Date(savedUser.created_at).toLocaleDateString(localeTag, { year: "numeric", month: "long", day: "numeric" }) : "—"}</p></div>
           </div>
           <div className="flex items-center gap-3 py-2">
             <Shield className="size-4 text-gray-400 shrink-0" />
-            <div><p className="text-xs text-gray-500">登录方式</p><p className="text-sm text-gray-900">{savedUser?.phone ? "手机号验证码" : "邮箱密码"}</p></div>
+            <div><p className="text-xs text-gray-500">{t("登录方式")}</p><p className="text-sm text-gray-900">{savedUser?.phone ? t("手机号验证码") : t("邮箱密码")}</p></div>
           </div>
         </div>
       </div>

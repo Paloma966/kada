@@ -11,10 +11,10 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-// RealIP 获取真实客户端 IP。
-// 后端不信任任何客户端可伪造的代理头（X-Forwarded-For 可被伪造用于绕过限流）；
-// 仅接受 nginx 覆写的 X-Real-IP（nginx 以 $remote_addr 设置，客户端无法伪造），
-// 直连（无 nginx）时回退到 RemoteAddr。
+// RealIP returns the real client IP.
+// The backend trusts no client-spoofable proxy header (X-Forwarded-For can be forged to bypass rate limiting);
+// it accepts only the X-Real-IP rewritten by nginx (set from $remote_addr, which a client cannot forge),
+// and falls back to RemoteAddr for direct connections (no nginx).
 func RealIP(c *gin.Context) string {
 	if ip := c.GetHeader("X-Real-IP"); ip != "" {
 		if parsed := net.ParseIP(strings.TrimSpace(ip)); parsed != nil {
@@ -24,23 +24,23 @@ func RealIP(c *gin.Context) string {
 	return c.ClientIP()
 }
 
-// RateLimiter 基于 Redis 滑动窗口的速率限制中间件
+// RateLimiter is a Redis sliding-window rate limiting middleware
 type RateLimiter struct {
 	client *redis.Client
 }
 
-// RateLimitConfig 速率限制配置
+// RateLimitConfig configures rate limiting
 type RateLimitConfig struct {
-	Window  time.Duration               // 时间窗口
-	Limit   int                         // 窗口内最大请求数
-	KeyFunc func(c *gin.Context) string // 自定义 key 生成函数（默认使用 IP）
+	Window  time.Duration               // time window
+	Limit   int                         // max requests within the window
+	KeyFunc func(c *gin.Context) string // custom key generator (defaults to the IP)
 }
 
 func NewRateLimiter(client *redis.Client) *RateLimiter {
 	return &RateLimiter{client: client}
 }
 
-// Limit 返回 Gin 中间件
+// Limit returns the Gin middleware
 func (rl *RateLimiter) Limit(cfg RateLimitConfig) gin.HandlerFunc {
 	if cfg.KeyFunc == nil {
 		cfg.KeyFunc = defaultKeyFunc
@@ -51,31 +51,31 @@ func (rl *RateLimiter) Limit(cfg RateLimitConfig) gin.HandlerFunc {
 		now := time.Now().UnixNano()
 		windowStart := now - cfg.Window.Nanoseconds()
 
-		// 使用管道批量执行
+		// Execute in a batch pipeline
 		pipe := rl.client.Pipeline()
-		// 移除窗口外的旧记录
+		// Remove entries outside the window
 		pipe.ZRemRangeByScore(c.Request.Context(), key,
 			"0",
 			fmt.Sprintf("%d", windowStart))
-		// 统计当前窗口内的请求数
+		// Count requests within the current window
 		countCmd := pipe.ZCard(c.Request.Context(), key)
-		// 添加当前请求
+		// Add the current request
 		pipe.ZAdd(c.Request.Context(), key, redis.Z{
 			Score:  float64(now),
 			Member: fmt.Sprintf("%d", now),
 		})
-		// 设置 key 过期时间
+		// Set the key expiry
 		pipe.Expire(c.Request.Context(), key, cfg.Window*2)
 
 		if _, err := pipe.Exec(c.Request.Context()); err != nil {
-			// Redis 不可用时放行
+			// Fail open when Redis is unavailable
 			c.Next()
 			return
 		}
 
 		count, _ := countCmd.Result()
 
-		// 设置速率限制响应头
+		// Set rate limit response headers
 		remaining := cfg.Limit - int(count) - 1
 		if remaining < 0 {
 			remaining = 0
@@ -85,7 +85,7 @@ func (rl *RateLimiter) Limit(cfg RateLimitConfig) gin.HandlerFunc {
 
 		if int(count) >= cfg.Limit {
 			c.JSON(http.StatusTooManyRequests, gin.H{
-				"error":               "请求过于频繁，请稍后再试",
+				"error":               "too many requests, please try again later",
 				"retry_after_seconds": int(cfg.Window.Seconds()),
 			})
 			c.Abort()
@@ -96,7 +96,7 @@ func (rl *RateLimiter) Limit(cfg RateLimitConfig) gin.HandlerFunc {
 	}
 }
 
-// Strict 严格模式 - 认证接口（登录、注册、发送验证码）
+// Strict strict mode - auth endpoints (login, register, send verification code)
 func (rl *RateLimiter) Strict() gin.HandlerFunc {
 	return rl.Limit(RateLimitConfig{
 		Window: 1 * time.Minute,
@@ -104,7 +104,7 @@ func (rl *RateLimiter) Strict() gin.HandlerFunc {
 	})
 }
 
-// Normal 普通模式 - 通用 API
+// Normal normal mode - general API
 func (rl *RateLimiter) Normal() gin.HandlerFunc {
 	return rl.Limit(RateLimitConfig{
 		Window: 1 * time.Minute,
@@ -112,7 +112,7 @@ func (rl *RateLimiter) Normal() gin.HandlerFunc {
 	})
 }
 
-// Redirect 重定向模式 - 短链跳转（高频）
+// Redirect redirect mode - short-link redirection (high frequency)
 func (rl *RateLimiter) Redirect() gin.HandlerFunc {
 	return rl.Limit(RateLimitConfig{
 		Window: 1 * time.Minute,

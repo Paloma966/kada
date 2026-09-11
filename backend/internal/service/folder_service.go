@@ -24,7 +24,7 @@ func (s *FolderService) Create(ctx context.Context, userID int64, req domain.Cre
 		userID, req.Name,
 	).Scan(&f.ID, &f.UserID, &f.Name, &f.CreatedAt, &f.UpdatedAt)
 	if err != nil {
-		return nil, errors.New("创建文件夹失败")
+		return nil, errors.New("failed to create folder")
 	}
 	return &f, nil
 }
@@ -35,7 +35,7 @@ func (s *FolderService) List(ctx context.Context, userID int64) ([]domain.Folder
 		FROM folders f LEFT JOIN links l ON f.id = l.folder_id
 		WHERE f.user_id = $1 GROUP BY f.id ORDER BY f.name`, userID)
 	if err != nil {
-		return nil, errors.New("查询文件夹列表失败")
+		return nil, errors.New("failed to list folders")
 	}
 	defer rows.Close()
 
@@ -43,7 +43,7 @@ func (s *FolderService) List(ctx context.Context, userID int64) ([]domain.Folder
 	for rows.Next() {
 		var f domain.Folder
 		if err := rows.Scan(&f.ID, &f.UserID, &f.Name, &f.CreatedAt, &f.UpdatedAt, &f.LinkCount); err != nil {
-			return nil, errors.New("查询文件夹列表失败")
+			return nil, errors.New("failed to list folders")
 		}
 		folders = append(folders, f)
 	}
@@ -60,7 +60,7 @@ func (s *FolderService) Update(ctx context.Context, userID, folderID int64, name
 		name, folderID, userID,
 	).Scan(&f.ID, &f.UserID, &f.Name, &f.CreatedAt, &f.UpdatedAt)
 	if err != nil {
-		return nil, errors.New("文件夹不存在或无权限")
+		return nil, errors.New("folder not found or access denied")
 	}
 	return &f, nil
 }
@@ -68,7 +68,7 @@ func (s *FolderService) Update(ctx context.Context, userID, folderID int64, name
 func (s *FolderService) Delete(ctx context.Context, userID, folderID int64) error {
 	_, err := s.db.Exec(ctx, `DELETE FROM folders WHERE id = $1 AND user_id = $2`, folderID, userID)
 	if err != nil {
-		return errors.New("删除文件夹失败")
+		return errors.New("failed to delete folder")
 	}
 	return nil
 }

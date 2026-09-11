@@ -14,7 +14,7 @@ func TestVerificationCode(t *testing.T) {
 	if len(c1) != 16 {
 		t.Errorf("expected 16 hex chars, got %q", c1)
 	}
-	// 不同域名/用户应产生不同验证码
+	// different domains/users should produce different verification codes
 	if c1 == verificationCode(2, 42, "example.com") {
 		t.Error("different user should produce different code")
 	}

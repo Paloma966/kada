@@ -6,24 +6,8 @@ import { ExternalLink, MousePointerClick, ChevronLeft, ChevronRight, Smartphone,
 import { analyticsAPI } from "@/lib/api";
 import { getToken } from "@/lib/auth";
 import { safeHref } from "@/lib/utils";
-
-const platformConfig: Record<string, { label: string; color: string; icon: string }> = {
-  browser: { label: "浏览器", color: "bg-blue-50 text-blue-700", icon: "🌐" },
-  wechat: { label: "微信", color: "bg-green-50 text-green-700", icon: "💬" },
-  qq: { label: "QQ", color: "bg-sky-50 text-sky-700", icon: "🐧" },
-  weibo: { label: "微博", color: "bg-red-50 text-red-700", icon: "📢" },
-  xiaohongshu: { label: "小红书", color: "bg-rose-50 text-rose-700", icon: "📕" },
-  sms: { label: "短信", color: "bg-amber-50 text-amber-700", icon: "📩" },
-  unknown: { label: "其他", color: "bg-gray-50 text-gray-600", icon: "❓" },
-};
-
-const actionLabels: Record<string, string> = {
-  copy_link: "📋 复制链接",
-  qr_view: "📱 查看二维码",
-  open_browser: "🚀 浏览器打开",
-  deeplink_try: "📲 DeepLink 尝试",
-  open_link: "🔗 直接打开",
-};
+import { useT } from "@/lib/i18n";
+import { useI18n } from "@/lib/i18n/context";
 
 function parseReferer(referer: string): { isAction: boolean; action?: string; refererUrl?: string } {
   if (!referer) return { isAction: false };
@@ -36,7 +20,28 @@ function parseReferer(referer: string): { isAction: boolean; action?: string; re
 
 export default function EventsPage() {
   const token = getToken();
+  const t = useT();
+  const { locale } = useI18n();
+  const localeTag = locale === "en" ? "en-US" : "zh-CN";
   const [page, setPage] = useState(1);
+
+  const platformConfig: Record<string, { label: string; color: string; icon: string }> = {
+    browser: { label: t("浏览器"), color: "bg-blue-50 text-blue-700", icon: "🌐" },
+    wechat: { label: t("微信"), color: "bg-green-50 text-green-700", icon: "💬" },
+    qq: { label: "QQ", color: "bg-sky-50 text-sky-700", icon: "🐧" },
+    weibo: { label: t("微博"), color: "bg-red-50 text-red-700", icon: "📢" },
+    xiaohongshu: { label: t("小红书"), color: "bg-rose-50 text-rose-700", icon: "📕" },
+    sms: { label: t("短信"), color: "bg-amber-50 text-amber-700", icon: "📩" },
+    unknown: { label: t("其他"), color: "bg-gray-50 text-gray-600", icon: "❓" },
+  };
+
+  const actionLabels: Record<string, string> = {
+    copy_link: t("📋 复制链接"),
+    qr_view: t("📱 查看二维码"),
+    open_browser: t("🚀 浏览器打开"),
+    deeplink_try: t("📲 DeepLink 尝试"),
+    open_link: t("🔗 直接打开"),
+  };
 
   const { data, isLoading } = useSWR(
     token ? `analytics-events-${page}` : null,
@@ -50,8 +55,8 @@ export default function EventsPage() {
   return (
     <div className="space-y-5">
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">事件</h1>
-        <p className="text-sm text-gray-500 mt-1">点击事件与平台行为记录</p>
+        <h1 className="text-2xl font-bold text-gray-900">{t("事件")}</h1>
+        <p className="text-sm text-gray-500 mt-1">{t("点击事件与平台行为记录")}</p>
       </div>
 
       <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
@@ -59,10 +64,10 @@ export default function EventsPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-100 bg-gray-50/50">
-                <th className="text-left px-5 py-3 text-xs font-medium text-gray-500 uppercase">时间</th>
-                <th className="text-left px-5 py-3 text-xs font-medium text-gray-500 uppercase">短链</th>
-                <th className="text-left px-5 py-3 text-xs font-medium text-gray-500 uppercase">平台</th>
-                <th className="text-left px-5 py-3 text-xs font-medium text-gray-500 uppercase">行为</th>
+                <th className="text-left px-5 py-3 text-xs font-medium text-gray-500 uppercase">{t("时间")}</th>
+                <th className="text-left px-5 py-3 text-xs font-medium text-gray-500 uppercase">{t("短链")}</th>
+                <th className="text-left px-5 py-3 text-xs font-medium text-gray-500 uppercase">{t("平台")}</th>
+                <th className="text-left px-5 py-3 text-xs font-medium text-gray-500 uppercase">{t("行为")}</th>
                 <th className="text-left px-5 py-3 text-xs font-medium text-gray-500 uppercase">IP</th>
               </tr>
             </thead>
@@ -79,8 +84,8 @@ export default function EventsPage() {
                 <tr>
                   <td colSpan={5} className="px-5 py-16 text-center">
                     <MousePointerClick className="size-8 text-gray-300 mx-auto mb-2" />
-                    <p className="text-sm text-gray-500">暂无点击事件</p>
-                    <p className="text-xs text-gray-400 mt-1">当有人点击您的短链时，事件会显示在这里</p>
+                    <p className="text-sm text-gray-500">{t("暂无点击事件")}</p>
+                    <p className="text-xs text-gray-400 mt-1">{t("当有人点击您的短链时，事件会显示在这里")}</p>
                   </td>
                 </tr>
               ) : (
@@ -98,7 +103,7 @@ export default function EventsPage() {
                   return (
                     <tr key={e.id} className="border-b border-gray-50 hover:bg-gray-50/50 transition">
                       <td className="px-5 py-3 text-gray-600 whitespace-nowrap font-mono text-xs">
-                        {new Date(e.created_at).toLocaleString("zh-CN", {
+                        {new Date(e.created_at).toLocaleString(localeTag, {
                           month: "2-digit", day: "2-digit",
                           hour: "2-digit", minute: "2-digit",
                         })}
@@ -124,10 +129,10 @@ export default function EventsPage() {
                           </span>
                         ) : refererUrl ? (
                           <span className="text-xs text-gray-400 max-w-[160px] truncate block" title={refererUrl}>
-                            来源: {refererUrl}
+                            {t("来源: {refererUrl}", { refererUrl })}
                           </span>
                         ) : (
-                          <span className="text-xs text-gray-400">🔗 直接访问</span>
+                          <span className="text-xs text-gray-400">{t("🔗 直接访问")}</span>
                         )}
                       </td>
                       <td className="px-5 py-3 text-gray-400 font-mono text-xs">{e.ip || "-"}</td>
@@ -141,7 +146,7 @@ export default function EventsPage() {
 
         {totalPages > 1 && (
           <div className="flex items-center justify-between px-5 py-3 border-t border-gray-100">
-            <p className="text-xs text-gray-500">共 {total} 条记录</p>
+            <p className="text-xs text-gray-500">{t("共 {total} 条记录", { total })}</p>
             <div className="flex items-center gap-2">
               <button
                 onClick={() => setPage(p => Math.max(1, p - 1))}

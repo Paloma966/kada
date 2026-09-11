@@ -30,7 +30,7 @@ func (h *Handler) RegisterRoutes(r *gin.RouterGroup, authMW gin.HandlerFunc) {
 func (h *Handler) Create(c *gin.Context) {
 	var req domain.CreateDomainRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "请提供域名"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "domain is required"})
 		return
 	}
 	d, err := h.svc.Create(c.Request.Context(), middleware.GetUserID(c), req)
@@ -53,7 +53,7 @@ func (h *Handler) List(c *gin.Context) {
 func (h *Handler) Verify(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的ID"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid ID"})
 		return
 	}
 	d, err := h.svc.Verify(c.Request.Context(), middleware.GetUserID(c), id)
@@ -67,12 +67,12 @@ func (h *Handler) Verify(c *gin.Context) {
 func (h *Handler) Delete(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的ID"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid ID"})
 		return
 	}
 	if err := h.svc.Delete(c.Request.Context(), middleware.GetUserID(c), id); err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "域名已删除"})
+	c.JSON(http.StatusOK, gin.H{"message": "domain deleted"})
 }

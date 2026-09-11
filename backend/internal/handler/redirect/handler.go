@@ -16,7 +16,7 @@ import (
 	"github.com/chun/kada-backend/internal/middleware"
 )
 
-// LinkService 短链服务接口（方便测试 mock）
+// LinkService is the short link service interface (mockable for tests).
 type LinkService interface {
 	GetByCode(ctx context.Context, shortCode string) (*domain.LinkInfo, error)
 	HasPassword(ctx context.Context, shortCode string) bool
@@ -44,23 +44,23 @@ func (h *Handler) RegisterRoutes(r *gin.Engine, mw ...gin.HandlerFunc) {
 	rg.POST("/:code/click-action", h.LogClickAction)
 }
 
-// Redirect 短链重定向（含平台检测和密码检查）
+// Redirect performs the short-link redirect (with platform detection and password check).
 func (h *Handler) Redirect(c *gin.Context) {
 	code := c.Param("code")
 
 	link, err := h.svc.GetByCode(c.Request.Context(), code)
 	if err != nil {
-		c.String(http.StatusNotFound, "链接不存在或已过期")
+		c.String(http.StatusNotFound, "link not found or expired")
 		return
 	}
 
-	// 防御存量脏数据：目标 URL 必须为 http/https，防止 javascript: 等协议在引导页执行（XSS）
+	// Guard against legacy dirty data: the target URL must be http/https so that schemes such as javascript: cannot execute on the guide page (XSS).
 	if !urlcheck.IsSafeTarget(link.OriginalURL) {
 		h.renderUnsafeTargetPage(c)
 		return
 	}
 
-	// 检查是否需要密码
+	// Check whether a password is required.
 	if h.svc.HasPassword(c.Request.Context(), code) {
 		c.Header("Content-Type", "text/html; charset=utf-8")
 		c.String(http.StatusOK, passwordPageHTML(code))
@@ -72,36 +72,36 @@ func (h *Handler) Redirect(c *gin.Context) {
 	ip := middleware.RealIP(c)
 	referer := c.GetHeader("Referer")
 
-	// 记录点击
+	// Log the click.
 	clickPlatform := string(platform)
 	go h.svc.LogClick(context.Background(), link.ID, ip, userAgent, clickPlatform, referer)
 
-	// 判断是否需要中间引导页
+	// Check whether an intermediate guide page is needed.
 	if ua.NeedsIntermediatePage(platform) {
 		h.renderIntermediatePage(c, link.OriginalURL, code, platform)
 		return
 	}
 
-	// 普通浏览器直接 302 跳转
+	// Regular browsers get a direct 302 redirect.
 	c.Redirect(http.StatusFound, link.OriginalURL)
 }
 
-// QRCode 为短链生成 QR 码
+// QRCode generates a QR code for the short link.
 func (h *Handler) QRCode(c *gin.Context) {
 	code := c.Param("code")
 
 	link, err := h.svc.GetByCode(c.Request.Context(), code)
 	if err != nil {
-		c.String(http.StatusNotFound, "链接不存在或已过期")
+		c.String(http.StatusNotFound, "link not found or expired")
 		return
 	}
 
-	// 使用链接实际域名（此前传空串会生成 "https:///r/CODE" 的无效 URL）
+	// Use the link's actual domain (passing an empty string previously produced the invalid URL "https:///r/CODE").
 	shortURL := h.svc.BuildShortURL(link.Domain, code)
 
 	png, err := qrcode.Encode(shortURL, qrcode.Medium, 256)
 	if err != nil {
-		c.String(http.StatusInternalServerError, "QR 码生成失败")
+		c.String(http.StatusInternalServerError, "failed to generate QR code")
 		return
 	}
 
@@ -112,7 +112,7 @@ func (h *Handler) QRCode(c *gin.Context) {
 	}
 }
 
-// LogClickAction 记录用户在引导页上的行为（复制、扫码、deeplink 尝试等）
+// LogClickAction records user actions on the guide page (copy, QR scan, deeplink attempt, etc.).
 func (h *Handler) LogClickAction(c *gin.Context) {
 	code := c.Param("code")
 	var req struct {
@@ -133,13 +133,13 @@ func (h *Handler) LogClickAction(c *gin.Context) {
 	platform := ua.Detect(userAgent)
 	ip := middleware.RealIP(c)
 
-	// 记录 action 事件（platform 保持不变，action 存入 referer 字段）
+	// Log the action event (platform is unchanged; the action is stored in the referer field).
 	go h.svc.LogClick(context.Background(), link.ID, ip, userAgent, string(platform), "action:"+req.Action)
 
 	c.Status(http.StatusNoContent)
 }
 
-// VerifyPassword 验证密码后跳转
+// VerifyPassword verifies the password and then redirects.
 func (h *Handler) VerifyPassword(c *gin.Context) {
 	code := c.Param("code")
 	password := c.PostForm("password")
@@ -147,17 +147,17 @@ func (h *Handler) VerifyPassword(c *gin.Context) {
 	ok, info, err := h.svc.CheckPassword(c.Request.Context(), code, password)
 	if err != nil || !ok {
 		c.Header("Content-Type", "text/html; charset=utf-8")
-		c.String(http.StatusOK, passwordPageHTMLWithError(code, "密码错误"))
+		c.String(http.StatusOK, passwordPageHTMLWithError(code, "incorrect password"))
 		return
 	}
 
-	// 防御存量脏数据：目标 URL 必须为 http/https
+	// Guard against legacy dirty data: the target URL must be http/https.
 	if !urlcheck.IsSafeTarget(info.OriginalURL) {
 		h.renderUnsafeTargetPage(c)
 		return
 	}
 
-	// 密码正确，记录点击并跳转
+	// Password is correct: log the click and redirect.
 	userAgent := c.GetHeader("User-Agent")
 	platform := ua.Detect(userAgent)
 	ip := middleware.RealIP(c)
@@ -171,7 +171,7 @@ func (h *Handler) VerifyPassword(c *gin.Context) {
 	c.Redirect(http.StatusFound, info.OriginalURL)
 }
 
-// renderIntermediatePage 渲染中间引导页（微信/QQ等）
+// renderIntermediatePage renders the intermediate guide page (WeChat/QQ, etc.).
 func (h *Handler) renderIntermediatePage(c *gin.Context, targetURL, code string, platform domain.Platform) {
 	platformName := ua.PlatformName(platform)
 	platformTips := ua.PlatformTips(platform)
@@ -193,9 +193,9 @@ func (h *Handler) renderIntermediatePage(c *gin.Context, targetURL, code string,
 		QRURL:        qrURL,
 	}
 
-	// 微信/QQ 内置浏览器的 deeplink URL scheme
+	// Deeplink URL schemes for the WeChat/QQ in-app browsers.
 	deeplinks := ua.GetDeeplinks(targetURL)
-	_ = deeplinks // 注入到模板中使用
+	_ = deeplinks // injected into the template
 
 	c.Header("Content-Type", "text/html; charset=utf-8")
 	if _, err := c.Writer.Write([]byte(renderGuidePage(data, deeplinks))); err != nil {
@@ -203,7 +203,7 @@ func (h *Handler) renderIntermediatePage(c *gin.Context, targetURL, code string,
 	}
 }
 
-// renderGuidePage 渲染引导页（含 deeplinks）
+// renderGuidePage renders the guide page (with deeplinks).
 func renderGuidePage(data struct {
 	TargetURL    string
 	Code         string
@@ -221,11 +221,11 @@ func renderGuidePage(data struct {
 }
 
 const guidePageHTML = `<!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>即将打开链接 - Kada</title>
+    <title>Opening link - Kada</title>
     <style>
         :root {
             --primary: #6366f1;
@@ -248,7 +248,7 @@ const guidePageHTML = `<!DOCTYPE html>
         }
         .container { width: 100%; max-width: 420px; }
 
-        /* 顶部品牌 */
+        /* Brand header */
         .brand {
             text-align: center; margin-bottom: 20px;
             font-size: 14px; color: var(--text-secondary);
@@ -260,7 +260,7 @@ const guidePageHTML = `<!DOCTYPE html>
             color: white; font-weight: 700; font-size: 14px;
         }
 
-        /* 主卡片 */
+        /* Main card */
         .card {
             background: var(--card); border-radius: 20px;
             padding: 32px 24px 24px;
@@ -268,7 +268,7 @@ const guidePageHTML = `<!DOCTYPE html>
             text-align: center;
         }
 
-        /* 平台标签 */
+        /* Platform badge */
         .platform-badge {
             display: inline-flex; align-items: center; gap: 4px;
             padding: 4px 12px; border-radius: 20px;
@@ -289,7 +289,7 @@ const guidePageHTML = `<!DOCTYPE html>
         .title { font-size: 20px; font-weight: 700; color: var(--text); margin-bottom: 6px; }
         .subtitle { font-size: 13px; color: var(--text-secondary); margin-bottom: 8px; line-height: 1.5; }
 
-        /* 目标链接预览 */
+        /* Target link preview */
         .url-preview {
             display: flex; align-items: center; gap: 8px;
             padding: 10px 14px; background: #f1f5f9;
@@ -303,7 +303,7 @@ const guidePageHTML = `<!DOCTYPE html>
             font-size: 10px;
         }
 
-        /* 操作按钮区 */
+        /* Action buttons */
         .actions { display: flex; flex-direction: column; gap: 10px; margin-bottom: 20px; }
         .btn {
             display: flex; align-items: center; justify-content: center; gap: 8px;
@@ -329,7 +329,7 @@ const guidePageHTML = `<!DOCTYPE html>
         }
         .btn-icon { font-size: 18px; }
 
-        /* QR 码区域 */
+        /* QR code section */
         .qr-section {
             border-top: 1px solid var(--border);
             padding-top: 20px; margin-top: 4px;
@@ -363,13 +363,13 @@ const guidePageHTML = `<!DOCTYPE html>
         }
         .toast.show { opacity: 1; }
 
-        /* 安全提示 */
+        /* Safety note */
         .safety-note {
             font-size: 11px; color: #94a3b8; margin-top: 16px;
             display: flex; align-items: center; justify-content: center; gap: 4px;
         }
 
-        /* 平台提示卡片 */
+        /* Platform tips card */
         .platform-tips {
             background: #fffbeb; border: 1px solid #fde68a;
             border-radius: 10px; padding: 12px 14px; margin-bottom: 16px;
@@ -383,17 +383,17 @@ const guidePageHTML = `<!DOCTYPE html>
     <div class="container">
         <div class="brand">
             <div class="brand-logo">K</div>
-            Kada 短链
+            Kada Short Link
         </div>
 
         <div class="card">
             <div class="platform-badge">
-                📱 {{.PlatformName}} 内访问
+                📱 Opening in {{.PlatformName}}
             </div>
             <div class="icon-area">
                 <div class="link-icon">🔗</div>
             </div>
-            <div class="title">即将打开链接</div>
+            <div class="title">Opening link</div>
             <div class="subtitle">{{.PlatformTips}}</div>
 
             <div class="url-preview">
@@ -404,35 +404,35 @@ const guidePageHTML = `<!DOCTYPE html>
             {{if or (eq .Platform "wechat") (eq .Platform "qq")}}
             <div class="platform-tips">
                 <span class="tip-icon">💡</span>
-                <span>{{.PlatformName}}内置浏览器可能限制直接跳转。如无法打开，请点击右上角「<strong>在浏览器中打开</strong>」或扫描下方二维码。</span>
+                <span>The {{.PlatformName}} in-app browser may block direct navigation. If the link does not open, tap "<strong>Open in browser</strong>" in the top-right corner or scan the QR code below.</span>
             </div>
             {{end}}
 
             <div class="actions">
                 <button class="btn btn-primary" onclick="tryOpenLink()">
-                    <span class="btn-icon">🚀</span> 打开链接
+                    <span class="btn-icon">🚀</span> Open link
                 </button>
                 <button class="btn btn-outline" onclick="tryDeeplink()">
-                    <span class="btn-icon">📲</span> 在浏览器中打开
+                    <span class="btn-icon">📲</span> Open in browser
                 </button>
                 <button class="btn btn-outline" onclick="copyLink()">
-                    <span class="btn-icon">📋</span> 复制链接
+                    <span class="btn-icon">📋</span> Copy link
                 </button>
             </div>
 
-            <!-- QR 码折叠区 -->
+            <!-- QR code collapsible section -->
             <div class="qr-section">
                 <button class="qr-toggle" onclick="toggleQR()" id="qrToggleBtn">
-                    <span>📱</span> 扫码打开 <span style="font-size:10px">▼</span>
+                    <span>📱</span> Scan to open <span style="font-size:10px">▼</span>
                 </button>
                 <div class="qr-container" id="qrContainer">
-                    <img class="qr-img" src="{{.QRURL}}" alt="扫码打开链接" />
-                    <p class="qr-hint">使用手机相机或微信扫一扫打开</p>
+                    <img class="qr-img" src="{{.QRURL}}" alt="Scan to open link" />
+                    <p class="qr-hint">Scan with your phone camera or WeChat</p>
                 </div>
             </div>
         </div>
 
-        <p class="safety-note">🔒 由 Kada 短链服务提供</p>
+        <p class="safety-note">🔒 Provided by Kada Short Link</p>
     </div>
 
     <!-- Toast -->
@@ -442,11 +442,11 @@ const guidePageHTML = `<!DOCTYPE html>
         const targetURL = "{{.TargetURL}}";
         const code = "{{.Code}}";
 
-        // === DeepLink 尝试 ===
+        // === DeepLink attempt ===
         function tryDeeplink() {
             logAction('open_browser');
 
-            // 尝试通过 intent / URL scheme 唤起外部浏览器
+            // Try to launch an external browser via intent / URL scheme
             var schemes = [
                 'intent://' + encodeURIComponent(targetURL.replace(/^https?:\/\//, '')) + '#Intent;scheme=https;package=com.android.chrome;end',
                 'googlechrome://navigate?url=' + encodeURIComponent(targetURL),
@@ -455,7 +455,7 @@ const guidePageHTML = `<!DOCTYPE html>
             var opened = false;
             var startTime = Date.now();
 
-            // 尝试第一个 scheme
+            // Try the first scheme
             try {
                 var iframe = document.createElement('iframe');
                 iframe.style.display = 'none';
@@ -464,35 +464,35 @@ const guidePageHTML = `<!DOCTYPE html>
                 setTimeout(function() { document.body.removeChild(iframe); }, 2000);
             } catch(e) {}
 
-            // 超时后如果还在本页，说明未唤起成功，直接 302 跳转
+            // If we are still on this page after the timeout, the launch failed; fall back to a direct redirect
             setTimeout(function() {
                 if (Date.now() - startTime > 2500) return;
                 window.location.href = targetURL;
             }, 800);
 
-            showToast('正在尝试打开浏览器...');
+            showToast('Trying to open browser...');
         }
 
-        // === 直接打开链接 ===
+        // === Open the link directly ===
         function tryOpenLink() {
             logAction('open_link');
-            // 在微信/QQ中尝试用系统浏览器打开
+            // In WeChat/QQ, try to open with the system browser
             var ua = navigator.userAgent.toLowerCase();
             if (ua.indexOf('micromessenger') > -1 || ua.indexOf('qq/') > -1) {
-                // 先尝试 deeplink 方式
+                // Try the deeplink approach first
                 tryDeeplink();
                 return;
             }
             window.location.href = targetURL;
         }
 
-        // === 复制链接 ===
+        // === Copy link ===
         function copyLink() {
             logAction('copy_link');
             var url = targetURL;
             if (navigator.clipboard && navigator.clipboard.writeText) {
                 navigator.clipboard.writeText(url).then(function() {
-                    showToast('✅ 链接已复制，请在浏览器中打开');
+                    showToast('✅ Link copied, please open it in your browser');
                 }).catch(function() {
                     fallbackCopy(url);
                 });
@@ -507,11 +507,11 @@ const guidePageHTML = `<!DOCTYPE html>
             ta.style.position = 'fixed'; ta.style.left = '-9999px';
             document.body.appendChild(ta);
             ta.select();
-            try { document.execCommand('copy'); showToast('✅ 链接已复制'); } catch(e) { showToast('复制失败，请手动复制'); }
+            try { document.execCommand('copy'); showToast('✅ Link copied'); } catch(e) { showToast('Copy failed, please copy manually'); }
             document.body.removeChild(ta);
         }
 
-        // === QR 码折叠 ===
+        // === QR code toggle ===
         function toggleQR() {
             var container = document.getElementById('qrContainer');
             var btn = document.getElementById('qrToggleBtn');
@@ -537,7 +537,7 @@ const guidePageHTML = `<!DOCTYPE html>
             }, 2000);
         }
 
-        // === 记录用户行为 ===
+        // === Log user actions ===
         function logAction(action) {
             fetch('/r/' + code + '/click-action', {
                 method: 'POST',
@@ -547,7 +547,7 @@ const guidePageHTML = `<!DOCTYPE html>
             }).catch(function(){});
         }
 
-        // 页面加载后自动尝试跳转
+        // Automatically try to open the link after the page loads
         setTimeout(function() {
             tryOpenLink();
         }, 2000);
@@ -555,15 +555,15 @@ const guidePageHTML = `<!DOCTYPE html>
 </body>
 </html>`
 
-// renderUnsafeTargetPage 目标 URL 协议不受支持时渲染提示页
+// renderUnsafeTargetPage renders a notice page when the target URL scheme is not supported.
 func (h *Handler) renderUnsafeTargetPage(c *gin.Context) {
 	c.Header("Content-Type", "text/html; charset=utf-8")
 	c.String(http.StatusBadRequest, `<!DOCTYPE html>
-<html lang="zh-CN">
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>链接不可用 - Kada</title>
+<html lang="en">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Link unavailable - Kada</title>
 <style>body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:#f8fafc;display:flex;justify-content:center;align-items:center;min-height:100vh;margin:0}.card{background:#fff;border-radius:20px;padding:40px 32px;max-width:400px;width:100%;text-align:center;box-shadow:0 1px 3px rgba(0,0,0,.04),0 8px 24px rgba(0,0,0,.06)}.icon{font-size:48px;margin-bottom:16px}.title{font-size:20px;font-weight:700;color:#1e293b;margin-bottom:8px}.subtitle{font-size:14px;color:#64748b}</style>
 </head>
-<body><div class="card"><div class="icon">⚠️</div><div class="title">链接不可用</div><div class="subtitle">该短链的目标地址协议不受支持，已阻止跳转</div></div></body>
+<body><div class="card"><div class="icon">⚠️</div><div class="title">Link unavailable</div><div class="subtitle">The target URL scheme of this short link is not supported, so the redirect was blocked</div></div></body>
 </html>`)
 }
 
@@ -577,11 +577,11 @@ func passwordPageHTMLWithError(code, errorMsg string) string {
 		errHTML = `<p style="color: #ef4444; font-size: 13px; margin-bottom: 12px;">` + errorMsg + `</p>`
 	}
 	return `<!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>链接已加密 - Kada</title>
+    <title>Link protected - Kada</title>
     <style>
         :root {
             --primary: #6366f1;
@@ -625,12 +625,12 @@ func passwordPageHTMLWithError(code, errorMsg string) string {
 <body>
     <div class="card">
         <div class="icon">🔒</div>
-        <div class="title">此链接已加密</div>
-        <div class="subtitle">请输入密码以访问此链接</div>
+        <div class="title">This link is protected</div>
+        <div class="subtitle">Enter the password to access this link</div>
         ` + errHTML + `
         <form method="POST" action="/r/` + code + `/verify-password">
-            <input type="password" name="password" class="input" placeholder="输入密码" autofocus required />
-            <button type="submit" class="btn">访问链接</button>
+            <input type="password" name="password" class="input" placeholder="Enter password" autofocus required />
+            <button type="submit" class="btn">Access link</button>
         </form>
     </div>
 </body>

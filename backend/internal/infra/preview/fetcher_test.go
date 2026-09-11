@@ -45,9 +45,9 @@ func TestValidateTarget(t *testing.T) {
 		"javascript:alert(1)",
 		"ftp://example.com/file",
 		"file:///etc/passwd",
-		"http://8.8.8.8:6379/", // 非 80/443 端口
+		"http://8.8.8.8:6379/", // port other than 80/443
 		"https://8.8.8.8:8080/",
-		"http:///path", // 无主机
+		"http:///path", // no host
 	}
 	for _, raw := range blocked {
 		if err := validateTarget(ctx, raw); err == nil {
@@ -74,7 +74,7 @@ func TestFetchRejectsInternalTarget(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected SSRF target to be rejected")
 	}
-	if !strings.Contains(err.Error(), "阻止") && !strings.Contains(err.Error(), "端口") && !strings.Contains(err.Error(), "协议") {
+	if !strings.Contains(err.Error(), "blocked") && !strings.Contains(err.Error(), "port") && !strings.Contains(err.Error(), "scheme") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }

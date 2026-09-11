@@ -11,7 +11,7 @@ interface AuthCardProps {
 export function AuthCard({ title, subtitle, footer, children }: AuthCardProps) {
   return (
     <div className="relative min-h-dvh overflow-x-hidden bg-deep-space">
-      {/* 星空背景固定铺满，滚动时背景不动 */}
+      {/* Starfield background is fixed and fills the viewport, so it stays put while scrolling */}
       <StarfieldCanvas className="fixed inset-0 h-full w-full" />
       <div className="relative z-10 flex min-h-dvh items-center justify-center px-4 py-12">
         <div className="w-full max-w-md">
@@ -22,7 +22,7 @@ export function AuthCard({ title, subtitle, footer, children }: AuthCardProps) {
             <h1 className="text-2xl font-semibold tracking-tight text-white">{title}</h1>
             <p className="mt-2 text-sm text-indigo-200/80">{subtitle}</p>
           </div>
-          {/* 透明玻璃卡片 */}
+          {/* Transparent glass card */}
           <div className="rounded-xl border border-white/10 bg-white/[0.04] p-6 backdrop-blur-lg sm:p-8">
             {children}
           </div>

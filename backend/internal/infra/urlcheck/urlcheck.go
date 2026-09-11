@@ -1,6 +1,6 @@
-// Package urlcheck 提供目标 URL 安全性校验。
-// 短链目标 URL 会被写入数据库并在跳转/引导页中执行（window.location.href），
-// 必须限制为 http/https 协议，防止 javascript:/data: 等协议造成存储型 XSS。
+// Package urlcheck provides target URL safety validation.
+// Short-link target URLs are persisted and executed in redirect/interstitial pages (window.location.href),
+// so they must be restricted to the http/https schemes to prevent stored XSS via javascript:/data: and similar schemes.
 package urlcheck
 
 import (
@@ -8,7 +8,7 @@ import (
 	"strings"
 )
 
-// IsSafeTarget 校验目标 URL 是否为可安全跳转的 http/https 绝对 URL。
+// IsSafeTarget reports whether the target URL is an absolute http/https URL that is safe to redirect to.
 func IsSafeTarget(raw string) bool {
 	if raw == "" || len(raw) > 2048 {
 		return false

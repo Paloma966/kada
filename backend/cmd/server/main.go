@@ -31,58 +31,58 @@ import (
 )
 
 func main() {
-	// 加载 .env 文件
+	// Load the .env file
 	_ = godotenv.Load()
 
-	// 加载配置
+	// Load configuration
 	cfg := config.Load()
 
-	// 安全：release 模式禁止使用默认/弱 JWT 密钥，否则任何人均可伪造登录令牌
+	// Security: release mode forbids the default/weak JWT secret, otherwise anyone could forge login tokens
 	if os.Getenv("GIN_MODE") == "release" && config.IsWeakJWTSecret(cfg.JWTSecret) {
-		log.Fatal("❌ 生产环境禁止使用默认 JWT_SECRET，请设置强随机密钥（如 openssl rand -hex 32）")
+		log.Fatal("❌ refusing to use the default JWT_SECRET in production; set a strong random secret (e.g. openssl rand -hex 32)")
 	}
 
-	// 连接数据库
+	// Connect to the database
 	db, err := infra.NewDB(cfg.DatabaseURL)
 	if err != nil {
 		log.Fatalf("Failed to connect to database: %v", err)
 	}
 	defer infra.CloseDB(db)
 
-	// 连接 Redis：初始 ping 失败也保留客户端（go-redis 自动重连）。
-	// 限流在 Redis 恢复前 fail-open，恢复后自动生效，无需重启进程。
+	// Connect to Redis: keep the client even on initial ping failure (go-redis reconnects automatically).
+	// Rate limiting fails open until Redis recovers, then works again with no process restart.
 	redisClient, err := infra.NewRedis(cfg.RedisURL)
 	if err != nil {
-		log.Printf("⚠️  Redis 暂时不可用（限流将暂时放行，恢复后自动生效）: %v", err)
+		log.Printf("⚠️  Redis temporarily unavailable (rate limiting will fail open until it recovers): %v", err)
 	}
 	if redisClient != nil {
 		defer infra.CloseRedis(redisClient)
 	}
 
-	// 初始化阿里云短信认证服务
+	// Initialize the Aliyun SMS verification service
 	var smsSender service.SMSSender
 	if cfg.SMSAccessKeyID != "" && cfg.SMSAccessKeySecret != "" {
 		smsSender, err = sms.NewAliyunSender(cfg.SMSAccessKeyID, cfg.SMSAccessKeySecret, cfg.SMSSignName, cfg.SMSTemplateCode)
 		if err != nil {
-			log.Printf("⚠️  短信服务初始化失败: %v", err)
+			log.Printf("⚠️  failed to initialize SMS service: %v", err)
 		}
 	} else {
-		log.Println("⚠️  未配置短信服务，验证码将只打印在日志中")
+		log.Println("⚠️  SMS service not configured; verification codes will only be printed to the log")
 	}
 
-	// 初始化缓存服务（如果 Redis 可用）
+	// Initialize the cache service (if Redis is available)
 	var cacheSvc *service.CacheService
 	if redisClient != nil {
 		cacheSvc = service.NewCacheService(redisClient)
 	}
 
-	// Kafka 点击事件发布者（无 broker 时返回 nil = 禁用）
+	// Kafka click event publisher (returns nil when there is no broker = disabled)
 	kafkaPub := mq.NewKafkaClickPublisher(cfg.Brokers(), cfg.KafkaTopic)
 	if kafkaPub != nil {
 		defer kafkaPub.Close()
 	}
 
-	// 初始化 Service 层
+	// Initialize the service layer
 	authSvc := service.NewAuthService(db, cfg.JWTSecret, cfg.JWTExpires, smsSender)
 	linkSvc := service.NewLinkService(db, cfg.BaseURL, cacheSvc, kafkaPub, service.NewClickStore(db))
 	domainSvc := service.NewDomainService(db)
@@ -92,7 +92,7 @@ func main() {
 	tokenSvc := service.NewAPITokenService(db)
 	workspaceSvc := service.NewWorkspaceService(db)
 
-	// 初始化 Handler 层
+	// Initialize the handler layer
 	authH := authHandler.NewHandler(authSvc)
 	linkH := linkHandler.NewHandler(linkSvc)
 	redirectH := redirectHandler.NewHandler(linkSvc)
@@ -104,31 +104,31 @@ func main() {
 	workspaceH := workspaceHandler.NewHandler(workspaceSvc)
 	analyticsH := analyticsHandler.NewHandler(db)
 
-	// JWT + API Token 中间件
+	// JWT + API Token middleware
 	authMW := middleware.JWTAuth(cfg.JWTSecret, tokenSvc)
 
-	// 速率限制中间件
+	// Rate limiting middleware
 	var rateLimiter *middleware.RateLimiter
 	if redisClient != nil {
 		rateLimiter = middleware.NewRateLimiter(redisClient)
 	}
 
-	// 创建 Gin 实例
+	// Create the Gin engine
 	if os.Getenv("GIN_MODE") == "release" {
 		gin.SetMode(gin.ReleaseMode)
 	}
 	r := gin.Default()
 
-	// 安全：不信任任何代理传入的 X-Forwarded-For（客户端可伪造，曾被用于绕过限流）。
-	// 真实客户端 IP 通过 nginx 覆写的 X-Real-IP 获取（见 middleware.RealIP）。
+	// Security: trust no X-Forwarded-For sent by any proxy (clients can forge it; it has been used to bypass rate limiting).
+	// The real client IP comes from the X-Real-IP header rewritten by nginx (see middleware.RealIP).
 	_ = r.SetTrustedProxies(nil)
 
-	// 全局速率限制（如果 Redis 可用）
+	// Global rate limiting (if Redis is available)
 	if rateLimiter != nil {
 		r.Use(rateLimiter.Normal())
 	}
 
-	// 健康检查
+	// Health check
 	r.GET("/api/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
 			"status":  "ok",
@@ -137,17 +137,17 @@ func main() {
 		})
 	})
 
-	// 短链重定向（公开端点，高流量速率限制）
+	// Short-link redirection (public endpoint, high-traffic rate limit)
 	var redirectMW gin.HandlerFunc
 	if rateLimiter != nil {
 		redirectMW = rateLimiter.Redirect()
 	}
 	redirectH.RegisterRoutes(r, redirectMW)
 
-	// API v1 路由组
+	// API v1 route group
 	v1 := r.Group("/api")
 	{
-		// 认证路由（严格速率限制）
+		// Auth routes (strict rate limit)
 		var strictMW gin.HandlerFunc
 		if rateLimiter != nil {
 			strictMW = rateLimiter.Strict()
@@ -163,11 +163,11 @@ func main() {
 		analyticsH.RegisterRoutes(v1, authMW)
 	}
 
-	// 启动服务器（http.Server 以便优雅停机）
+	// Start the server (http.Server for graceful shutdown)
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,
 		Handler:           r,
-		ReadHeaderTimeout: 5 * time.Second, // gosec G112：防止 Slowloris 慢速头攻击
+		ReadHeaderTimeout: 5 * time.Second, // gosec G112: prevent Slowloris slow-header attacks
 		ReadTimeout:       10 * time.Second,
 		WriteTimeout:      10 * time.Second,
 		IdleTimeout:       60 * time.Second,
@@ -179,16 +179,16 @@ func main() {
 		}
 	}()
 
-	// 优雅停机：等待 SIGINT/SIGTERM，给在途请求最多 10 秒完成
+	// Graceful shutdown: wait for SIGINT/SIGTERM and give in-flight requests up to 10 seconds to finish
 	sigCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	<-sigCtx.Done()
-	log.Println("🔻 收到退出信号，开始优雅关闭...")
+	log.Println("🔻 shutdown signal received, starting graceful shutdown...")
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		log.Printf("graceful shutdown failed: %v", err)
 	}
-	log.Println("服务器已关闭")
+	log.Println("server stopped")
 }

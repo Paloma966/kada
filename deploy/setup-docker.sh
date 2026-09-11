@@ -1,4 +1,4 @@
-# 试试这几个镜像源，一个个测
+# Try these registry mirrors, one at a time
 cat > /etc/docker/daemon.json << 'EOF'
 {
   "registry-mirrors": [

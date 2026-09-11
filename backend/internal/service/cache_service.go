@@ -11,7 +11,7 @@ import (
 	"github.com/chun/kada-backend/internal/domain"
 )
 
-// CacheService Redis 缓存服务
+// CacheService is a Redis cache service
 type CacheService struct {
 	client *redis.Client
 	ttl    time.Duration
@@ -24,12 +24,12 @@ func NewCacheService(client *redis.Client) *CacheService {
 	}
 }
 
-// key 生成缓存 key
+// key builds a cache key
 func (cs *CacheService) key(prefix, identifier string) string {
 	return fmt.Sprintf("cache:%s:%s", prefix, identifier)
 }
 
-// GetLink 从缓存获取链接信息（按短码）
+// GetLink gets link info from the cache (by short code)
 func (cs *CacheService) GetLink(ctx context.Context, shortCode string) (*domain.LinkInfo, bool) {
 	data, err := cs.client.Get(ctx, cs.key("link", shortCode)).Bytes()
 	if err != nil {
@@ -43,7 +43,7 @@ func (cs *CacheService) GetLink(ctx context.Context, shortCode string) (*domain.
 	return &info, true
 }
 
-// SetLink 缓存链接信息
+// SetLink caches link info
 func (cs *CacheService) SetLink(ctx context.Context, info *domain.LinkInfo) {
 	key := cs.key("link", info.ShortCode)
 	data, err := json.Marshal(info)
@@ -53,7 +53,7 @@ func (cs *CacheService) SetLink(ctx context.Context, info *domain.LinkInfo) {
 	cs.client.Set(ctx, key, data, cs.ttl)
 }
 
-// InvalidateLink 使链接缓存失效
+// InvalidateLink invalidates the cached link
 func (cs *CacheService) InvalidateLink(ctx context.Context, shortCode string) {
 	cs.client.Del(ctx, cs.key("link", shortCode))
 }

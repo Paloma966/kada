@@ -59,7 +59,7 @@ func TestJWTAuth_ValidToken(t *testing.T) {
 		c.JSON(http.StatusOK, gin.H{"user_id": userID})
 	})
 
-	// 生成有效 JWT
+	// Generate a valid JWT
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
 		"user_id": float64(42),
 		"exp":     time.Now().Add(time.Hour).Unix(),

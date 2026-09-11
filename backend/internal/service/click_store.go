@@ -7,12 +7,12 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// ClickWriter 直写点击日志（生产降级回退与 worker 消费共用）
+// ClickWriter writes click logs directly (shared by the production degraded fallback and the worker consumer)
 type ClickWriter interface {
 	WriteClick(ctx context.Context, eventID string, linkID int64, ip, userAgent, platform, referer string, createdAt time.Time) error
 }
 
-// ClickStore pgx 实现的 ClickWriter
+// ClickStore is the pgx implementation of ClickWriter
 type ClickStore struct {
 	db *pgxpool.Pool
 }
@@ -21,9 +21,9 @@ func NewClickStore(db *pgxpool.Pool) *ClickStore {
 	return &ClickStore{db: db}
 }
 
-// WriteClick 事务内：插入点击日志 + 累加计数。
-// 通过 event_id 去重：Kafka 重投、或降级直写与 worker 并发写同一事件时，
-// 第二次 INSERT 命中唯一冲突（RowsAffected=0），不再累加 click_count。
+// WriteClick inside a transaction: insert the click log + increment the counter.
+// deduplicates by event_id: when Kafka redelivers, or the degraded direct write races the worker on the same event,
+// the second INSERT hits the unique conflict (RowsAffected=0) and click_count is not incremented again.
 func (s *ClickStore) WriteClick(ctx context.Context, eventID string, linkID int64, ip, userAgent, platform, referer string, createdAt time.Time) error {
 	tx, err := s.db.Begin(ctx)
 	if err != nil {
@@ -40,7 +40,7 @@ func (s *ClickStore) WriteClick(ctx context.Context, eventID string, linkID int6
 		return err
 	}
 
-	// 重复事件：已写入过日志，跳过计数累加，仅提交（保持幂等）
+	// duplicate event: the log was already written, skip the counter increment and only commit (staying idempotent)
 	if tag.RowsAffected() == 0 {
 		return tx.Commit(ctx)
 	}

@@ -26,11 +26,11 @@ func (h *Handler) RegisterRoutes(r *gin.RouterGroup, authMW gin.HandlerFunc) {
 	auth.DELETE("/api-tokens/:id", h.Delete)
 }
 
-// Create 创建 API Token
+// Create creates an API token.
 func (h *Handler) Create(c *gin.Context) {
 	var req domain.CreateAPITokenRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "请提供 Token 名称"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Token name is required"})
 		return
 	}
 
@@ -43,7 +43,7 @@ func (h *Handler) Create(c *gin.Context) {
 	c.JSON(http.StatusCreated, resp)
 }
 
-// List 获取 API Token 列表
+// List returns the list of API tokens.
 func (h *Handler) List(c *gin.Context) {
 	tokens, err := h.svc.List(c.Request.Context(), middleware.GetUserID(c))
 	if err != nil {
@@ -54,11 +54,11 @@ func (h *Handler) List(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"tokens": tokens})
 }
 
-// Delete 删除 API Token
+// Delete deletes an API token.
 func (h *Handler) Delete(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的 Token ID"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid Token ID"})
 		return
 	}
 
@@ -67,5 +67,5 @@ func (h *Handler) Delete(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "Token 已删除"})
+	c.JSON(http.StatusOK, gin.H{"message": "Token deleted"})
 }

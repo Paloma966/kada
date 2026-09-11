@@ -1,97 +1,97 @@
-# KADA 首页 3D 星空重构设计
+# KADA homepage 3D starfield restyle design
 
-日期：2026-08-10
-状态：已与用户确认
+date: 2026-08-10
+status: confirmed with the user
 
-## 目标
+## goals
 
-把首页 `/` 重构成一个**单屏、无滚动、全视口沉浸式 3D 星空页**：
+restyle the homepage `/` into a **single-screen, no-scroll, full-viewport immersive 3D starfield page**:
 
-- 背景主体是**蛇夫座（Ophiuchus）星座连线图案**——用真实主星坐标转 3D，发光星点 + indigo 连线成持蛇者轮廓
-- 周围散布大量星星（近远两层）做点缀
-- 页面内容极简：`KADA` 超粗大标题 + `短链接平台` 副标题 + 右上角登录/注册入口
-- 鼠标视差 + 星星动画，让「三维」有纵深感
-- 色彩基调：深空蓝紫渐变 + 品牌 indigo
+- the background subject is the **Ophiuchus constellation line pattern** — real main-star coordinates converted to 3D, glowing star points + indigo lines forming the figure of the serpent-bearer
+- a large number of stars scattered around it (two layers, far and near) as decoration
+- page content is minimal: an extra-bold oversized `KADA` title + `short link platform` subtitle + login/register entries in the top-right corner
+- mouse parallax + star animation give the "3D" a sense of depth
+- color key: deep-space blue-purple gradient + brand indigo
 
-## 方案
+## approach
 
-使用 **Three.js**（原生，不经 react-three-fiber）写一个客户端组件渲染场景。
+use **Three.js** (vanilla, without react-three-fiber) in a client component to render the scene.
 
-## 范围
+## scope
 
-- `frontend/package.json`：新增 `three`、`@types/three`
-- 新增 `frontend/src/components/StarfieldCanvas.tsx`（Three.js 场景渲染，客户端组件）
-- 新增 `frontend/src/lib/ophiuchus.ts`（蛇夫座星表坐标数据 + RA/Dec→3D 换算）
-- 重写 `frontend/src/app/page.tsx`（单屏无滚动布局 + 覆盖层文字）
-- `frontend/src/app/globals.css`（深空背景 token / 渐变工具类）
+- `frontend/package.json`: add `three`, `@types/three`
+- new `frontend/src/components/StarfieldCanvas.tsx` (Three.js scene rendering, client component)
+- new `frontend/src/lib/ophiuchus.ts` (Ophiuchus catalog coordinate data + RA/Dec→3D conversion)
+- rewrite `frontend/src/app/page.tsx` (single-screen no-scroll layout + overlay text)
+- `frontend/src/app/globals.css` (deep-space background tokens / gradient utility classes)
 
-**不在范围内**：dashboard 各页、`r/[code]` 重定向页、登录/注册页、后端任何改动。
+**out of scope**: the dashboard pages, the `r/[code]` redirect page, the login/register pages, any backend change.
 
-## 页面结构（page.tsx）
+## page structure (page.tsx)
 
 ```
-<main className="relative h-dvh w-full overflow-hidden [深空背景渐变]">
-  <StarfieldCanvas className="absolute inset-0" />   ← canvas 铺满背景
+<main className="relative h-dvh w-full overflow-hidden [deep-space background gradient]">
+  <StarfieldCanvas className="absolute inset-0" />   ← canvas fills the background
   <div className="absolute inset-0 z-10 flex flex-col">
-    <header> (logo) Kada      登录   [注册] </header>
-    <div 居中>
-      K A D A                       ← 超大主标题
-      短链接平台                     ← 副标题
+    <header> (logo) Kada      login   [register] </header>
+    <div centered>
+      K A D A                       ← oversized main title
+      short link platform           ← subtitle
     </div>
   </div>
 </main>
 ```
 
-- 外层 `h-dvh`（移动端收起浏览器工具栏时占满可视高度）+ `overflow-hidden` 保证无滚动
-- 文字用 `absolute inset-0` 覆盖在 canvas 之上，`z-10`
-- 登录/注册入口：右上角，登录=文字链接、注册=indigo 实心小按钮（沿用现有 `/login` `/register` 路由）
+- the outer `h-dvh` (fills the visible height when the mobile browser toolbar collapses) + `overflow-hidden` guarantee no scrolling
+- text overlays the canvas with `absolute inset-0`, `z-10`
+- login/register entries: top-right corner, login = text link, register = small solid indigo button (reusing the existing `/login` `/register` routes)
 
-## Three.js 场景（StarfieldCanvas.tsx）
+## Three.js scene (StarfieldCanvas.tsx)
 
-### 渲染器
-- `WebGLRenderer`，`antialias: true`，`alpha: true`（透出底层 CSS 渐变背景）
-- `PerspectiveCamera`，fov ≈ 60，相机位于 z 轴正前方，视点距离约 30~40
+### renderer
+- `WebGLRenderer`, `antialias: true`, `alpha: true` (lets the underlying CSS gradient background show through)
+- `PerspectiveCamera`, fov ≈ 60, camera directly in front on the z axis, eye distance about 30~40
 
-### 星空（两层）
-- **远端层**：约 2000 颗星星，分布在相机外围大半径球壳上（半径约 80~120），缓慢整体自转
-- **近端层**：约 300 颗星星，分布在更靠近相机的体积内，视差位移更明显
-- 材质：`PointsMaterial` + `vertexColors`，`sizeAttenuation: true`，`transparent` + `AdditiveBlending` + `depthWrite: false`
-- 颜色：白、淡蓝（#a5c8ff 附近）、暖白，随机混用
+### starfield (two layers)
+- **far layer**: about 2000 stars distributed on a large-radius spherical shell around the camera (radius about 80~120), slowly rotating as a whole
+- **near layer**: about 300 stars in a volume closer to the camera, with more pronounced parallax displacement
+- material: `PointsMaterial` + `vertexColors`, `sizeAttenuation: true`, `transparent` + `AdditiveBlending` + `depthWrite: false`
+- colors: white, pale blue (around #a5c8ff), warm white, mixed at random
 
-### 蛇夫座星座
-- 数据来自 `src/lib/ophiuchus.ts`：约 12 颗真实主星（α Rasalhague、β Cebalrai、γ、δ Yed Prior、ε Yed Posterior、ζ、η Sabik、θ、κ、36、42、58 Oph 等）
-- 星表存 RA（赤经）、Dec（赤纬），按「RA/Dec → 单位球面 3D 坐标 → 缩放」转成 3D 点，摆在面向相机、相对居中的位置上
-- 渲染：
-  - 星点：`Points`（比背景星更亮、更大）+ 每颗带一层软辉光精灵（canvas 生成的径向渐变贴图，`Sprite`），白色偏淡蓝
-  - 连线：`Line` 按 IAU 风格把主星连成持蛇者轮廓，`LineBasicMaterial` 半透明 indigo（#4f46e5）+ additive
-- 整组轻微浮动旋转
+### Ophiuchus constellation
+- data comes from `src/lib/ophiuchus.ts`: about 12 real main stars (α Rasalhague, β Cebalrai, γ, δ Yed Prior, ε Yed Posterior, ζ, η Sabik, θ, κ, 36, 42, 58 Oph, etc.)
+- the catalog stores RA (right ascension) and Dec (declination), converted into 3D points by "RA/Dec → unit-sphere 3D coordinates → scale" and placed facing the camera, relatively centered
+- rendering:
+  - star points: `Points` (brighter and larger than the background stars) + a soft glow sprite per star (radial-gradient texture generated on a canvas, `Sprite`), white tinted pale blue
+  - lines: `Line` connects the main stars into the serpent-bearer outline in IAU style, `LineBasicMaterial` semi-transparent indigo (#4f46e5) + additive
+- the whole group floats and rotates slightly
 
-### 背景氛围
-- CSS 径向渐变（深 navy → 靛蓝 → 微紫）垫在 canvas 之下
-- 场景内 1~2 个极淡的星云辉光 `Sprite`（canvas 生成径向渐变贴图，additive，低透明度）放在星座后方，增强纵深
+### background atmosphere
+- a CSS radial gradient (deep navy → indigo → faint purple) sits beneath the canvas
+- 1~2 very faint nebula glow `Sprite`s inside the scene (radial-gradient texture generated on a canvas, additive, low opacity) placed behind the constellation to add depth
 
-### 交互与动画
-- 鼠标视差：监听 pointermove，把归一化鼠标位置作为相机偏移目标，`requestAnimationFrame` 循环里用 lerp 缓动跟随（quaternion 或位置偏置）
-- 星星缓慢自转 / 近层轻微漂移
-- `prefers-reduced-motion` 时关闭自动动画与视差
-- resize 时同步更新相机 aspect 与 renderer 尺寸（ResizeObserver 或 window resize）
+### interaction and animation
+- mouse parallax: listen for pointermove, use the normalized mouse position as the camera offset target, and follow it with lerp easing inside the `requestAnimationFrame` loop (quaternion or position offset)
+- stars rotate slowly / the near layer drifts slightly
+- disable automatic animation and parallax under `prefers-reduced-motion`
+- on resize, update the camera aspect and the renderer size together (ResizeObserver or window resize)
 
-### 生命周期清理
-- 组件卸载时取消 rAF、释放 geometry / material / renderer、移除事件监听
+### lifecycle cleanup
+- on component unmount, cancel the rAF, dispose of geometry / material / renderer, and remove event listeners
 
-## 视觉样式（globals.css）
+## visual style (globals.css)
 
-- 深空背景渐变：用 CSS 变量或 Tailwind arbitrary 值实现，`radial-gradient` 从深 navy 到靛蓝到微紫
-- 主标题：系统字体栈（不引入外部字体，国内网络不稳），`font-black` + `text-5xl sm:text-7xl` + 大号字距（tracking），近白色 + 极淡 indigo `text-shadow` 辉光
-- 副标题 `短链接平台`：中文系统栈、小一号、indigo 浅色
-- 登录/注册沿用现有 indigo 主色 token（`--color-brand`）
+- deep-space background gradient: implement with CSS variables or Tailwind arbitrary values, a `radial-gradient` from deep navy to indigo to faint purple
+- main title: system font stack (no external fonts, the domestic network is unreliable), `font-black` + `text-5xl sm:text-7xl` + wide tracking, near-white + a very faint indigo `text-shadow` glow
+- subtitle `short link platform`: Chinese system font stack, one size smaller, light indigo
+- login/register reuse the existing indigo brand color token (`--color-brand`)
 
-## 错误处理
+## error handling
 
-- WebGL 不可用 / 初始化失败：catch 并保留 CSS 渐变背景 + 文字层，页面降级为纯渐变展示（无 JS 场景也能正常显示文案）
-- 组件内不使用 SSR 相关 API；`StarfieldCanvas` 声明 `"use client"`，canvas 只在挂载后初始化
+- WebGL unavailable / init failure: catch it and keep the CSS gradient background + text layer, degrading the page to a plain gradient display (the copy still renders fine without the JS scene)
+- no SSR-related APIs inside the component; `StarfieldCanvas` declares `"use client"`, and the canvas is only initialized after mount
 
-## 测试
+## testing
 
-- `npm run lint`、`npm run build` 通过
-- 手动验证：单屏无滚动；鼠标视差生效；星星自转/漂移；resize 正常；移动端 `h-dvh` 占满；reduced-motion 关闭动画；无控制台报错；WebGL 不可用时降级正常
+- `npm run lint`, `npm run build` pass
+- manual verification: single screen with no scrolling; mouse parallax works; stars rotate/drift; resize works; `h-dvh` fills the screen on mobile; reduced-motion disables animation; no console errors; graceful degradation when WebGL is unavailable

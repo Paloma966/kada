@@ -26,10 +26,11 @@ func NewAliyunSender(accessKeyID, accessKeySecret, signName, templateCode string
 
 	client, err := dypnsapi.NewClient(config)
 	if err != nil {
-		return nil, fmt.Errorf("创建短信认证客户端失败: %w", err)
+		return nil, fmt.Errorf("failed to create SMS verification client: %w", err)
 	}
 
-	// 未显式配置时回退到默认值，保证开箱可用；生产应通过环境变量 SMS_SIGN_NAME / SMS_TEMPLATE_CODE 覆盖
+	// Fall back to defaults when not explicitly configured so it works out of the box; production should
+	// override them through the SMS_SIGN_NAME / SMS_TEMPLATE_CODE environment variables
 	if signName == "" {
 		signName = "恒创联众"
 	}
@@ -37,7 +38,7 @@ func NewAliyunSender(accessKeyID, accessKeySecret, signName, templateCode string
 		templateCode = "100001"
 	}
 
-	log.Println("✅ 阿里云短信认证服务已初始化")
+	log.Println("✅ Aliyun SMS verification service initialized")
 	return &AliyunSender{client: client, signName: signName, templateCode: templateCode}, nil
 }
 
@@ -54,20 +55,20 @@ func (s *AliyunSender) SendVerificationCode(phone string) (code string, err erro
 
 	response, err := s.client.SendSmsVerifyCode(request)
 	if err != nil {
-		return "", fmt.Errorf("验证码发送失败: %w", err)
+		return "", fmt.Errorf("failed to send verification code: %w", err)
 	}
 
 	if *response.Body.Code != "OK" {
-		return "", fmt.Errorf("验证码发送失败 [%s]: %s",
+		return "", fmt.Errorf("failed to send verification code [%s]: %s",
 			*response.Body.Code, *response.Body.Message)
 	}
 
-	// 安全：不记录验证码明文，手机号脱敏
-	log.Printf("📱 验证码已发送至 %s", maskPhone(phone))
+	// Security: never log the verification code in plaintext; mask the phone number
+	log.Printf("📱 verification code sent to %s", maskPhone(phone))
 	return code, nil
 }
 
-// maskPhone 手机号脱敏：138****1234
+// maskPhone masks a phone number: 138****1234
 func maskPhone(phone string) string {
 	if len(phone) < 7 {
 		return "***"
@@ -84,7 +85,7 @@ func (s *AliyunSender) CheckVerificationCode(phone, code string) (bool, error) {
 
 	response, err := s.client.CheckSmsVerifyCode(request)
 	if err != nil {
-		return false, fmt.Errorf("验证码校验失败: %w", err)
+		return false, fmt.Errorf("failed to verify verification code: %w", err)
 	}
 
 	if *response.Body.Code != "OK" {

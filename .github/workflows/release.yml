@@ -17,7 +17,7 @@ env:
   NODE_VERSION: "22"
 
 jobs:
-  # ========== 运行测试 ==========
+  # ========== Run tests ==========
   test:
     name: Run Tests
     runs-on: ubuntu-latest
@@ -51,7 +51,7 @@ jobs:
           JWT_SECRET: test-secret
         run: go test ./... -v -count=1
 
-  # ========== 构建并推送 Docker 镜像 ==========
+  # ========== Build and push Docker images ==========
   build-and-push:
     name: Build & Push Images
     runs-on: ubuntu-latest
@@ -81,7 +81,7 @@ jobs:
         run: |
           REPO_OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
           echo "repo_owner=$REPO_OWNER" >> $GITHUB_OUTPUT
-          # 使用 tag 名或默认 latest
+          # Use the tag name, or default to latest
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             echo "version=${{ inputs.tag }}" >> $GITHUB_OUTPUT
           elif [ "${{ github.ref_type }}" = "tag" ]; then
@@ -90,7 +90,7 @@ jobs:
             echo "version=latest" >> $GITHUB_OUTPUT
           fi
 
-      # ---- 后端镜像 ----
+      # ---- Backend image ----
       - name: Build & push backend image
         uses: docker/build-push-action@v6
         with:
@@ -103,7 +103,7 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      # ---- 前端镜像 ----
+      # ---- Frontend image ----
       - name: Build & push frontend image
         uses: docker/build-push-action@v6
         with:

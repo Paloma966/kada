@@ -6,6 +6,10 @@ node_modules/
 backend/bin/
 backend/tmp/
 
+# Go tool caches (agents/tooling sometimes point these inside the repo)
+backend/.gocache/
+backend/.gomodcache/
+
 # Environment
 .env
 .env.local

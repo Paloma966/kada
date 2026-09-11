@@ -6,14 +6,14 @@ import (
 )
 
 func TestGenerateShortCode(t *testing.T) {
-	// 生成 100 个短码，确保都是 12 位十六进制且不重复
+	// generate 100 short codes and make sure they are all 12 hex digits and unique
 	codes := make(map[string]bool)
 	for i := 0; i < 100; i++ {
 		code := generateShortCode()
 		if len(code) != 12 {
 			t.Errorf("expected short code length 12, got %d: %s", len(code), code)
 		}
-		// 检查是否只包含十六进制字符
+		// check that it contains only hex characters
 		for _, c := range code {
 			if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
 				t.Errorf("invalid character in short code: %c in %s", c, code)
@@ -32,22 +32,22 @@ func TestShortCodePattern(t *testing.T) {
 		isValid bool
 		reason  string
 	}{
-		{"abc123", true, "字母数字组合"},
-		{"my-link", true, "含连字符"},
-		{"my_link", true, "含下划线"},
-		{"a1b2c3d4", true, "8位字母数字"},
-		{"AbC123", true, "大小写混合"},
-		{"a1b2c3d4e5f6g7h8i9j0", true, "20位长度（上限）"},
-		{"abc", false, "太短（3位）"},
-		{"a", false, "太短（1位）"},
-		{"ab", false, "太短（2位）"},
-		{"abcdefghijklmnopqrstu", false, "太长（21位）"},
-		{"abc def", false, "含空格"},
-		{"abc@def", false, "含特殊字符@"},
-		{"abc.def", false, "含点号"},
-		{"中文测试", false, "含中文"},
-		{"abc/def", false, "含斜杠"},
-		{"", false, "空字符串"},
+		{"abc123", true, "alphanumeric"},
+		{"my-link", true, "contains hyphen"},
+		{"my_link", true, "contains underscore"},
+		{"a1b2c3d4", true, "8 chars alphanumeric"},
+		{"AbC123", true, "mixed case"},
+		{"a1b2c3d4e5f6g7h8i9j0", true, "20 chars (upper bound)"},
+		{"abc", false, "too short (3 chars)"},
+		{"a", false, "too short (1 char)"},
+		{"ab", false, "too short (2 chars)"},
+		{"abcdefghijklmnopqrstu", false, "too long (21 chars)"},
+		{"abc def", false, "contains space"},
+		{"abc@def", false, "contains special character @"},
+		{"abc.def", false, "contains period"},
+		{"中文测试", false, "contains Chinese characters"},
+		{"abc/def", false, "contains slash"},
+		{"", false, "empty string"},
 	}
 
 	for _, tt := range tests {
@@ -73,13 +73,13 @@ func TestEscapeCSV(t *testing.T) {
 		{"line1\nline2", "\"line1\nline2\""},
 		{"normal text", "normal text"},
 		{"", ""},
-		// 公式注入防护
+		// formula injection protection
 		{"=1+1", "'=1+1"},
 		{"+8613800000000", "'+8613800000000"},
 		{"@SUM(A1)", "'@SUM(A1)"},
 		{"-2+3", "'-2+3"},
 		{"=HYPERLINK(\"http://evil\")", `"'=HYPERLINK(""http://evil"")"`},
-		// 用户可控的 domain 字段含逗号/引号时正确包裹
+		// the user-controlled domain field with commas/quotes is wrapped correctly
 		{`evil.com,"x`, `"evil.com,""x"`},
 	}
 
@@ -101,7 +101,7 @@ func TestBuildShortURL(t *testing.T) {
 		t.Errorf("BuildShortURL = %q, want %q", url, expected)
 	}
 
-	// 自定义域名
+	// custom domain
 	url2 := svc.BuildShortURL("custom.domain.com", "xyz789")
 	expected2 := "https://custom.domain.com/r/xyz789"
 	if url2 != expected2 {
@@ -114,7 +114,7 @@ func TestHashPassword(t *testing.T) {
 	hash1 := hashPassword(pwd)
 	hash2 := hashPassword(pwd)
 
-	// bcrypt 加盐：相同密码产生不同哈希
+	// bcrypt salt: the same password produces different hashes
 	if hash1 == "" || hash2 == "" {
 		t.Fatal("hashPassword returned empty hash")
 	}
@@ -125,7 +125,7 @@ func TestHashPassword(t *testing.T) {
 		t.Errorf("expected bcrypt hash, got %q", hash1)
 	}
 
-	// 验证
+	// verify
 	if !checkPasswordHash(pwd, hash1) {
 		t.Error("checkPasswordHash should return true for correct password")
 	}
@@ -135,7 +135,7 @@ func TestHashPassword(t *testing.T) {
 }
 
 func TestHashPassword_LongPassword(t *testing.T) {
-	// bcrypt 上限 72 字节，超长密码应自动截断并仍可验证
+	// bcrypt caps at 72 bytes; an over-long password should be truncated automatically and still verify
 	pwd := strings.Repeat("a", 100)
 	hash := hashPassword(pwd)
 	if hash == "" {
@@ -147,7 +147,7 @@ func TestHashPassword_LongPassword(t *testing.T) {
 }
 
 func TestCheckPasswordHash_LegacySHA256(t *testing.T) {
-	// 存量数据为未加盐 SHA-256 十六进制，升级后仍应可验证
+	// legacy data is an unsalted SHA-256 hex digest and should still verify after the upgrade
 	legacy := sha256Hex("legacy-pass-123")
 	if !checkPasswordHash("legacy-pass-123", legacy) {
 		t.Error("legacy SHA-256 hash should still verify")

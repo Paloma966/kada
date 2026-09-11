@@ -22,28 +22,28 @@ import (
 	"github.com/chun/kada-backend/internal/mq"
 )
 
-// shortCodePattern 短码只允许字母、数字、下划线和连字符
+// shortCodePattern allows only letters, digits, underscores and hyphens in a short code
 var shortCodePattern = regexp.MustCompile(`^[a-zA-Z0-9_-]{4,20}$`)
 
 type LinkService struct {
 	db          *pgxpool.Pool
 	baseURL     string
 	cache       *CacheService
-	kafka       mq.ClickPublisher // Kafka 发布者；nil 表示禁用
-	clickWriter ClickWriter       // 直写（降级回退用）
+	kafka       mq.ClickPublisher // Kafka publisher; nil means disabled
+	clickWriter ClickWriter       // direct write (used by the degraded fallback)
 }
 
 func NewLinkService(db *pgxpool.Pool, baseURL string, cache *CacheService, kafka mq.ClickPublisher, clickWriter ClickWriter) *LinkService {
 	return &LinkService{db: db, baseURL: baseURL, cache: cache, kafka: kafka, clickWriter: clickWriter}
 }
 
-// Create 创建短链接
+// Create creates a short link
 func (s *LinkService) Create(ctx context.Context, userID int64, req domain.CreateLinkRequest) (*domain.LinkInfo, error) {
 	if !urlcheck.IsSafeTarget(req.OriginalURL) {
-		return nil, errors.New("目标链接仅支持 http/https 协议")
+		return nil, errors.New("target URL must use http or https")
 	}
 
-	// 校验文件夹/工作区归属（此前任意 ID 可挂接，跨用户泄漏名称）
+	// validate folder/workspace ownership (previously any ID could be attached, leaking names across users)
 	if err := s.validateOwnedRefs(ctx, userID, req.FolderID, req.WorkspaceID); err != nil {
 		return nil, err
 	}
@@ -52,12 +52,12 @@ func (s *LinkService) Create(ctx context.Context, userID int64, req domain.Creat
 
 	if req.ShortCode != nil && *req.ShortCode != "" {
 		if !shortCodePattern.MatchString(*req.ShortCode) {
-			return nil, errors.New("短码格式无效：只允许字母、数字、下划线和连字符，长度4-20位")
+			return nil, errors.New("invalid short code format: only letters, digits, underscores and hyphens are allowed, length 4-20")
 		}
 		var exists bool
-		// 快速路径检查：失败时不做判断，最终由唯一约束仲裁
+		// fast-path check: on failure make no decision, the unique constraint is the final arbiter
 		if err := s.db.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM links WHERE short_code = $1)`, *req.ShortCode).Scan(&exists); err == nil && exists {
-			return nil, errors.New("该短码已被占用，请换一个")
+			return nil, errors.New("that short code is already taken, please choose another")
 		}
 		shortCode = *req.ShortCode
 	} else {
@@ -73,7 +73,7 @@ func (s *LinkService) Create(ctx context.Context, userID int64, req domain.Creat
 	if req.ExpiresAt != nil && *req.ExpiresAt != "" {
 		t, err := time.Parse(time.RFC3339, *req.ExpiresAt)
 		if err != nil {
-			return nil, errors.New("过期时间格式无效，请使用 RFC3339 格式（如 2025-01-01T00:00:00Z）")
+			return nil, errors.New("invalid expiry format, use RFC 3339 (for example 2025-01-01T00:00:00Z)")
 		}
 		expiresAt = &t
 	}
@@ -85,8 +85,8 @@ func (s *LinkService) Create(ctx context.Context, userID int64, req domain.Creat
 	}
 
 	var info domain.LinkInfo
-	// 唯一约束是短码冲突的最终仲裁：检查-插入竞态下 INSERT 会报 23505，
-	// 自定义短码返回友好错误，随机短码换码重试
+	// the unique constraint is the final arbiter for short-code conflicts: under a check-then-insert race the INSERT reports 23505,
+	// a custom short code returns a friendly error while a random short code is regenerated and retried
 	for attempt := 0; ; attempt++ {
 		err := s.db.QueryRow(ctx, `
 			INSERT INTO links (short_code, original_url, title, description, image_url, domain, password_hash, expires_at, user_id, workspace_id, folder_id, utm_source, utm_medium, utm_campaign, utm_term, utm_content, ios_url, android_url)
@@ -108,20 +108,20 @@ func (s *LinkService) Create(ctx context.Context, userID int64, req domain.Creat
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
 			if req.ShortCode != nil && *req.ShortCode != "" {
-				return nil, errors.New("该短码已被占用，请换一个")
+				return nil, errors.New("that short code is already taken, please choose another")
 			}
 			if attempt >= 4 {
 				log.Printf("create link failed: %v", err)
-				return nil, errors.New("生成短码失败，请重试")
+				return nil, errors.New("failed to generate short code, please try again")
 			}
 			shortCode = generateShortCode()
 			continue
 		}
 		log.Printf("create link failed: %v", err)
-		return nil, errors.New("创建短链接失败")
+		return nil, errors.New("failed to create short link")
 	}
 
-	// 关联标签（仅允许挂接自己的标签，防止跨用户泄漏标签名/颜色）
+	// attach tags (only own tags may be attached, preventing tag name/color leaks across users)
 	for _, tagID := range req.TagIDs {
 		var tagOwner int64
 		if err := s.db.QueryRow(ctx, `SELECT user_id FROM tags WHERE id = $1`, tagID).Scan(&tagOwner); err != nil || tagOwner != userID {
@@ -135,7 +135,7 @@ func (s *LinkService) Create(ctx context.Context, userID int64, req domain.Creat
 
 	info.ShortURL = s.BuildShortURL(info.Domain, info.ShortCode)
 
-	// 写入缓存
+	// write to cache
 	if s.cache != nil {
 		s.cache.SetLink(ctx, &info)
 	}
@@ -143,7 +143,7 @@ func (s *LinkService) Create(ctx context.Context, userID int64, req domain.Creat
 	return &info, nil
 }
 
-// GetByID 根据ID获取链接（含文件夹、标签、UTM等完整信息）
+// GetByID gets a link by ID (with full info such as folder, tags and UTM)
 func (s *LinkService) GetByID(ctx context.Context, linkID, userID int64) (*domain.LinkInfo, error) {
 	var info domain.LinkInfo
 	err := s.db.QueryRow(ctx, `
@@ -164,7 +164,7 @@ func (s *LinkService) GetByID(ctx context.Context, linkID, userID int64) (*domai
 		return nil, domain.ErrLinkNotFound
 	}
 
-	// 查询文件夹名
+	// look up the folder name
 	if info.FolderID != nil {
 		var folderName string
 		folderErr := s.db.QueryRow(ctx, `SELECT name FROM folders WHERE id = $1`, *info.FolderID).Scan(&folderName)
@@ -173,7 +173,7 @@ func (s *LinkService) GetByID(ctx context.Context, linkID, userID int64) (*domai
 		}
 	}
 
-	// 查询标签
+	// look up tags
 	rows, err := s.db.Query(ctx, `
 		SELECT t.id, t.name, t.color FROM tags t
 		JOIN link_tags lt ON t.id = lt.tag_id
@@ -198,15 +198,15 @@ func (s *LinkService) GetByID(ctx context.Context, linkID, userID int64) (*domai
 	return &info, nil
 }
 
-// GetByCode 根据短码获取链接（优先从缓存读取）
+// GetByCode gets a link by short code (reads from cache first)
 func (s *LinkService) GetByCode(ctx context.Context, shortCode string) (*domain.LinkInfo, error) {
-	// 尝试从缓存获取
+	// try to read from cache
 	if s.cache != nil {
 		if info, ok := s.cache.GetLink(ctx, shortCode); ok {
-			// 检查是否过期
+			// check whether it has expired
 			if info.ExpiresAt != nil && info.ExpiresAt.Before(time.Now()) {
 				s.cache.InvalidateLink(ctx, shortCode)
-				return nil, errors.New("链接已过期")
+				return nil, errors.New("link has expired")
 			}
 			return info, nil
 		}
@@ -225,14 +225,14 @@ func (s *LinkService) GetByCode(ctx context.Context, shortCode string) (*domain.
 		return nil, domain.ErrLinkNotFound
 	}
 
-	// 检查是否过期
+	// check whether it has expired
 	if info.ExpiresAt != nil && info.ExpiresAt.Before(time.Now()) {
-		return nil, errors.New("链接已过期")
+		return nil, errors.New("link has expired")
 	}
 
 	info.ShortURL = s.BuildShortURL(info.Domain, info.ShortCode)
 
-	// 写入缓存
+	// write to cache
 	if s.cache != nil {
 		s.cache.SetLink(ctx, &info)
 	}
@@ -240,7 +240,7 @@ func (s *LinkService) GetByCode(ctx context.Context, shortCode string) (*domain.
 	return &info, nil
 }
 
-// HasPassword 检查链接是否设置了密码
+// HasPassword checks whether the link has a password set
 func (s *LinkService) HasPassword(ctx context.Context, shortCode string) bool {
 	var passwordHash *string
 	err := s.db.QueryRow(ctx, `
@@ -252,7 +252,7 @@ func (s *LinkService) HasPassword(ctx context.Context, shortCode string) bool {
 	return true
 }
 
-// CheckPassword 检查链接密码
+// CheckPassword checks the link password
 func (s *LinkService) CheckPassword(ctx context.Context, shortCode, password string) (bool, *domain.LinkInfo, error) {
 	var passwordHash *string
 	var info domain.LinkInfo
@@ -269,11 +269,11 @@ func (s *LinkService) CheckPassword(ctx context.Context, shortCode, password str
 	}
 
 	if info.ExpiresAt != nil && info.ExpiresAt.Before(time.Now()) {
-		return false, nil, errors.New("链接已过期")
+		return false, nil, errors.New("link has expired")
 	}
 
 	if passwordHash == nil || *passwordHash == "" {
-		return true, &info, nil // 无密码
+		return true, &info, nil // no password
 	}
 
 	if password == "" || !checkPasswordHash(password, *passwordHash) {
@@ -284,7 +284,7 @@ func (s *LinkService) CheckPassword(ctx context.Context, shortCode, password str
 	return true, &info, nil
 }
 
-// List 获取用户链接列表
+// List gets the user's link list
 func (s *LinkService) List(ctx context.Context, userID int64, page, pageSize int, search string, folderID, tagID, workspaceID int64, sort string) (*domain.PaginatedLinks, error) {
 	if page < 1 {
 		page = 1
@@ -340,7 +340,7 @@ func (s *LinkService) List(ctx context.Context, userID int64, page, pageSize int
 
 	rows, err := s.db.Query(ctx, query, args...)
 	if err != nil {
-		return nil, errors.New("查询链接列表失败")
+		return nil, errors.New("failed to list links")
 	}
 	defer rows.Close()
 
@@ -362,13 +362,13 @@ func (s *LinkService) List(ctx context.Context, userID int64, page, pageSize int
 	}, nil
 }
 
-// Update 更新链接
+// Update updates a link
 func (s *LinkService) Update(ctx context.Context, linkID, userID int64, req domain.UpdateLinkRequest) (*domain.LinkInfo, error) {
 	if req.OriginalURL != nil && *req.OriginalURL != "" && !urlcheck.IsSafeTarget(*req.OriginalURL) {
-		return nil, errors.New("目标链接仅支持 http/https 协议")
+		return nil, errors.New("target URL must use http or https")
 	}
 
-	// 校验文件夹归属（req 无 WorkspaceID 字段）
+	// validate folder ownership (req has no WorkspaceID field)
 	if err := s.validateOwnedRefs(ctx, userID, req.FolderID, nil); err != nil {
 		return nil, err
 	}
@@ -377,7 +377,7 @@ func (s *LinkService) Update(ctx context.Context, linkID, userID int64, req doma
 	if req.ExpiresAt != nil && *req.ExpiresAt != "" {
 		t, err := time.Parse(time.RFC3339, *req.ExpiresAt)
 		if err != nil {
-			return nil, errors.New("过期时间格式无效，请使用 RFC3339 格式（如 2025-01-01T00:00:00Z）")
+			return nil, errors.New("invalid expiry format, use RFC 3339 (for example 2025-01-01T00:00:00Z)")
 		}
 		expiresAt = &t
 	}
@@ -388,19 +388,19 @@ func (s *LinkService) Update(ctx context.Context, linkID, userID int64, req doma
 		passwordHash = &hash
 	}
 
-	// 获取旧短码（用于缓存失效）；失败不影响主流程
+	// get the old short code (used for cache invalidation); failure does not affect the main flow
 	var oldShortCode string
 	_ = s.db.QueryRow(ctx, `SELECT short_code FROM links WHERE id = $1`, linkID).Scan(&oldShortCode)
 
-	// 校验自定义短码
+	// validate the custom short code
 	if req.ShortCode != nil && *req.ShortCode != "" {
 		if !shortCodePattern.MatchString(*req.ShortCode) {
-			return nil, errors.New("短码格式无效：只允许字母、数字、下划线和连字符，长度4-20位")
+			return nil, errors.New("invalid short code format: only letters, digits, underscores and hyphens are allowed, length 4-20")
 		}
 		var exists bool
-		// 快速路径检查：失败时不做判断，最终由唯一约束仲裁
+		// fast-path check: on failure make no decision, the unique constraint is the final arbiter
 		if err := s.db.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM links WHERE short_code = $1 AND id != $2)`, *req.ShortCode, linkID).Scan(&exists); err == nil && exists {
-			return nil, errors.New("该短码已被占用，请换一个")
+			return nil, errors.New("that short code is already taken, please choose another")
 		}
 	}
 
@@ -438,16 +438,16 @@ func (s *LinkService) Update(ctx context.Context, linkID, userID int64, req doma
 		&info.ExpiresAt, &info.FolderID, &info.CreatedAt, &info.UpdatedAt,
 	)
 	if err != nil {
-		return nil, errors.New("更新链接失败，链接不存在或无权限")
+		return nil, errors.New("failed to update link, link not found or access denied")
 	}
 
-	// 更新标签关联
+	// update tag associations
 	if req.TagIDs != nil {
 		if _, err := s.db.Exec(ctx, `DELETE FROM link_tags WHERE link_id = $1`, linkID); err != nil {
 			log.Printf("clear link tags failed: %v", err)
 		}
 		for _, tagID := range req.TagIDs {
-			// 仅允许挂接自己的标签
+			// only own tags may be attached
 			var tagOwner int64
 			if err := s.db.QueryRow(ctx, `SELECT user_id FROM tags WHERE id = $1`, tagID).Scan(&tagOwner); err != nil || tagOwner != userID {
 				log.Printf("skip non-owned tag %d for link %d (user %d)", tagID, linkID, userID)
@@ -459,7 +459,7 @@ func (s *LinkService) Update(ctx context.Context, linkID, userID int64, req doma
 		}
 	}
 
-	// 使缓存失效
+	// invalidate the cache
 	if s.cache != nil {
 		if oldShortCode != "" {
 			s.cache.InvalidateLink(ctx, oldShortCode)
@@ -473,15 +473,15 @@ func (s *LinkService) Update(ctx context.Context, linkID, userID int64, req doma
 	return &info, nil
 }
 
-// Delete 删除链接
+// Delete deletes a link
 func (s *LinkService) Delete(ctx context.Context, linkID, userID int64) error {
-	// 获取短码用于缓存失效；失败不影响主流程
+	// get the short code for cache invalidation; failure does not affect the main flow
 	var shortCode string
 	_ = s.db.QueryRow(ctx, `SELECT short_code FROM links WHERE id = $1`, linkID).Scan(&shortCode)
 
 	_, err := s.db.Exec(ctx, `DELETE FROM links WHERE id = $1 AND user_id = $2`, linkID, userID)
 	if err != nil {
-		return errors.New("删除链接失败")
+		return errors.New("failed to delete link")
 	}
 
 	if s.cache != nil && shortCode != "" {
@@ -490,9 +490,9 @@ func (s *LinkService) Delete(ctx context.Context, linkID, userID int64) error {
 	return nil
 }
 
-// BatchDelete 批量删除链接
+// BatchDelete deletes links in bulk
 func (s *LinkService) BatchDelete(ctx context.Context, ids []int64, userID int64) (int64, error) {
-	// 先取出将删除链接的短码，用于删除后失效缓存（与单条 Delete 行为对齐）
+	// first fetch the short codes of the links to be deleted, to invalidate the cache afterwards (aligned with single Delete)
 	var codes []string
 	rows, err := s.db.Query(ctx, `SELECT short_code FROM links WHERE id = ANY($1) AND user_id = $2`, ids, userID)
 	if err == nil {
@@ -508,10 +508,10 @@ func (s *LinkService) BatchDelete(ctx context.Context, ids []int64, userID int64
 
 	tag, err := s.db.Exec(ctx, `DELETE FROM links WHERE id = ANY($1) AND user_id = $2`, ids, userID)
 	if err != nil {
-		return 0, errors.New("批量删除失败")
+		return 0, errors.New("bulk delete failed")
 	}
 
-	// 失效被删除短码的缓存：否则已删除链接在缓存 TTL 内仍可被跳转
+	// invalidate the cache of deleted short codes: otherwise a deleted link can still be redirected within the cache TTL
 	if s.cache != nil {
 		for _, c := range codes {
 			s.cache.InvalidateLink(ctx, c)
@@ -520,15 +520,15 @@ func (s *LinkService) BatchDelete(ctx context.Context, ids []int64, userID int64
 	return tag.RowsAffected(), nil
 }
 
-// BatchTag 批量打标签
+// BatchTag tags links in bulk
 func (s *LinkService) BatchTag(ctx context.Context, ids []int64, tagID int64, userID int64) error {
-	// 标签必须属于当前用户
+	// the tag must belong to the current user
 	var tagOwner int64
 	if err := s.db.QueryRow(ctx, `SELECT user_id FROM tags WHERE id = $1`, tagID).Scan(&tagOwner); err != nil || tagOwner != userID {
-		return errors.New("标签不存在或无权限")
+		return errors.New("tag not found or access denied")
 	}
 	for _, linkID := range ids {
-		// 验证链接属于该用户
+		// verify the link belongs to that user
 		var ownerID int64
 		err := s.db.QueryRow(ctx, `SELECT user_id FROM links WHERE id = $1`, linkID).Scan(&ownerID)
 		if err != nil || ownerID != userID {
@@ -541,36 +541,36 @@ func (s *LinkService) BatchTag(ctx context.Context, ids []int64, tagID int64, us
 	return nil
 }
 
-// validateOwnedRefs 校验文件夹/工作区归属当前用户（nil 或 0 视为未设置）
+// validateOwnedRefs validates that the folder/workspace belongs to the current user (nil or 0 means unset)
 func (s *LinkService) validateOwnedRefs(ctx context.Context, userID int64, folderID, workspaceID *int64) error {
 	if folderID != nil && *folderID != 0 {
 		var owner int64
 		if err := s.db.QueryRow(ctx, `SELECT user_id FROM folders WHERE id = $1`, *folderID).Scan(&owner); err != nil || owner != userID {
-			return errors.New("文件夹不存在或无权限")
+			return errors.New("folder not found or access denied")
 		}
 	}
 	if workspaceID != nil && *workspaceID != 0 {
 		var owner int64
 		if err := s.db.QueryRow(ctx, `SELECT user_id FROM workspaces WHERE id = $1`, *workspaceID).Scan(&owner); err != nil || owner != userID {
-			return errors.New("工作区不存在或无权限")
+			return errors.New("workspace not found or access denied")
 		}
 	}
 	return nil
 }
 
-// ExportCSV 导出用户链接为 CSV 字符串
+// ExportCSV exports the user's links as a CSV string
 func (s *LinkService) ExportCSV(ctx context.Context, userID int64) (string, error) {
 	rows, err := s.db.Query(ctx, `
 		SELECT short_code, original_url, COALESCE(title,''), domain, click_count, is_active, created_at
 		FROM links WHERE user_id = $1 ORDER BY created_at DESC
 	`, userID)
 	if err != nil {
-		return "", errors.New("查询链接数据失败")
+		return "", errors.New("failed to query link data")
 	}
 	defer rows.Close()
 
 	var sb strings.Builder
-	sb.WriteString("短码,目标URL,标题,域名,点击量,状态,创建时间\n")
+	sb.WriteString("code,target_url,title,domain,clicks,status,created_at\n")
 	for rows.Next() {
 		var code, url, title, domain string
 		var clicks int64
@@ -580,9 +580,9 @@ func (s *LinkService) ExportCSV(ctx context.Context, userID int64) (string, erro
 			log.Printf("export csv scan failed: %v", err)
 			continue
 		}
-		status := "启用"
+		status := "enabled"
 		if !active {
-			status = "停用"
+			status = "disabled"
 		}
 		fmt.Fprintf(&sb, "%s,%s,%s,%s,%d,%s,%s\n",
 			escapeCSV(code), escapeCSV(url), escapeCSV(title), escapeCSV(domain), clicks, status, created.Format("2006-01-02 15:04"))
@@ -590,8 +590,8 @@ func (s *LinkService) ExportCSV(ctx context.Context, userID int64) (string, erro
 	return sb.String(), nil
 }
 
-// escapeCSV 转义 CSV 字段：以 = + - @ 或制表符开头的字段加单引号前缀
-// （防止 Excel 公式注入），含逗号/引号/换行的字段用引号包裹。
+// escapeCSV escapes a CSV field: fields starting with = + - @ or a tab get a single-quote prefix
+// (preventing Excel formula injection), and fields containing commas/quotes/newlines are wrapped in quotes.
 func escapeCSV(s string) string {
 	s = strings.ReplaceAll(s, "\r", "")
 	if strings.HasPrefix(s, "=") || strings.HasPrefix(s, "+") ||
@@ -605,9 +605,9 @@ func escapeCSV(s string) string {
 	return s
 }
 
-// LogClick 发布点击事件到 Kafka；Kafka 不可用时回退直写，保证点击不丢
+// LogClick publishes a click event to Kafka; falls back to a direct write when Kafka is unavailable so clicks are not lost
 func (s *LinkService) LogClick(ctx context.Context, linkID int64, ip, userAgent, platform, referer string) {
-	// 生成幂等键：Kafka 重投或降级直写时用于去重
+	// generate an idempotency key: used to deduplicate on Kafka redelivery or degraded direct write
 	eventID := newEventID()
 	if s.kafka != nil {
 		if err := s.kafka.PublishClick(ctx, mq.ClickEvent{
@@ -619,7 +619,7 @@ func (s *LinkService) LogClick(ctx context.Context, linkID int64, ip, userAgent,
 			Referer:   referer,
 			CreatedAt: time.Now(),
 		}); err != nil {
-			// Kafka 失败 → 落到直写
+			// Kafka failed -> fall back to direct write
 			log.Printf("kafka publish failed, falling back to direct write: %v", err)
 		} else {
 			return
@@ -632,48 +632,48 @@ func (s *LinkService) LogClick(ctx context.Context, linkID int64, ip, userAgent,
 	}
 }
 
-// BuildShortURL 构建完整短链接
+// BuildShortURL builds the full short URL
 func (s *LinkService) BuildShortURL(domain, code string) string {
 	return "https://" + domain + "/r/" + code
 }
 
-// newEventID 生成点击事件幂等键（16 字节随机 → 32 位 hex）。
-// 用于 Kafka at-least-once 重投/降级直写去重，避免 click_count 重复累加。
+// newEventID generates the click event idempotency key (16 random bytes -> 32 hex chars).
+// used to deduplicate Kafka at-least-once redeliveries / degraded direct writes, avoiding double increments of click_count.
 func newEventID() string {
 	b := make([]byte, 16)
 	rand.Read(b)
 	return hex.EncodeToString(b)
 }
 
-// generateShortCode 生成6字节随机短码（12位十六进制，48bit 熵，
-// 约 1670 万条链接才达 50% 生日碰撞概率）
+// generateShortCode generates a 6-byte random short code (12 hex digits, 48 bits of entropy,
+// about 16.7 million links to reach a 50% birthday collision probability)
 func generateShortCode() string {
 	b := make([]byte, 6)
 	rand.Read(b)
 	return hex.EncodeToString(b)
 }
 
-// hashPassword 使用 bcrypt 哈希链接访问密码（bcrypt 上限 72 字节，超长自动截断）
+// hashPassword hashes the link access password with bcrypt (bcrypt caps at 72 bytes, longer input is truncated automatically)
 func hashPassword(pwd string) string {
 	if len(pwd) > 72 {
 		pwd = pwd[:72]
 	}
 	hash, err := bcrypt.GenerateFromPassword([]byte(pwd), bcrypt.DefaultCost)
 	if err != nil {
-		// bcrypt 失败极罕见（内部错误），退化为可验证的错误值
+		// bcrypt failure is extremely rare (internal error), degrade to a value that never verifies
 		return ""
 	}
 	return string(hash)
 }
 
-// checkPasswordHash 校验链接访问密码。
-// 新哈希为 bcrypt；兼容存量未加盐 SHA-256 十六进制哈希（64 位 hex）。
+// checkPasswordHash verifies the link access password.
+// new hashes are bcrypt; legacy unsalted SHA-256 hex hashes (64 hex digits) are still supported.
 func checkPasswordHash(password, hash string) bool {
 	if hash == "" {
 		return false
 	}
 	if len(hash) == 64 && isHexString(hash) {
-		// 存量 SHA-256 哈希，常数时间比较
+		// legacy SHA-256 hash, constant-time comparison
 		legacy := sha256Hex(password)
 		return hmac.Equal([]byte(legacy), []byte(hash))
 	}

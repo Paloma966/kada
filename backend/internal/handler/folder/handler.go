@@ -30,7 +30,7 @@ func (h *Handler) RegisterRoutes(r *gin.RouterGroup, authMW gin.HandlerFunc) {
 func (h *Handler) Create(c *gin.Context) {
 	var req domain.CreateFolderRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "请提供文件夹名称"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "folder name is required"})
 		return
 	}
 	f, err := h.svc.Create(c.Request.Context(), middleware.GetUserID(c), req)
@@ -53,12 +53,12 @@ func (h *Handler) List(c *gin.Context) {
 func (h *Handler) Update(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的ID"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid ID"})
 		return
 	}
 	var req domain.CreateFolderRequest
 	if bindErr := c.ShouldBindJSON(&req); bindErr != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "请提供文件夹名称"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "folder name is required"})
 		return
 	}
 	f, err := h.svc.Update(c.Request.Context(), middleware.GetUserID(c), id, req.Name)
@@ -72,12 +72,12 @@ func (h *Handler) Update(c *gin.Context) {
 func (h *Handler) Delete(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的ID"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid ID"})
 		return
 	}
 	if err := h.svc.Delete(c.Request.Context(), middleware.GetUserID(c), id); err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "文件夹已删除"})
+	c.JSON(http.StatusOK, gin.H{"message": "folder deleted"})
 }

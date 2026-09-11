@@ -31,7 +31,7 @@ func (h *Handler) RegisterRoutes(r *gin.RouterGroup, authMW gin.HandlerFunc) {
 func (h *Handler) Create(c *gin.Context) {
 	var req domain.CreateTagRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "请提供标签名称"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "tag name is required"})
 		return
 	}
 	t, err := h.svc.Create(c.Request.Context(), middleware.GetUserID(c), req)
@@ -54,34 +54,34 @@ func (h *Handler) List(c *gin.Context) {
 func (h *Handler) Delete(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的ID"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid ID"})
 		return
 	}
 	if err := h.svc.Delete(c.Request.Context(), middleware.GetUserID(c), id); err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "标签已删除"})
+	c.JSON(http.StatusOK, gin.H{"message": "tag deleted"})
 }
 
 func (h *Handler) AddTagToLink(c *gin.Context) {
 	linkID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的链接ID"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid link ID"})
 		return
 	}
 	var req struct {
 		TagID int64 `json:"tag_id" binding:"required"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "请提供标签ID"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "tag ID is required"})
 		return
 	}
 	if err := h.svc.AddTagToLink(c.Request.Context(), middleware.GetUserID(c), linkID, req.TagID); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "标签已添加"})
+	c.JSON(http.StatusOK, gin.H{"message": "tag added"})
 }
 
 func (h *Handler) RemoveTagFromLink(c *gin.Context) {
@@ -91,5 +91,5 @@ func (h *Handler) RemoveTagFromLink(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "标签已移除"})
+	c.JSON(http.StatusOK, gin.H{"message": "tag removed"})
 }

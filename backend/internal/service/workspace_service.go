@@ -21,16 +21,16 @@ func NewWorkspaceService(db *pgxpool.Pool) *WorkspaceService {
 	return &WorkspaceService{db: db}
 }
 
-// Create 创建工作区
+// Create creates a workspace
 func (s *WorkspaceService) Create(ctx context.Context, userID int64, req domain.CreateWorkspaceRequest) (*domain.Workspace, error) {
 	if !slugPattern.MatchString(req.Slug) {
-		return nil, errors.New("slug 格式无效：只允许小写字母、数字和连字符，长度3-50位")
+		return nil, errors.New("invalid slug format: only lowercase letters, digits and hyphens are allowed, length 3-50")
 	}
 
 	var exists bool
-	// 快速路径检查：失败时不做判断，最终由唯一约束仲裁
+	// fast-path check: on failure make no decision, the unique constraint is the final arbiter
 	if err := s.db.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM workspaces WHERE slug = $1)`, req.Slug).Scan(&exists); err == nil && exists {
-		return nil, errors.New("该 slug 已被占用")
+		return nil, errors.New("that slug is already taken")
 	}
 
 	var w domain.Workspace
@@ -42,13 +42,13 @@ func (s *WorkspaceService) Create(ctx context.Context, userID int64, req domain.
 		&w.ID, &w.Name, &w.Slug, &w.UserID, &w.CreatedAt, &w.UpdatedAt,
 	)
 	if err != nil {
-		return nil, errors.New("创建工作区失败")
+		return nil, errors.New("failed to create workspace")
 	}
 
 	return &w, nil
 }
 
-// List 获取用户的工作区列表
+// List gets the user's workspace list
 func (s *WorkspaceService) List(ctx context.Context, userID int64) ([]domain.Workspace, error) {
 	rows, err := s.db.Query(ctx, `
 		SELECT w.id, w.name, w.slug, w.user_id, w.created_at, w.updated_at,
@@ -58,7 +58,7 @@ func (s *WorkspaceService) List(ctx context.Context, userID int64) ([]domain.Wor
 		ORDER BY w.created_at DESC
 	`, userID)
 	if err != nil {
-		return nil, errors.New("查询工作区列表失败")
+		return nil, errors.New("failed to list workspaces")
 	}
 	defer rows.Close()
 
@@ -66,7 +66,7 @@ func (s *WorkspaceService) List(ctx context.Context, userID int64) ([]domain.Wor
 	for rows.Next() {
 		var w domain.Workspace
 		if err := rows.Scan(&w.ID, &w.Name, &w.Slug, &w.UserID, &w.CreatedAt, &w.UpdatedAt, &w.LinkCount); err != nil {
-			return nil, errors.New("查询工作区列表失败")
+			return nil, errors.New("failed to list workspaces")
 		}
 		workspaces = append(workspaces, w)
 	}
@@ -77,7 +77,7 @@ func (s *WorkspaceService) List(ctx context.Context, userID int64) ([]domain.Wor
 	return workspaces, nil
 }
 
-// GetByID 根据 ID 获取工作区
+// GetByID gets a workspace by ID
 func (s *WorkspaceService) GetByID(ctx context.Context, workspaceID, userID int64) (*domain.Workspace, error) {
 	var w domain.Workspace
 	err := s.db.QueryRow(ctx, `
@@ -89,22 +89,22 @@ func (s *WorkspaceService) GetByID(ctx context.Context, workspaceID, userID int6
 		&w.ID, &w.Name, &w.Slug, &w.UserID, &w.CreatedAt, &w.UpdatedAt, &w.LinkCount,
 	)
 	if err != nil {
-		return nil, errors.New("工作区不存在")
+		return nil, errors.New("workspace not found")
 	}
 
 	return &w, nil
 }
 
-// Update 更新工作区
+// Update updates a workspace
 func (s *WorkspaceService) Update(ctx context.Context, workspaceID, userID int64, req domain.UpdateWorkspaceRequest) (*domain.Workspace, error) {
 	if req.Slug != nil {
 		if !slugPattern.MatchString(*req.Slug) {
-			return nil, errors.New("slug 格式无效")
+			return nil, errors.New("invalid slug format")
 		}
 		var exists bool
-		// 快速路径检查：失败时不做判断，最终由唯一约束仲裁
+		// fast-path check: on failure make no decision, the unique constraint is the final arbiter
 		if err := s.db.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM workspaces WHERE slug = $1 AND id != $2)`, *req.Slug, workspaceID).Scan(&exists); err == nil && exists {
-			return nil, errors.New("该 slug 已被占用")
+			return nil, errors.New("that slug is already taken")
 		}
 	}
 
@@ -120,22 +120,22 @@ func (s *WorkspaceService) Update(ctx context.Context, workspaceID, userID int64
 		&w.ID, &w.Name, &w.Slug, &w.UserID, &w.CreatedAt, &w.UpdatedAt,
 	)
 	if err != nil {
-		return nil, errors.New("工作区不存在或无权限")
+		return nil, errors.New("workspace not found or access denied")
 	}
 
 	return &w, nil
 }
 
-// Delete 删除工作区
+// Delete deletes a workspace
 func (s *WorkspaceService) Delete(ctx context.Context, workspaceID, userID int64) error {
-	// 先取消关联链接
+	// unlink associated links first
 	if _, err := s.db.Exec(ctx, `UPDATE links SET workspace_id = NULL WHERE workspace_id = $1 AND user_id = $2`, workspaceID, userID); err != nil {
 		log.Printf("unlink workspace %d failed: %v", workspaceID, err)
 	}
 
 	_, err := s.db.Exec(ctx, `DELETE FROM workspaces WHERE id = $1 AND user_id = $2`, workspaceID, userID)
 	if err != nil {
-		return errors.New("删除工作区失败")
+		return errors.New("failed to delete workspace")
 	}
 	return nil
 }

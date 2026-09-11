@@ -13,7 +13,7 @@ import (
 	"github.com/chun/kada-backend/internal/domain"
 )
 
-// mockAuthService 用于 handler 测试
+// mockAuthService is used for handler tests.
 type mockAuthService struct {
 	sendSMSCode     func(ctx context.Context, phone string) error
 	loginByPhone    func(ctx context.Context, phone, code string) (*domain.AuthResponse, error)
@@ -125,8 +125,8 @@ func TestSendSMSCode_Success(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("unmarshal response failed: %v", err)
 	}
-	if resp["message"] != "验证码已发送" {
-		t.Errorf("expected message '验证码已发送', got %q", resp["message"])
+	if resp["message"] != "verification code sent" {
+		t.Errorf("expected message 'verification code sent', got %q", resp["message"])
 	}
 }
 
@@ -240,7 +240,7 @@ func TestRegisterByEmail_Validation(t *testing.T) {
 func TestGetMe_ReturnsUser(t *testing.T) {
 	h := NewHandler(&mockAuthService{})
 	r := setupTestRouter(h)
-	// 模拟已认证用户
+	// Simulate an authenticated user.
 	r.GET("/me", func(c *gin.Context) {
 		c.Set("user_id", int64(42))
 		c.Next()

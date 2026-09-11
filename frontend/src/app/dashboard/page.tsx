@@ -9,11 +9,13 @@ import { linksAPI, foldersAPI, tagsAPI, workspacesAPI } from "@/lib/api";
 import { getToken } from "@/lib/auth";
 import { LinkCard, LinkCardPlaceholder } from "@/components/LinkCard";
 import { LinksToolbar } from "@/components/LinksToolbar";
+import { useT } from "@/lib/i18n";
 import type { LinkItem } from "@/components/LinkCard";
 
 const PAGE_SIZE = 20;
 
 export default function DashboardPage() {
+  const t = useT();
   const token = getToken();
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
@@ -26,7 +28,7 @@ export default function DashboardPage() {
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [batchTagId, setBatchTagId] = useState<number>(0);
 
-  // 搜索防抖 300ms
+  // Debounce the search input by 300ms
   useEffect(() => {
     clearTimeout(searchTimer.current);
     searchTimer.current = setTimeout(() => {
@@ -69,7 +71,7 @@ export default function DashboardPage() {
       await linksAPI.delete(token, id);
       mutate();
     } catch {
-      toast.error("删除失败");
+      toast.error(t("删除失败"));
       throw new Error("Delete failed");
     }
   };
@@ -94,11 +96,13 @@ export default function DashboardPage() {
     if (!token || selectedIds.size === 0) return;
     try {
       await linksAPI.batchDelete(token, Array.from(selectedIds));
-      toast.success(`已删除 ${selectedIds.size} 条链接`);
+      toast.success(
+        t("已删除 ${selectedIds.size} 条链接").replace("${selectedIds.size}", String(selectedIds.size))
+      );
       setSelectedIds(new Set());
       mutate();
     } catch {
-      toast.error("批量删除失败");
+      toast.error(t("批量删除失败"));
     }
   };
 
@@ -114,9 +118,9 @@ export default function DashboardPage() {
       const a = document.createElement("a");
       a.href = url; a.download = "kada-links.csv"; a.click();
       URL.revokeObjectURL(url);
-      toast.success("导出成功");
+      toast.success(t("导出成功"));
     } catch {
-      toast.error("导出失败");
+      toast.error(t("导出失败"));
     }
   };
 
@@ -124,11 +128,13 @@ export default function DashboardPage() {
     if (!token || selectedIds.size === 0 || batchTagId === 0) return;
     try {
       await linksAPI.batchTag(token, Array.from(selectedIds), batchTagId);
-      toast.success(`已为 ${selectedIds.size} 条链接添加标签`);
+      toast.success(
+        t("已为 ${selectedIds.size} 条链接添加标签").replace("${selectedIds.size}", String(selectedIds.size))
+      );
       setBatchTagId(0);
       mutate();
     } catch {
-      toast.error("批量打标签失败");
+      toast.error(t("批量打标签失败"));
     }
   };
 
@@ -157,13 +163,13 @@ export default function DashboardPage() {
           <div className="flex size-16 items-center justify-center rounded-2xl bg-red-50 mb-4">
             <div className="text-3xl">😞</div>
           </div>
-          <h3 className="text-lg font-semibold text-gray-900">加载失败</h3>
-          <p className="mt-1 text-sm text-gray-500">请检查网络后重试</p>
+          <h3 className="text-lg font-semibold text-gray-900">{t("加载失败")}</h3>
+          <p className="mt-1 text-sm text-gray-500">{t("请检查网络后重试")}</p>
           <button
             onClick={() => mutate()}
             className="mt-4 text-sm font-medium text-indigo-600 hover:text-indigo-500"
           >
-            重新加载
+            {t("重新加载")}
           </button>
         </div>
       ) : isLoading ? (
@@ -178,12 +184,12 @@ export default function DashboardPage() {
             <Link2 className="size-8 text-gray-400" />
           </div>
           <h3 className="text-lg font-semibold text-gray-900">
-            {search ? "没有匹配的链接" : "创建你的第一个短链接"}
+            {search ? t("没有匹配的链接") : t("创建你的第一个短链接")}
           </h3>
           <p className="mt-1 text-sm text-gray-500 max-w-sm">
             {search
-              ? "换个关键词试试"
-              : "缩短、分享并追踪你的链接，兼容微信、QQ、小红书等平台"}
+              ? t("换个关键词试试")
+              : t("缩短、分享并追踪你的链接，兼容微信、QQ、小红书等平台")}
           </p>
           {!search && (
             <Link
@@ -191,7 +197,7 @@ export default function DashboardPage() {
               className="mt-5 inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-5 py-2.5 text-sm font-medium text-white hover:bg-indigo-700 transition shadow-sm"
             >
               <Plus className="size-4" />
-              创建链接
+              {t("创建链接")}
             </Link>
           )}
         </div>
@@ -206,10 +212,10 @@ export default function DashboardPage() {
                 onChange={handleSelectAll}
                 className="size-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
               />
-              全选
+              {t("全选")}
             </label>
             {selectedIds.size > 0 && (
-              <span className="text-xs text-gray-400">已选 {selectedIds.size} 条</span>
+              <span className="text-xs text-gray-400">{t("已选 {n} 条", { n: selectedIds.size })}</span>
             )}
           </div>
 
@@ -227,29 +233,29 @@ export default function DashboardPage() {
           {/* Batch action bar */}
           {selectedIds.size > 0 && (
             <div className="sticky bottom-0 flex items-center justify-between gap-3 rounded-xl bg-white border border-gray-200 shadow-lg p-4 mt-4">
-              <span className="text-sm font-medium text-gray-700">已选 {selectedIds.size} 条链接</span>
+              <span className="text-sm font-medium text-gray-700">{t("已选 {n} 条链接", { n: selectedIds.size })}</span>
               <div className="flex items-center gap-2">
                 <select
                   value={batchTagId}
                   onChange={(e) => setBatchTagId(Number(e.target.value))}
                   className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm text-gray-600 focus:border-indigo-300 focus:outline-none bg-white"
                 >
-                  <option value={0}>添加标签...</option>
-                  {tags.map((t: { id: number; name: string }) => (
-                    <option key={t.id} value={t.id}>{t.name}</option>
+                  <option value={0}>{t("添加标签...")}</option>
+                  {tags.map((tag: { id: number; name: string }) => (
+                    <option key={tag.id} value={tag.id}>{tag.name}</option>
                   ))}
                 </select>
                 <button onClick={handleBatchTag} disabled={batchTagId === 0}
                   className="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed transition">
-                  批量打标签
+                  {t("批量打标签")}
                 </button>
                 <button onClick={handleBatchDelete}
                   className="rounded-lg bg-red-50 px-3 py-1.5 text-sm font-medium text-red-600 hover:bg-red-100 transition">
-                  批量删除
+                  {t("批量删除")}
                 </button>
                 <button onClick={() => setSelectedIds(new Set())}
                   className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm text-gray-500 hover:bg-gray-50 transition">
-                  取消选择
+                  {t("取消选择")}
                 </button>
               </div>
             </div>
@@ -262,7 +268,7 @@ export default function DashboardPage() {
                 disabled={page === 1}
                 className="px-3 py-1.5 text-sm rounded-lg border border-gray-200 bg-white hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition"
               >
-                上一页
+                {t("上一页")}
               </button>
 
               {generatePageNumbers(page, totalPages).map((p, i) =>
@@ -288,7 +294,7 @@ export default function DashboardPage() {
                 disabled={page >= totalPages}
                 className="px-3 py-1.5 text-sm rounded-lg border border-gray-200 bg-white hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition"
               >
-                下一页
+                {t("下一页")}
               </button>
             </div>
           )}

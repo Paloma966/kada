@@ -55,7 +55,7 @@ export default function StarfieldCanvas({ className }: { className?: string }) {
 
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 
-    // ---- 远端星星：包围相机的大壳层，缓慢自转 ----
+    // ---- Far stars: large shell enclosing the camera, slowly rotating ----
     const far = buildStarLayer({ count: 1500, minR: 45, maxR: 140, seed: 101 });
     const farGeo = new THREE.BufferGeometry();
     farGeo.setAttribute("position", new THREE.BufferAttribute(far.positions, 3));
@@ -76,7 +76,7 @@ export default function StarfieldCanvas({ className }: { className?: string }) {
     farGroup.add(farPoints);
     scene.add(farGroup);
 
-    // ---- 近端星星：更靠前，视差更明显 ----
+    // ---- Near stars: closer to the camera, stronger parallax ----
     const near = buildStarLayer({ count: 240, minR: 12, maxR: 34, seed: 202 });
     const nearGeo = new THREE.BufferGeometry();
     nearGeo.setAttribute("position", new THREE.BufferAttribute(near.positions, 3));
@@ -93,7 +93,7 @@ export default function StarfieldCanvas({ className }: { className?: string }) {
     const nearPoints = new THREE.Points(nearGeo, nearMat);
     scene.add(nearPoints);
 
-    // ---- 蛇夫座星座：星点 + 辉光精灵 + 连线 ----
+    // ---- Ophiuchus constellation: star points + glow sprites + connecting lines ----
     const constellation = new THREE.Group();
     const oph = buildOphiuchus(45, 1.5);
     const starPos = new Float32Array(oph.positions.length * 3);
@@ -158,7 +158,7 @@ export default function StarfieldCanvas({ className }: { className?: string }) {
     constellation.add(lines);
     scene.add(constellation);
 
-    // ---- 背景星云辉光 ----
+    // ---- Background nebula glow ----
     const nebulaTex = makeGlowTexture("rgba(79,70,229,0.28)");
     const nebula = new THREE.Sprite(
       new THREE.SpriteMaterial({
@@ -187,7 +187,7 @@ export default function StarfieldCanvas({ className }: { className?: string }) {
     nebula2.scale.setScalar(46);
     scene.add(nebula2);
 
-    // ---- 鼠标视差 ----
+    // ---- Mouse parallax ----
     let targetX = 0;
     let targetY = 0;
     let curX = 0;
@@ -209,7 +209,7 @@ export default function StarfieldCanvas({ className }: { className?: string }) {
     resize();
     window.addEventListener("resize", resize);
 
-    // ---- 动画循环 ----
+    // ---- Animation loop ----
     const clock = new THREE.Clock();
     let raf = 0;
     const tick = () => {
@@ -230,7 +230,7 @@ export default function StarfieldCanvas({ className }: { className?: string }) {
     };
 
     if (reduced) {
-      renderer.render(scene, camera); // 静态一帧
+      renderer.render(scene, camera); // single static frame
     } else {
       raf = requestAnimationFrame(tick);
     }

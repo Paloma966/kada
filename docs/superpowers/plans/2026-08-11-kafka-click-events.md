@@ -1,28 +1,28 @@
-# Kafka 点击事件流 实现计划
+# Kafka Click Event Stream Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 把短链点击日志解耦成 Kafka 异步消息流：`LinkService.LogClick` 发布 `click.event` 到 Kafka，独立 `cmd/worker` 消费落库；Kafka 不可用自动回退直写。
+**Goal:** Decouple short-link click logging into an asynchronous Kafka message stream: `LinkService.LogClick` publishes `click.event` to Kafka, and a standalone `cmd/worker` consumes and persists it; when Kafka is unavailable it automatically falls back to a direct write.
 
-**Architecture:** 新增 `internal/mq`（ClickEvent + ClickPublisher 接口 + segmentio/kafka-go 实现）、`internal/service/click_store.go`（直写逻辑，生产回退与 worker 共用）、`cmd/worker`（消费者）。`LinkService.LogClick` 改为「发 Kafka → 失败回退直写」，handler 签名不变（`go LogClick` 保持 goroutine 不阻塞请求）。docker-compose 加 Kafka broker + worker 服务。
+**Architecture:** Add `internal/mq` (ClickEvent + ClickPublisher interface + a segmentio/kafka-go implementation), `internal/service/click_store.go` (the direct-write logic shared by the production fallback and the worker), and `cmd/worker` (the consumer). `LinkService.LogClick` becomes "publish to Kafka → fall back to a direct write on failure"; the handler signature is unchanged (`go LogClick` keeps a goroutine so the request is not blocked). docker-compose gains a Kafka broker + worker service.
 
-**Tech Stack:** Go 1.26, gin, pgx/v5, segmentio/kafka-go（纯 Go，无 CGO）。
+**Tech Stack:** Go 1.26, gin, pgx/v5, segmentio/kafka-go (pure Go, no CGO).
 
 **Spec:** `docs/superpowers/specs/2026-08-11-kafka-click-events-design.md`
 
 ## Global Constraints
 
-- 后端验证命令（在 `backend/` 下）：`go build ./...`、`go test ./...`、`go vet ./...` 必须通过。前端不动。
-- 数据层保持 pgx，**不引入 GORM / gRPC**（用户已确认砍掉）。
-- `LogClick` 的对外签名与行为契约不变：void、fire-and-forget、绝不阻塞/破坏重定向路径。
-- `KafkaBrokers` 为空 → Kafka 完全禁用 → 走直写（默认安全态）。
-- 简历卖点（实现必须保住）：生产/消费解耦、Kafka 故障自动降级直写、worker 独立进程。
-- 遵循现有代码风格（中文注释、服务分层、接口注入便于测试）。
-- CI：`.github/workflows/ci.yml` 有 `backend-lint`（golangci-lint）与 `backend-test`。改动文件必须过 `golangci-lint` 检查（本地跑 `golangci-lint run` 验证）。
+- Backend verification commands (under `backend/`): `go build ./...`, `go test ./...`, `go vet ./...` must pass. The frontend is untouched.
+- Keep the data layer on pgx; **do not introduce GORM / gRPC** (the user has already confirmed these are cut).
+- `LogClick`'s public signature and behavioral contract are unchanged: void, fire-and-forget, never blocking or breaking the redirect path.
+- Empty `KafkaBrokers` → Kafka fully disabled → direct write is used (the default safe state).
+- Resume talking points (the implementation must preserve these): producer/consumer decoupling, automatic degradation to a direct write when Kafka fails, worker as a separate process.
+- Follow the existing code style (Chinese comments, service layering, interface injection for testability).
+- CI: `.github/workflows/ci.yml` has `backend-lint` (golangci-lint) and `backend-test`. Changed files must pass `golangci-lint` (verify locally with `golangci-lint run`).
 
 ---
 
-### Task 1: `internal/mq` — ClickEvent + Kafka 发布者（TDD）
+### Task 1: `internal/mq` — ClickEvent + Kafka publisher (TDD)
 
 **Files:**
 - Create: `backend/internal/mq/click.go`
@@ -31,13 +31,13 @@
 **Interfaces:**
 - Consumes: `github.com/segmentio/kafka-go`
 - Produces:
-  - `type ClickEvent struct { LinkID int64; IP string; UserAgent string; Platform string; Referer string; CreatedAt time.Time }`（json 标签小写）
+  - `type ClickEvent struct { LinkID int64; IP string; UserAgent string; Platform string; Referer string; CreatedAt time.Time }` (lowercase json tags)
   - `type ClickPublisher interface { PublishClick(ctx context.Context, e ClickEvent) error }`
-  - `NewKafkaClickPublisher(brokers []string, topic string) *KafkaClickPublisher` — brokers 为空返回 nil
-  - `(*KafkaClickPublisher).PublishClick(ctx, e) error` — JSON 序列化后写 topic
+  - `NewKafkaClickPublisher(brokers []string, topic string) *KafkaClickPublisher` — returns nil when brokers is empty
+  - `(*KafkaClickPublisher).PublishClick(ctx, e) error` — writes to the topic after JSON serialization
   - `(*KafkaClickPublisher).Close() error`
 
-- [ ] **Step 1: 加依赖**
+- [ ] **Step 1: Add the dependency**
 
 ```bash
 cd backend
@@ -46,9 +46,9 @@ go mod tidy
 go build ./...
 ```
 
-Expected: 编译通过，go.mod 出现 kafka-go。
+Expected: compiles successfully, kafka-go appears in go.mod.
 
-- [ ] **Step 2: 写失败测试**
+- [ ] **Step 2: Write a failing test**
 
 Create `backend/internal/mq/click_test.go`:
 
@@ -121,13 +121,13 @@ func TestKafkaClickPublisher_PublishClickWritesJSON(t *testing.T) {
 }
 ```
 
-- [ ] **Step 3: 运行测试确认失败**
+- [ ] **Step 3: Run the test and confirm it fails**
 
 Run: `cd backend && go test ./internal/mq/ -run TestClickEvent -count=1`
 
-Expected: FAIL — `cannot find package` 或 `undefined: ClickEvent`。
+Expected: FAIL — `cannot find package` or `undefined: ClickEvent`.
 
-- [ ] **Step 4: 实现**
+- [ ] **Step 4: Implement**
 
 Create `backend/internal/mq/click.go`:
 
@@ -143,7 +143,7 @@ import (
 	"github.com/segmentio/kafka-go"
 )
 
-// ClickEvent 短链点击事件（生产/消费共用的消息载荷）
+// ClickEvent is a short-link click event (the message payload shared by producer and consumer)
 type ClickEvent struct {
 	LinkID    int64     `json:"link_id"`
 	IP        string    `json:"ip"`
@@ -153,22 +153,22 @@ type ClickEvent struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
-// ClickPublisher 发布点击事件（生产端接口，便于测试 mock 与降级）
+// ClickPublisher publishes click events (producer-side interface, for test mocks and fallback)
 type ClickPublisher interface {
 	PublishClick(ctx context.Context, e ClickEvent) error
 }
 
-// messageWriter 收窄 kafka.Writer 的写接口，便于单测注入 fake
+// messageWriter narrows kafka.Writer's write interface so unit tests can inject a fake
 type messageWriter interface {
 	WriteMessages(ctx context.Context, msgs ...kafka.Message) error
 }
 
-// KafkaClickPublisher 基于 segmentio/kafka-go 的实现
+// KafkaClickPublisher is the segmentio/kafka-go based implementation
 type KafkaClickPublisher struct {
 	writer messageWriter
 }
 
-// NewKafkaClickPublisher 构造发布者；brokers 为空时返回 nil（表示 Kafka 禁用）
+// NewKafkaClickPublisher constructs a publisher; returns nil when brokers is empty (meaning Kafka is disabled)
 func NewKafkaClickPublisher(brokers []string, topic string) *KafkaClickPublisher {
 	var valid []string
 	for _, b := range brokers {
@@ -189,7 +189,7 @@ func NewKafkaClickPublisher(brokers []string, topic string) *KafkaClickPublisher
 	}
 }
 
-// PublishClick 序列化 ClickEvent 并写入 topic
+// PublishClick serializes the ClickEvent and writes it to the topic
 func (p *KafkaClickPublisher) PublishClick(ctx context.Context, e ClickEvent) error {
 	b, err := json.Marshal(e)
 	if err != nil {
@@ -198,7 +198,7 @@ func (p *KafkaClickPublisher) PublishClick(ctx context.Context, e ClickEvent) er
 	return p.writer.WriteMessages(ctx, kafka.Message{Value: b})
 }
 
-// Close 关闭底层 writer
+// Close closes the underlying writer
 func (p *KafkaClickPublisher) Close() error {
 	if w, ok := p.writer.(*kafka.Writer); ok {
 		return w.Close()
@@ -207,19 +207,19 @@ func (p *KafkaClickPublisher) Close() error {
 }
 ```
 
-- [ ] **Step 5: 运行测试确认通过**
+- [ ] **Step 5: Run the test and confirm it passes**
 
 Run: `cd backend && go test ./internal/mq/ -count=1`
 
-Expected: PASS，3 个测试全过。
+Expected: PASS, all 3 tests pass.
 
 - [ ] **Step 6: lint + vet**
 
 Run: `cd backend && go vet ./internal/mq/ && golangci-lint run ./internal/mq/... 2>/dev/null || echo "(golangci-lint not available locally, vet passed)"`
 
-Expected: vet 通过；若本机无 golangci-lint 则跳过（CI 会跑）。
+Expected: vet passes; if golangci-lint is not installed locally, skip it (CI will run it).
 
-- [ ] **Step 7: 提交**
+- [ ] **Step 7: Commit**
 
 ```bash
 git add go.mod go.sum internal/mq/
@@ -228,7 +228,7 @@ git commit -m "feat: click event model and kafka publisher (segmentio/kafka-go)"
 
 ---
 
-### Task 2: ClickStore + LinkService 接入 Kafka + config（TDD）
+### Task 2: ClickStore + LinkService wired into Kafka + config (TDD)
 
 **Files:**
 - Create: `backend/internal/service/click_store.go`
@@ -238,14 +238,14 @@ git commit -m "feat: click event model and kafka publisher (segmentio/kafka-go)"
 - Modify: `backend/cmd/server/main.go`
 
 **Interfaces:**
-- Consumes: `mq.ClickPublisher`（Task 1）、`mq.ClickEvent`
+- Consumes: `mq.ClickPublisher` (Task 1), `mq.ClickEvent`
 - Produces:
   - `type ClickWriter interface { WriteClick(ctx context.Context, linkID int64, ip, userAgent, platform, referer string) error }`
-  - `type ClickStore struct{ db *pgxpool.Pool }`；`NewClickStore(db *pgxpool.Pool) *ClickStore`；`(*ClickStore).WriteClick(...)` 满足 `ClickWriter`
-  - `service.NewLinkService(db *pgxpool.Pool, baseURL string, cache *CacheService, kafka mq.ClickPublisher, clickWriter ClickWriter) *LinkService`（**签名变化**）
-  - `config.Config` 加字段 `KafkaBrokers`、`KafkaTopic` 与方法 `Brokers() []string`
+  - `type ClickStore struct{ db *pgxpool.Pool }`; `NewClickStore(db *pgxpool.Pool) *ClickStore`; `(*ClickStore).WriteClick(...)` satisfies `ClickWriter`
+  - `service.NewLinkService(db *pgxpool.Pool, baseURL string, cache *CacheService, kafka mq.ClickPublisher, clickWriter ClickWriter) *LinkService` (**signature change**)
+  - `config.Config` gains the fields `KafkaBrokers` and `KafkaTopic`, plus the method `Brokers() []string`
 
-- [ ] **Step 1: 写失败测试**
+- [ ] **Step 1: Write a failing test**
 
 Create `backend/internal/service/click_store_test.go`:
 
@@ -311,15 +311,15 @@ type assertErr string
 func (e assertErr) Error() string { return string(e) }
 ```
 
-Note: 这些测试直接构造 `LinkService` 字面量（字段 `kafka`、`clickWriter` 可见），**不需要 DB**。
+Note: these tests construct a `LinkService` literal directly (the fields `kafka` and `clickWriter` are visible), so **no DB is needed**.
 
-- [ ] **Step 2: 运行测试确认失败**
+- [ ] **Step 2: Run the test and confirm it fails**
 
 Run: `cd backend && go test ./internal/service/ -run TestLogClick -count=1`
 
-Expected: FAIL — `unknown field 'kafka' in struct literal`。
+Expected: FAIL — `unknown field 'kafka' in struct literal`.
 
-- [ ] **Step 3: 实现 ClickStore**
+- [ ] **Step 3: Implement ClickStore**
 
 Create `backend/internal/service/click_store.go`:
 
@@ -332,12 +332,12 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// ClickWriter 直写点击日志（生产降级回退与 worker 消费共用）
+// ClickWriter writes click logs directly (shared by the production fallback and worker consumption)
 type ClickWriter interface {
 	WriteClick(ctx context.Context, linkID int64, ip, userAgent, platform, referer string) error
 }
 
-// ClickStore pgx 实现的 ClickWriter
+// ClickStore is the pgx implementation of ClickWriter
 type ClickStore struct {
 	db *pgxpool.Pool
 }
@@ -346,7 +346,7 @@ func NewClickStore(db *pgxpool.Pool) *ClickStore {
 	return &ClickStore{db: db}
 }
 
-// WriteClick 事务内：插入点击日志 + 累加计数
+// WriteClick inside a transaction: insert the click log + increment the counter
 func (s *ClickStore) WriteClick(ctx context.Context, linkID int64, ip, userAgent, platform, referer string) error {
 	tx, err := s.db.Begin(ctx)
 	if err != nil {
@@ -369,29 +369,29 @@ func (s *ClickStore) WriteClick(ctx context.Context, linkID int64, ip, userAgent
 }
 ```
 
-- [ ] **Step 4: 改造 link_service.go**
+- [ ] **Step 4: Rework link_service.go**
 
-在 `backend/internal/service/link_service.go`：
+In `backend/internal/service/link_service.go`:
 
-(1) 文件顶部 import 增加：
+(1) Add to the imports at the top of the file:
 
 ```go
 "github.com/chun/kada-backend/internal/mq"
 ```
 
-(2) `LinkService` 结构体增加两个字段：
+(2) Add two fields to the `LinkService` struct:
 
 ```go
 type LinkService struct {
 	db         *pgxpool.Pool
 	baseURL    string
 	cache      *CacheService
-	kafka      mq.ClickPublisher // Kafka 发布者；nil 表示禁用
-	clickWriter ClickWriter      // 直写（降级回退用）
+	kafka      mq.ClickPublisher // Kafka publisher; nil means disabled
+	clickWriter ClickWriter      // direct write (used for fallback)
 }
 ```
 
-(3) 构造器签名与赋值：
+(3) Constructor signature and assignments:
 
 ```go
 func NewLinkService(db *pgxpool.Pool, baseURL string, cache *CacheService, kafka mq.ClickPublisher, clickWriter ClickWriter) *LinkService {
@@ -399,10 +399,10 @@ func NewLinkService(db *pgxpool.Pool, baseURL string, cache *CacheService, kafka
 }
 ```
 
-(4) `LogClick` 改写为「发 Kafka → 失败回退直写」：
+(4) Rewrite `LogClick` as "publish to Kafka → fall back to a direct write on failure":
 
 ```go
-// LogClick 发布点击事件到 Kafka；Kafka 不可用时回退直写，保证点击不丢
+// LogClick publishes the click event to Kafka; falls back to a direct write when Kafka is unavailable, so clicks are not lost
 func (s *LinkService) LogClick(ctx context.Context, linkID int64, ip, userAgent, platform, referer string) {
 	if s.kafka != nil {
 		err := s.kafka.PublishClick(ctx, mq.ClickEvent{
@@ -416,7 +416,7 @@ func (s *LinkService) LogClick(ctx context.Context, linkID int64, ip, userAgent,
 		if err == nil {
 			return
 		}
-		// Kafka 失败 → 落到直写
+		// Kafka failed → fall through to the direct write
 	}
 	if s.clickWriter != nil {
 		_ = s.clickWriter.WriteClick(ctx, linkID, ip, userAgent, platform, referer)
@@ -424,31 +424,31 @@ func (s *LinkService) LogClick(ctx context.Context, linkID int64, ip, userAgent,
 }
 ```
 
-（确认 link_service.go 已 import `time`；若没有则补。）
+(Confirm that link_service.go already imports `time`; add it if not.)
 
-- [ ] **Step 5: config 增加 Kafka 配置**
+- [ ] **Step 5: Add Kafka config**
 
-`backend/config/config.go`：
+`backend/config/config.go`:
 
-(1) 结构体加字段：
+(1) Add fields to the struct:
 
 ```go
-	// Kafka（点击事件流；空 = 禁用）
+	// Kafka (click event stream; empty = disabled)
 	KafkaBrokers string
 	KafkaTopic   string
 ```
 
-(2) `Load()` 里加：
+(2) Add to `Load()`:
 
 ```go
 		KafkaBrokers:      getEnv("KAFKA_BROKERS", ""),
 		KafkaTopic:        getEnv("KAFKA_TOPIC", "clicks"),
 ```
 
-(3) 加方法（文件顶部 import `strings`）：
+(3) Add the method (import `strings` at the top of the file):
 
 ```go
-// Brokers 拆分逗号分隔的 broker 列表，去空白与空项
+// Brokers splits the comma-separated broker list, trimming whitespace and empty entries
 func (c *Config) Brokers() []string {
 	var out []string
 	for _, b := range strings.Split(c.KafkaBrokers, ",") {
@@ -460,25 +460,25 @@ func (c *Config) Brokers() []string {
 }
 ```
 
-- [ ] **Step 6: main.go 装配**
+- [ ] **Step 6: Wire up main.go**
 
-`backend/cmd/server/main.go`：
+`backend/cmd/server/main.go`:
 
 ```go
-	// Kafka 点击事件发布者（无 broker 时返回 nil = 禁用）
+	// Kafka click event publisher (returns nil when there are no brokers = disabled)
 	kafkaPub := mq.NewKafkaClickPublisher(cfg.Brokers(), cfg.KafkaTopic)
 	linkSvc := service.NewLinkService(db, cfg.BaseURL, cacheSvc, kafkaPub, service.NewClickStore(db))
 ```
 
-并在 import 里加 `"github.com/chun/kada-backend/internal/mq"`（若未在 Task 1 的 mq 使用处引入——main.go 本就不引用，需新增）。
+Also add `"github.com/chun/kada-backend/internal/mq"` to the imports (introduce it if Task 1's mq usage did not already — main.go does not reference it yet, so it is a new import).
 
-- [ ] **Step 7: 全量测试 + build + vet**
+- [ ] **Step 7: Full test + build + vet**
 
 Run: `cd backend && go test ./... -count=1 && go build ./... && go vet ./...`
 
-Expected: 全部 PASS（含既有测试）；build/vet 通过。
+Expected: everything PASSES (including the existing tests); build/vet pass.
 
-- [ ] **Step 8: 提交**
+- [ ] **Step 8: Commit**
 
 ```bash
 git add internal/service/click_store.go internal/service/click_store_test.go internal/service/link_service.go config/config.go cmd/server/main.go
@@ -487,17 +487,17 @@ git commit -m "feat: route click logging through kafka publisher with direct-wri
 
 ---
 
-### Task 3: `cmd/worker` — Kafka 消费者（TDD）
+### Task 3: `cmd/worker` — Kafka consumer (TDD)
 
 **Files:**
 - Create: `backend/cmd/worker/main.go`
 - Test: `backend/cmd/worker/main_test.go`
 
 **Interfaces:**
-- Consumes: `service.ClickWriter`、`service.NewClickStore`、`infra.NewDB`、`mq.ClickEvent`
-- Produces: `processClickMessage(msg []byte, writer service.ClickWriter) error`（可测）；`main()` 编排 reader 循环
+- Consumes: `service.ClickWriter`, `service.NewClickStore`, `infra.NewDB`, `mq.ClickEvent`
+- Produces: `processClickMessage(msg []byte, writer service.ClickWriter) error` (testable); `main()` orchestrates the reader loop
 
-- [ ] **Step 1: 写失败测试**
+- [ ] **Step 1: Write a failing test**
 
 Create `backend/cmd/worker/main_test.go`:
 
@@ -545,13 +545,13 @@ func TestProcessClickMessage_InvalidJSON(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [ ] **Step 2: Run the test and confirm it fails**
 
 Run: `cd backend && go test ./cmd/worker/ -count=1`
 
-Expected: FAIL — `undefined: processClickMessage`。
+Expected: FAIL — `undefined: processClickMessage`.
 
-- [ ] **Step 3: 实现**
+- [ ] **Step 3: Implement**
 
 Create `backend/cmd/worker/main.go`:
 
@@ -574,7 +574,7 @@ import (
 	"github.com/chun/kada-backend/internal/service"
 )
 
-// processClickMessage 反序列化并落库一条点击消息
+// processClickMessage deserializes one click message and persists it
 func processClickMessage(msg []byte, writer service.ClickWriter) error {
 	var e mq.ClickEvent
 	if err := json.Unmarshal(msg, &e); err != nil {
@@ -632,19 +632,19 @@ func main() {
 }
 ```
 
-- [ ] **Step 4: 运行测试确认通过**
+- [ ] **Step 4: Run the test and confirm it passes**
 
 Run: `cd backend && go test ./cmd/worker/ -count=1`
 
-Expected: PASS。
+Expected: PASS.
 
 - [ ] **Step 5: build + vet + lint**
 
 Run: `cd backend && go build ./... && go vet ./...`
 
-Expected: 通过。
+Expected: passes.
 
-- [ ] **Step 6: 提交**
+- [ ] **Step 6: Commit**
 
 ```bash
 git add cmd/worker/
@@ -653,36 +653,36 @@ git commit -m "feat: kafka click consumer worker"
 
 ---
 
-### Task 4: Docker + compose + env 接入
+### Task 4: Docker + compose + env wiring
 
 **Files:**
 - Modify: `backend/Dockerfile`
-- Modify: `docker-compose.yml`（仓库根目录）
+- Modify: `docker-compose.yml` (repository root)
 - Modify: `.env.example`
 
 **Interfaces:**
-- Consumes: `cmd/worker`（Task 3 的 `/worker` 二进制）
-- Produces: `docker compose config` 可解析；`kafka` 与 `kafka-worker` 服务就绪
+- Consumes: `cmd/worker` (the `/worker` binary from Task 3)
+- Produces: `docker compose config` parses; the `kafka` and `kafka-worker` services are ready
 
-- [ ] **Step 1: Dockerfile 构建两个二进制**
+- [ ] **Step 1: Build two binaries in the Dockerfile**
 
-`backend/Dockerfile` builder 阶段：
+`backend/Dockerfile` builder stage:
 
 ```dockerfile
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /server ./cmd/server/ \
  && CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /worker ./cmd/worker/
 ```
 
-runtime 阶段：
+runtime stage:
 
 ```dockerfile
 COPY --from=builder /server /server
 COPY --from=builder /worker /worker
 ```
 
-- [ ] **Step 2: docker-compose 加 kafka 与 kafka-worker**
+- [ ] **Step 2: Add kafka and kafka-worker to docker-compose**
 
-在 `docker-compose.yml` 的 `services:` 下新增：
+Add the following under `services:` in `docker-compose.yml`:
 
 ```yaml
   kafka:
@@ -722,36 +722,36 @@ COPY --from=builder /worker /worker
     restart: unless-stopped
 ```
 
-并给 `backend` 服务的 `environment:` 增加：
+And add the following to the `backend` service's `environment:`:
 
 ```yaml
       KAFKA_BROKERS: kafka:9092
       KAFKA_TOPIC: clicks
 ```
 
-- [ ] **Step 3: .env.example 补说明**
+- [ ] **Step 3: Add notes to .env.example**
 
-追加：
+Append:
 
 ```bash
-# ========== Kafka（点击事件流） ==========
-# 逗号分隔 broker；留空 = 禁用 Kafka，点击直写数据库
+# ========== Kafka (click event stream) ==========
+# Comma-separated brokers; leave empty = disable Kafka and write clicks directly to the database
 KAFKA_BROKERS=localhost:9092
 KAFKA_TOPIC=clicks
 ```
 
-- [ ] **Step 4: 验证**
+- [ ] **Step 4: Verification**
 
 ```bash
 cd /home/chun/dev/projects/kada && docker compose config --quiet && echo "compose OK"
 cd backend && go build ./...
 ```
 
-Expected: compose 解析成功；backend 构建通过。
+Expected: compose parses successfully; backend builds.
 
-（可选端到端，需要 docker：`docker compose up -d kafka` 后起 backend + worker，访问 `/r/:code` 触发点击，worker 日志应显示消费。）
+(Optional end-to-end, requires docker: after `docker compose up -d kafka`, start backend + worker, visit `/r/:code` to trigger a click, and the worker log should show consumption.)
 
-- [ ] **Step 5: 提交**
+- [ ] **Step 5: Commit**
 
 ```bash
 git add backend/Dockerfile docker-compose.yml .env.example
@@ -760,8 +760,8 @@ git commit -m "feat: kafka broker + click worker in docker compose"
 
 ---
 
-## 自检记录
+## Self-check record
 
-- **Spec 覆盖**：ClickEvent/publisher（Task 1）、ClickStore + LogClick 生产回退（Task 2）、config 禁用态（Task 2）、worker 消费（Task 3）、docker/worker 部署（Task 4）、降级直写（Task 2 测试覆盖）、测试与简历卖点（各 Task）。
-- **占位符扫描**：无 TBD/TODO；代码完整。
-- **类型一致性**：`mq.ClickPublisher` / `mq.ClickEvent` / `NewKafkaClickPublisher` / `ClickWriter` / `NewClickStore` / `WriteClick` / `NewLinkService` 新签名 / `Config.Brokers` 在 Task 1-2 定义、Task 2-4 消费，签名一致；`cmd/worker` 消费 `service.ClickWriter` 与 `mq.ClickEvent`。
+- **Spec coverage**: ClickEvent/publisher (Task 1), ClickStore + LogClick production fallback (Task 2), config disabled state (Task 2), worker consumption (Task 3), docker/worker deployment (Task 4), degradation to a direct write (covered by Task 2 tests), tests and resume talking points (each task).
+- **Placeholder scan**: no TBD/TODO; the code is complete.
+- **Type consistency**: `mq.ClickPublisher` / `mq.ClickEvent` / `NewKafkaClickPublisher` / `ClickWriter` / `NewClickStore` / `WriteClick` / the new `NewLinkService` signature / `Config.Brokers` are defined in Tasks 1-2 and consumed in Tasks 2-4, with matching signatures; `cmd/worker` consumes `service.ClickWriter` and `mq.ClickEvent`.

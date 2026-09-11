@@ -1,28 +1,28 @@
-# 登录/注册页星空背景 + 手机号注册 实现计划
+# Login/Register Pages Starfield Background + Phone Registration Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 让登录/注册页套用首页的 3D 星空背景（透明玻璃卡片），并给注册页增加手机号注册入口（手机号+验证码+昵称）。
+**Goal:** Make the login/register pages adopt the homepage's 3D starfield background (transparent glass card), and add a phone registration entry point to the register page (phone number + verification code + nickname).
 
-**Architecture:** 复用首页的 `StarfieldCanvas` + `bg-deep-space`。AuthCard 是登录/注册共用的外壳，改成星空背景 + 透明玻璃卡片即可两页同时生效；表单组件（FormField/PasswordInput）同步改暗色。手机号注册复用现有后端 `login-by-phone`（自动注册）+ `PATCH /me`（写昵称），**后端零改动**。
+**Architecture:** Reuse the homepage's `StarfieldCanvas` + `bg-deep-space`. AuthCard is the shell shared by login/register, so changing it to a starfield background + transparent glass card makes both pages take effect at once; the form components (FormField/PasswordInput) are switched to dark at the same time. Phone registration reuses the existing backend `login-by-phone` (auto-registration) + `PATCH /me` (to write the nickname), with **zero backend changes**.
 
-**Tech Stack:** Next.js 16, React 19, Tailwind v4, Three.js（已装），lucide-react。
+**Tech Stack:** Next.js 16, React 19, Tailwind v4, Three.js (already installed), lucide-react.
 
 **Spec:** `docs/superpowers/specs/2026-08-10-auth-starfield-phone-register-design.md`
 
 ## Global Constraints
 
-- 定制版 Next.js（见 `frontend/AGENTS.md`）：写 React/Next 代码前先读 `frontend/node_modules/next/dist/docs/01-app/03-api-reference/01-directives/use-client.md`。
-- 客户端组件顶部声明 `"use client"`（auth 页均为客户端组件）。
-- 验证：`npm run build` MUST pass；`npm run test`（现有 18 项）必须仍通过。**不要**全仓 `npm run lint`（`src/app/dashboard/*` 有既有失败，非本功能引入）。
-- 不引入外部字体；深空主题 `bg-deep-space`；品牌 indigo `#4f46e5`。
-- 后端零改动（回归确认：`cd backend && go test ./...` 可选）。
-- AuthCard/FormField/PasswordInput 仅被 login/register 使用（已验证），可安全改为暗色。
-- 透明玻璃卡片样式：`rounded-xl border border-white/10 bg-white/[0.04] p-6 backdrop-blur-lg sm:p-8`。
+- Customized Next.js (see `frontend/AGENTS.md`): before writing React/Next code, read `frontend/node_modules/next/dist/docs/01-app/03-api-reference/01-directives/use-client.md`.
+- Declare `"use client"` at the top of client components (the auth pages are all client components).
+- Verification: `npm run build` MUST pass; `npm run test` (the existing 18 cases) must still pass. Do **not** run repo-wide `npm run lint` (`src/app/dashboard/*` has pre-existing failures, not introduced by this feature).
+- Do not introduce external fonts; the deep space theme is `bg-deep-space`; the brand indigo is `#4f46e5`.
+- Zero backend changes (regression check: `cd backend && go test ./...` optional).
+- AuthCard/FormField/PasswordInput are used only by login/register (already verified), so they can safely be changed to dark.
+- Transparent glass card style: `rounded-xl border border-white/10 bg-white/[0.04] p-6 backdrop-blur-lg sm:p-8`.
 
 ---
 
-### Task 1: 认证组件改暗色 + 星空背景（AuthCard / FormField / PasswordInput）
+### Task 1: Switch Auth Components to Dark + Starfield Background (AuthCard / FormField / PasswordInput)
 
 **Files:**
 - Modify: `frontend/src/components/auth/AuthCard.tsx`
@@ -30,16 +30,16 @@
 - Modify: `frontend/src/components/auth/PasswordInput.tsx`
 
 **Interfaces:**
-- Consumes: `StarfieldCanvas`（`@/components/StarfieldCanvas`，默认导出，className prop）
-- Produces: `AuthCard` / `FormField` / `PasswordInput` 保持导出签名不变（login/register 页无需改 import）；`inputBase` / `fieldState` 导出签名不变
+- Consumes: `StarfieldCanvas` (`@/components/StarfieldCanvas`, default export, className prop)
+- Produces: `AuthCard` / `FormField` / `PasswordInput` keep their export signatures unchanged (the login/register pages need no import changes); `inputBase` / `fieldState` export signatures unchanged
 
-- [ ] **Step 1: 先读定制版 Next.js 的 use-client 文档**
+- [ ] **Step 1: First read the customized Next.js use-client docs**
 
 ```bash
 sed -n '1,80p' frontend/node_modules/next/dist/docs/01-app/03-api-reference/01-directives/use-client.md
 ```
 
-- [ ] **Step 2: 重写 AuthCard.tsx**
+- [ ] **Step 2: Rewrite AuthCard.tsx**
 
 Replace `frontend/src/components/auth/AuthCard.tsx` entirely:
 
@@ -57,7 +57,7 @@ interface AuthCardProps {
 export function AuthCard({ title, subtitle, footer, children }: AuthCardProps) {
   return (
     <div className="relative min-h-dvh overflow-x-hidden bg-deep-space">
-      {/* 星空背景固定铺满，滚动时背景不动 */}
+      {/* The starfield background is fixed and fills the screen, so it stays put while scrolling */}
       <StarfieldCanvas className="fixed inset-0 h-full w-full" />
       <div className="relative z-10 flex min-h-dvh items-center justify-center px-4 py-12">
         <div className="w-full max-w-md">
@@ -68,7 +68,7 @@ export function AuthCard({ title, subtitle, footer, children }: AuthCardProps) {
             <h1 className="text-2xl font-semibold tracking-tight text-white">{title}</h1>
             <p className="mt-2 text-sm text-indigo-200/80">{subtitle}</p>
           </div>
-          {/* 透明玻璃卡片 */}
+          {/* Transparent glass card */}
           <div className="rounded-xl border border-white/10 bg-white/[0.04] p-6 backdrop-blur-lg sm:p-8">
             {children}
           </div>
@@ -80,7 +80,7 @@ export function AuthCard({ title, subtitle, footer, children }: AuthCardProps) {
 }
 ```
 
-- [ ] **Step 3: 重写 FormField.tsx**
+- [ ] **Step 3: Rewrite FormField.tsx**
 
 Replace `frontend/src/components/auth/FormField.tsx` entirely:
 
@@ -104,11 +104,11 @@ export function FormField({ id, label, error, children }: FormFieldProps) {
   );
 }
 
-/** 输入框基础样式（不含边框色/聚焦态）——暗色星空主题 */
+/** Base input styles (excluding border color / focus state) — dark starfield theme */
 export const inputBase =
   "w-full rounded-lg border bg-white/10 px-4 py-2.5 text-sm text-white placeholder:text-neutral-400/70 transition focus:outline-none focus:ring-2";
 
-/** 输入框边框/聚焦状态：invalid 传 true 显示红色错误态 */
+/** Input border/focus state: pass true for invalid to show the red error state */
 export function fieldState(invalid: boolean): string {
   return invalid
     ? "border-red-400/60 focus:border-red-400 focus:ring-red-400/30"
@@ -116,7 +116,7 @@ export function fieldState(invalid: boolean): string {
 }
 ```
 
-- [ ] **Step 4: 重写 PasswordInput.tsx**
+- [ ] **Step 4: Rewrite PasswordInput.tsx**
 
 Replace `frontend/src/components/auth/PasswordInput.tsx` entirely:
 
@@ -145,7 +145,7 @@ export function PasswordInput({ id, className = "", ...props }: PasswordInputPro
         onClick={() => setShow((s) => !s)}
         className="absolute inset-y-0 right-0 flex items-center pr-3 text-neutral-400 transition hover:text-neutral-200"
         tabIndex={-1}
-        aria-label={show ? "隐藏密码" : "显示密码"}
+        aria-label={show ? "Hide password" : "Show password"}
       >
         {show ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
       </button>
@@ -154,13 +154,13 @@ export function PasswordInput({ id, className = "", ...props }: PasswordInputPro
 }
 ```
 
-- [ ] **Step 5: lint（仅改动文件）+ 构建验证**
+- [ ] **Step 5: lint (changed files only) + build verification**
 
 Run: `cd frontend && npx eslint src/components/auth/AuthCard.tsx src/components/auth/FormField.tsx src/components/auth/PasswordInput.tsx && npm run build`
 
-Expected: eslint exit 0；build 通过。
+Expected: eslint exits 0; build passes.
 
-- [ ] **Step 6: 提交**
+- [ ] **Step 6: Commit**
 
 ```bash
 git add src/components/auth/AuthCard.tsx src/components/auth/FormField.tsx src/components/auth/PasswordInput.tsx
@@ -169,26 +169,26 @@ git commit -m "feat: dark starfield theme for auth components (glass card)"
 
 ---
 
-### Task 2: 登录页暗色样式微调
+### Task 2: Dark Style Tweaks on the Login Page
 
 **Files:**
 - Modify: `frontend/src/app/(auth)/login/page.tsx`
 
 **Interfaces:**
-- Consumes: `inputBase`/`fieldState`（Task 1 已暗色化，无需改动 import 或逻辑）
+- Consumes: `inputBase`/`fieldState` (already dark after Task 1; no import or logic changes needed)
 
-- [ ] **Step 1: 四处在原有文件内精确替换**
+- [ ] **Step 1: Four precise replacements within the existing file**
 
 In `frontend/src/app/(auth)/login/page.tsx`:
 
-(1) Footer 链接颜色（暗底上用浅 indigo）：
+(1) Footer link color (use a light indigo on the dark background):
 
 ```diff
 -          <Link href="/register" className="font-medium text-indigo-600 hover:text-indigo-500">
 +          <Link href="/register" className="font-medium text-indigo-300 hover:text-indigo-200">
 ```
 
-(2) 分段 tab 容器底 + 未选中态：
+(2) Segmented tab container background + unselected state:
 
 ```diff
 -      <div className="mb-6 grid grid-cols-2 gap-1 rounded-lg bg-neutral-100 p-1">
@@ -200,22 +200,22 @@ In `frontend/src/app/(auth)/login/page.tsx`:
 +              : "text-neutral-300 hover:text-white"
 ```
 
-(3) 「获取验证码」按钮：
+(3) The "Get code" button:
 
 ```diff
 -                className="shrink-0 rounded-lg bg-indigo-50 px-4 py-2.5 text-sm font-medium text-indigo-600 transition hover:bg-indigo-100 disabled:cursor-not-allowed disabled:opacity-50"
 +                className="shrink-0 rounded-lg bg-indigo-500/20 px-4 py-2.5 text-sm font-medium text-indigo-200 transition hover:bg-indigo-500/30 disabled:cursor-not-allowed disabled:opacity-50"
 ```
 
-(4) 确认两处 tab 按钮的「选中态」仍为 `bg-white text-neutral-900 shadow-sm`（保持白色选中块，无需改）。
+(4) Confirm that the "selected state" of both tab buttons is still `bg-white text-neutral-900 shadow-sm` (keep the white selected block; no change needed).
 
-- [ ] **Step 2: 构建验证**
+- [ ] **Step 2: Build verification**
 
 Run: `cd frontend && npm run build`
 
-Expected: build 通过。
+Expected: build passes.
 
-- [ ] **Step 3: 提交**
+- [ ] **Step 3: Commit**
 
 ```bash
 git add "src/app/(auth)/login/page.tsx"
@@ -224,21 +224,21 @@ git commit -m "style: dark theme tweaks on login page"
 
 ---
 
-### Task 3: 注册页加手机号/邮箱 tab + 手机号注册
+### Task 3: Add Phone/Email Tabs + Phone Registration to the Register Page
 
 **Files:**
 - Modify: `frontend/src/app/(auth)/register/page.tsx`
 
 **Interfaces:**
 - Consumes:
-  - `authAPI.sendSMSCode(phone)`（`@/lib/api`）
-  - `authAPI.loginByPhone(phone, code)` → `{ token, user }`（后端自动注册）
+  - `authAPI.sendSMSCode(phone)` (`@/lib/api`)
+  - `authAPI.loginByPhone(phone, code)` → `{ token, user }` (the backend auto-registers)
   - `authAPI.updateMe(token, { name })`
-  - `setToken` / `setUser`（`@/lib/auth`）
+  - `setToken` / `setUser` (`@/lib/auth`)
   - `AuthCard` / `FormField` / `inputBase` / `fieldState` / `PasswordInput`
-- Produces: 注册页支持手机号注册（默认手机号 tab）与邮箱注册
+- Produces: the register page supports phone registration (phone tab by default) and email registration
 
-- [ ] **Step 1: 重写 register/page.tsx**
+- [ ] **Step 1: Rewrite register/page.tsx**
 
 Replace `frontend/src/app/(auth)/register/page.tsx` entirely:
 
@@ -262,7 +262,7 @@ export default function RegisterPage() {
   const [tab, setTab] = useState<"phone" | "email">("phone");
   const [loading, setLoading] = useState(false);
 
-  // 手机号注册
+  // Phone registration
   const [phoneName, setPhoneName] = useState("");
   const [phone, setPhone] = useState("");
   const [code, setCode] = useState("");
@@ -272,7 +272,7 @@ export default function RegisterPage() {
   const [phoneError, setPhoneError] = useState("");
   const [codeError, setCodeError] = useState("");
 
-  // 邮箱注册
+  // Email registration
   const [emailName, setEmailName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -288,14 +288,14 @@ export default function RegisterPage() {
 
   const handleSendCode = async () => {
     if (phone.length !== 11) {
-      setPhoneError("请输入 11 位手机号");
+      setPhoneError("Please enter an 11-digit phone number");
       return;
     }
     setPhoneError("");
     try {
       await authAPI.sendSMSCode(phone);
       setCodeSent(true);
-      toast.success("验证码已发送");
+      toast.success("Verification code sent");
       setCountdown(60);
       const timer = setInterval(() => {
         setCountdown((c) => {
@@ -307,7 +307,7 @@ export default function RegisterPage() {
         });
       }, 1000);
     } catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : "发送失败");
+      toast.error(e instanceof Error ? e.message : "Failed to send");
     }
   };
 
@@ -315,13 +315,13 @@ export default function RegisterPage() {
     e.preventDefault();
     let ok = true;
     if (phone.length !== 11) {
-      setPhoneError("请输入 11 位手机号");
+      setPhoneError("Please enter an 11-digit phone number");
       ok = false;
     } else {
       setPhoneError("");
     }
     if (code.length !== 6) {
-      setCodeError("请输入 6 位验证码");
+      setCodeError("Please enter the 6-digit verification code");
       ok = false;
     } else {
       setCodeError("");
@@ -331,17 +331,17 @@ export default function RegisterPage() {
     setLoading(true);
     try {
       const data = await authAPI.loginByPhone(phone, code);
-      // 昵称：输入了就用输入的，否则默认「用户+手机号后4位」
-      const nickname = phoneName.trim() || `用户${phone.slice(-4)}`;
+      // Nickname: use the entered one if provided, otherwise default to "User + last 4 digits of the phone number"
+      const nickname = phoneName.trim() || `User${phone.slice(-4)}`;
       if (!data.user.name) {
         await authAPI.updateMe(data.token, { name: nickname });
       }
       setToken(data.token);
       setUser({ ...data.user, name: data.user.name || nickname });
-      toast.success("注册成功！");
+      toast.success("Registration successful!");
       router.push("/dashboard");
     } catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : "注册失败");
+      toast.error(e instanceof Error ? e.message : "Registration failed");
     } finally {
       setLoading(false);
     }
@@ -350,10 +350,10 @@ export default function RegisterPage() {
   const handleEmailRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     const errs: typeof emailErrors = {};
-    if (!emailName.trim()) errs.name = "请输入昵称";
-    if (!EMAIL_RE.test(email)) errs.email = "请输入有效的邮箱地址";
-    if (password.length < 6) errs.password = "密码至少 6 位";
-    if (confirm !== password) errs.confirm = "两次输入的密码不一致";
+    if (!emailName.trim()) errs.name = "Please enter a nickname";
+    if (!EMAIL_RE.test(email)) errs.email = "Please enter a valid email address";
+    if (password.length < 6) errs.password = "Password must be at least 6 characters";
+    if (confirm !== password) errs.confirm = "The two passwords do not match";
     setEmailErrors(errs);
     if (Object.keys(errs).length > 0) return;
 
@@ -362,10 +362,10 @@ export default function RegisterPage() {
       const data = await authAPI.registerByEmail(email, password, emailName.trim());
       setToken(data.token);
       setUser(data.user);
-      toast.success("注册成功！");
+      toast.success("Registration successful!");
       router.push("/dashboard");
     } catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : "注册失败");
+      toast.error(e instanceof Error ? e.message : "Registration failed");
     } finally {
       setLoading(false);
     }
@@ -373,18 +373,18 @@ export default function RegisterPage() {
 
   return (
     <AuthCard
-      title="注册 Kada"
-      subtitle="创建你的短链接管理账号"
+      title="Sign up for Kada"
+      subtitle="Create your short link management account"
       footer={
         <>
-          已有账号？{" "}
+          Already have an account?{" "}
           <Link href="/login" className="font-medium text-indigo-300 hover:text-indigo-200">
-            立即登录
+            Log in now
           </Link>
         </>
       }
     >
-      {/* 手机号 / 邮箱 分段切换 */}
+      {/* Phone / email segmented toggle */}
       <div className="mb-6 grid grid-cols-2 gap-1 rounded-lg bg-white/10 p-1">
         <button
           type="button"
@@ -395,7 +395,7 @@ export default function RegisterPage() {
               : "text-neutral-300 hover:text-white"
           }`}
         >
-          手机号注册
+          Phone registration
         </button>
         <button
           type="button"
@@ -406,34 +406,34 @@ export default function RegisterPage() {
               : "text-neutral-300 hover:text-white"
           }`}
         >
-          邮箱注册
+          Email registration
         </button>
       </div>
 
       {tab === "phone" ? (
         <form onSubmit={handlePhoneRegister} className="space-y-4" noValidate>
-          <FormField id="pname" label="昵称" error={phoneNameError}>
+          <FormField id="pname" label="Nickname" error={phoneNameError}>
             <input
               id="pname"
               type="text"
               value={phoneName}
               onChange={(e) => setPhoneName(e.target.value)}
               className={`${inputBase} ${fieldState(!!phoneNameError)}`}
-              placeholder="你的昵称（可选）"
+              placeholder="Your nickname (optional)"
             />
           </FormField>
-          <FormField id="pphone" label="手机号" error={phoneError}>
+          <FormField id="pphone" label="Phone number" error={phoneError}>
             <input
               id="pphone"
               type="tel"
               value={phone}
               onChange={(e) => setPhone(e.target.value.replace(/\D/g, "").slice(0, 11))}
               className={`${inputBase} ${fieldState(!!phoneError)}`}
-              placeholder="请输入 11 位手机号"
+              placeholder="Enter an 11-digit phone number"
               required
             />
           </FormField>
-          <FormField id="pcode" label="验证码" error={codeError}>
+          <FormField id="pcode" label="Verification code" error={codeError}>
             <div className="flex gap-3">
               <input
                 id="pcode"
@@ -441,7 +441,7 @@ export default function RegisterPage() {
                 value={code}
                 onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
                 className={`${inputBase} ${fieldState(!!codeError)}`}
-                placeholder="6 位验证码"
+                placeholder="6-digit code"
                 required
               />
               <button
@@ -450,7 +450,7 @@ export default function RegisterPage() {
                 disabled={countdown > 0 || !phoneValid}
                 className="shrink-0 rounded-lg bg-indigo-500/20 px-4 py-2.5 text-sm font-medium text-indigo-200 transition hover:bg-indigo-500/30 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {countdown > 0 ? `${countdown}s` : codeSent ? "重新发送" : "获取验证码"}
+                {countdown > 0 ? `${countdown}s` : codeSent ? "Resend" : "Get code"}
               </button>
             </div>
           </FormField>
@@ -459,23 +459,23 @@ export default function RegisterPage() {
             disabled={loading}
             className="w-full rounded-lg bg-indigo-600 py-2.5 text-sm font-medium text-white transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {loading ? "注册中..." : "注册"}
+            {loading ? "Signing up..." : "Sign up"}
           </button>
         </form>
       ) : (
         <form onSubmit={handleEmailRegister} className="space-y-4" noValidate>
-          <FormField id="name" label="昵称" error={emailErrors.name}>
+          <FormField id="name" label="Nickname" error={emailErrors.name}>
             <input
               id="name"
               type="text"
               value={emailName}
               onChange={(e) => setEmailName(e.target.value)}
               className={`${inputBase} ${fieldState(!!emailErrors.name)}`}
-              placeholder="你的昵称"
+              placeholder="Your nickname"
               required
             />
           </FormField>
-          <FormField id="email" label="邮箱" error={emailErrors.email}>
+          <FormField id="email" label="Email" error={emailErrors.email}>
             <input
               id="email"
               type="email"
@@ -486,24 +486,24 @@ export default function RegisterPage() {
               required
             />
           </FormField>
-          <FormField id="password" label="密码" error={emailErrors.password}>
+          <FormField id="password" label="Password" error={emailErrors.password}>
             <PasswordInput
               id="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               className={fieldState(!!emailErrors.password)}
-              placeholder="至少 6 位"
+              placeholder="At least 6 characters"
               required
               minLength={6}
             />
           </FormField>
-          <FormField id="confirm" label="确认密码" error={emailErrors.confirm}>
+          <FormField id="confirm" label="Confirm password" error={emailErrors.confirm}>
             <PasswordInput
               id="confirm"
               value={confirm}
               onChange={(e) => setConfirm(e.target.value)}
               className={fieldState(!!emailErrors.confirm)}
-              placeholder="再次输入密码"
+              placeholder="Enter the password again"
               required
             />
           </FormField>
@@ -512,7 +512,7 @@ export default function RegisterPage() {
             disabled={loading}
             className="w-full rounded-lg bg-indigo-600 py-2.5 text-sm font-medium text-white transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {loading ? "注册中..." : "注册"}
+            {loading ? "Signing up..." : "Sign up"}
           </button>
         </form>
       )}
@@ -521,27 +521,27 @@ export default function RegisterPage() {
 }
 ```
 
-- [ ] **Step 2: 构建验证**
+- [ ] **Step 2: Build verification**
 
 Run: `cd frontend && npm run test && npm run build`
 
-Expected: 18/18 测试通过；build 通过。
+Expected: 18/18 tests pass; build passes.
 
-- [ ] **Step 3: 手动验证（dev 模式，需后端在跑）**
+- [ ] **Step 3: Manual verification (dev mode, backend must be running)**
 
 ```bash
 cd frontend && npm run dev
 ```
 
-- [ ] 打开 `/register`：星空背景 + 透明玻璃卡片；默认手机号 tab；切换邮箱 tab 正常
-- [ ] 手机号注册：输手机号 → 获取验证码（dev 后端日志可见 `📱 [DEV] ... Code:`）→ 填验证码+昵称 → 注册成功跳 `/dashboard`，侧边栏显示昵称
-- [ ] 留空昵称注册：昵称自动为「用户+后4位」
-- [ ] 已注册手机号再走注册：直接登录，不覆盖已有昵称
-- [ ] `/login`：星空背景 + 玻璃卡片；手机号/邮箱登录均正常；密码显隐正常
-- [ ] 小屏滚动时星空背景固定
-- [ ] 控制台无报错
+- [ ] Open `/register`: starfield background + transparent glass card; phone tab by default; switching to the email tab works
+- [ ] Phone registration: enter phone number → get verification code (visible in the dev backend log as `📱 [DEV] ... Code:`) → enter the code + nickname → registration succeeds and redirects to `/dashboard`, with the nickname shown in the sidebar
+- [ ] Register with an empty nickname: the nickname automatically becomes "User + last 4 digits"
+- [ ] Register again with an already-registered phone number: it logs in directly and does not overwrite the existing nickname
+- [ ] `/login`: starfield background + glass card; both phone and email login work; password show/hide works
+- [ ] The starfield background stays fixed when scrolling on a small screen
+- [ ] No errors in the console
 
-- [ ] **Step 4: 提交**
+- [ ] **Step 4: Commit**
 
 ```bash
 git add "src/app/(auth)/register/page.tsx"
@@ -550,8 +550,8 @@ git commit -m "feat: phone registration on register page (sms code + nickname)"
 
 ---
 
-## 自检记录
+## Self-Review Record
 
-- **Spec 覆盖**：星空背景（Task 1 AuthCard）、透明玻璃卡片（Task 1）、暗色表单组件（Task 1）、登录页暗色微调（Task 2）、手机号注册 tab+流程+默认昵称（Task 3）、后端零改动（计划约束）、错误处理 toast（各 Task）。
-- **占位符扫描**：无 TBD/TODO；每个改动的完整代码均已给出。
-- **类型一致性**：`authAPI.sendSMSCode` / `loginByPhone` / `updateMe` / `setToken` / `setUser` / `AuthCard` / `FormField` / `inputBase` / `fieldState` / `PasswordInput` 签名与现有代码一致；Task 3 消费 Task 1 的组件，无需改 import。
+- **Spec coverage**: starfield background (Task 1 AuthCard), transparent glass card (Task 1), dark form components (Task 1), login page dark tweaks (Task 2), phone registration tab + flow + default nickname (Task 3), zero backend changes (plan constraint), error-handling toasts (every task).
+- **Placeholder scan**: no TBD/TODO; the complete code for every change is provided.
+- **Type consistency**: the signatures of `authAPI.sendSMSCode` / `loginByPhone` / `updateMe` / `setToken` / `setUser` / `AuthCard` / `FormField` / `inputBase` / `fieldState` / `PasswordInput` match the existing code; Task 3 consumes Task 1's components, so no import changes are needed.

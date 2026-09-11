@@ -15,7 +15,7 @@ func main() {
 
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
-		// #nosec G101 -- 仅本地开发默认连接串；生产部署通过 DATABASE_URL 环境变量注入
+		// #nosec G101 -- default connection string for local development only; production injects DATABASE_URL via environment
 		dbURL = "postgres://kada:kada123@localhost:5432/kada?sslmode=disable"
 	}
 
@@ -30,6 +30,6 @@ func main() {
 	}
 
 	v, dirty, _ := m.Version()
-	// #nosec G706 -- v/dirty 来自迁移库的数据库状态返回值，非用户可控输入
+	// #nosec G706 -- v/dirty are database state values returned by the migration library, not user-controlled input
 	log.Printf("Migration done. Version: %d, Dirty: %v", v, dirty)
 }
