@@ -144,7 +144,6 @@ func main() {
 		log.Fatalf("database connect failed: %v", err)
 	}
 	defer infra.CloseDB(db)
-
 	store := service.NewClickStore(db)
 	reader := kafka.NewReader(kafka.ReaderConfig{
 		Brokers: brokerList,

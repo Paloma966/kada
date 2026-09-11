@@ -1,0 +1,23 @@
+# Normalize line endings: store LF in the repository and check out LF everywhere.
+#
+# core.autocrlf=true (the Windows default) checked Go files out as CRLF, and every Go formatter and
+# linter — gofmt, goimports, golangci-lint — then reported the whole tree as unformatted on Windows
+# while CI (Linux) saw it as clean. Pinning the working tree to LF removes that difference.
+* text=auto eol=lf
+
+# Windows-only scripts keep CRLF so cmd.exe and PowerShell can run them.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+# Binary assets must never be touched.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.eot binary
+*.pdf binary

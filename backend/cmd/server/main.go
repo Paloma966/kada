@@ -49,6 +49,17 @@ func main() {
 	}
 	defer infra.CloseDB(db)
 
+	// Apply the schema (GORM AutoMigrate owns the schema now; see internal/domain/entity).
+	// In production DB_AUTO_MIGRATE is normally false and the schema is applied by cmd/migrate, so a
+	// plain restart can never change the database.
+	if cfg.AutoMigrate {
+		if migrateErr := infra.Migrate(db); migrateErr != nil {
+			log.Fatalf("Failed to migrate database: %v", migrateErr)
+		}
+	} else {
+		log.Println("DB_AUTO_MIGRATE=false: skipping schema migration (run cmd/migrate to apply it)")
+	}
+
 	// Connect to Redis: keep the client even on initial ping failure (go-redis reconnects automatically).
 	// Rate limiting fails open until Redis recovers, then works again with no process restart.
 	redisClient, err := infra.NewRedis(cfg.RedisURL)

@@ -7,6 +7,12 @@ import (
 
 var ErrLinkNotFound = errors.New("link not found")
 
+// ErrEmailTaken marks a sign-up that collided with an existing account.
+//
+// It lives in domain (not service) so the HTTP handler can map it to 409 without importing the service
+// package, which would create an import cycle.
+var ErrEmailTaken = errors.New("registration failed, the email may already be in use")
+
 // ==================== Request/Response models ====================
 
 // ---- Auth ----

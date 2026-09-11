@@ -7,17 +7,17 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
+	"gorm.io/gorm"
 
+	"github.com/chun/kada-backend/internal/domain/entity"
 	"github.com/chun/kada-backend/internal/middleware"
 )
 
 type Handler struct {
-	db *pgxpool.Pool
+	db *gorm.DB
 }
 
-func NewHandler(db *pgxpool.Pool) *Handler {
+func NewHandler(db *gorm.DB) *Handler {
 	return &Handler{db: db}
 }
 
@@ -34,18 +34,23 @@ func (h *Handler) RegisterRoutes(r *gin.RouterGroup, authMW gin.HandlerFunc) {
 func (h *Handler) Overview(c *gin.Context) {
 	userID := middleware.GetUserID(c)
 
-	var totalLinks, totalClicks int64
-	if err := h.db.QueryRow(c.Request.Context(),
-		`SELECT COUNT(*), COALESCE(SUM(click_count), 0) FROM links WHERE user_id = $1`, userID,
-	).Scan(&totalLinks, &totalClicks); err != nil {
+	var stats struct {
+		TotalLinks  int64
+		TotalClicks int64
+	}
+	if err := h.db.WithContext(c.Request.Context()).
+		Model(&entity.Link{}).
+		Select("COUNT(*) AS total_links, COALESCE(SUM(click_count), 0) AS total_clicks").
+		Where("user_id = ?", userID).
+		Scan(&stats).Error; err != nil {
 		log.Printf("analytics overview failed: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "query failed"})
 		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"total_links":  totalLinks,
-		"total_clicks": totalClicks,
+		"total_links":  stats.TotalLinks,
+		"total_clicks": stats.TotalClicks,
 	})
 }
 
@@ -54,42 +59,25 @@ func (h *Handler) Platforms(c *gin.Context) {
 	userID := middleware.GetUserID(c)
 	linkID, _ := strconv.ParseInt(c.Query("link_id"), 10, 64)
 
-	var rows pgx.Rows
-	var err error
-	if linkID > 0 {
-		rows, err = h.db.Query(c.Request.Context(), `
-			SELECT COALESCE(cl.platform, 'browser'), COUNT(*)
-			FROM click_logs cl JOIN links l ON cl.link_id = l.id
-			WHERE l.user_id = $1 AND cl.link_id = $2
-			GROUP BY cl.platform ORDER BY COUNT(*) DESC
-		`, userID, linkID)
-	} else {
-		rows, err = h.db.Query(c.Request.Context(), `
-			SELECT COALESCE(cl.platform, 'browser'), COUNT(*)
-			FROM click_logs cl JOIN links l ON cl.link_id = l.id
-			WHERE l.user_id = $1
-			GROUP BY cl.platform ORDER BY COUNT(*) DESC
-		`, userID)
-	}
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "query failed"})
-		return
-	}
-	defer rows.Close()
-
 	type PlatformStat struct {
 		Platform string `json:"platform"`
 		Count    int64  `json:"count"`
 	}
 
+	query := h.db.WithContext(c.Request.Context()).
+		Table("click_logs AS cl").
+		Select("COALESCE(cl.platform, 'browser') AS platform, COUNT(*) AS count").
+		Joins("JOIN links l ON cl.link_id = l.id").
+		Where("l.user_id = ?", userID)
+	if linkID > 0 {
+		query = query.Where("cl.link_id = ?", linkID)
+	}
+
 	var stats []PlatformStat
-	for rows.Next() {
-		var s PlatformStat
-		if err := rows.Scan(&s.Platform, &s.Count); err != nil {
-			log.Printf("platforms scan failed: %v", err)
-			continue
-		}
-		stats = append(stats, s)
+	if err := query.Group("cl.platform").Order("COUNT(*) DESC").Scan(&stats).Error; err != nil {
+		log.Printf("analytics platforms failed: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "query failed"})
+		return
 	}
 	if stats == nil {
 		stats = []PlatformStat{}
@@ -103,46 +91,27 @@ func (h *Handler) DailyClicks(c *gin.Context) {
 	userID := middleware.GetUserID(c)
 	linkID, _ := strconv.ParseInt(c.Query("link_id"), 10, 64)
 
-	var rows pgx.Rows
-	var err error
-	if linkID > 0 {
-		rows, err = h.db.Query(c.Request.Context(), `
-			SELECT DATE(cl.created_at) as date, COUNT(*)
-			FROM click_logs cl JOIN links l ON cl.link_id = l.id
-			WHERE l.user_id = $1 AND cl.link_id = $2 AND cl.created_at > NOW() - INTERVAL '30 days'
-			GROUP BY DATE(cl.created_at) ORDER BY date
-		`, userID, linkID)
-	} else {
-		rows, err = h.db.Query(c.Request.Context(), `
-			SELECT DATE(cl.created_at) as date, COUNT(*)
-			FROM click_logs cl JOIN links l ON cl.link_id = l.id
-			WHERE l.user_id = $1 AND cl.created_at > NOW() - INTERVAL '30 days'
-			GROUP BY DATE(cl.created_at) ORDER BY date
-		`, userID)
-	}
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "query failed"})
-		return
-	}
-	defer rows.Close()
-
+	// date is returned as text: PostgreSQL would hand back a time.Time for DATE(), and formatting it in
+	// SQL keeps the JSON shape stable across drivers.
 	type DailyStat struct {
 		Date  string `json:"date"`
 		Count int64  `json:"count"`
 	}
 
+	query := h.db.WithContext(c.Request.Context()).
+		Table("click_logs AS cl").
+		Select("TO_CHAR(DATE(cl.created_at), 'YYYY-MM-DD') AS date, COUNT(*) AS count").
+		Joins("JOIN links l ON cl.link_id = l.id").
+		Where("l.user_id = ? AND cl.created_at > NOW() - INTERVAL '30 days'", userID)
+	if linkID > 0 {
+		query = query.Where("cl.link_id = ?", linkID)
+	}
+
 	var stats []DailyStat
-	for rows.Next() {
-		var s DailyStat
-		var date interface{}
-		if err := rows.Scan(&date, &s.Count); err != nil {
-			log.Printf("daily scan failed: %v", err)
-			continue
-		}
-		if t, ok := date.(interface{ Format(string) string }); ok {
-			s.Date = t.Format("2006-01-02")
-		}
-		stats = append(stats, s)
+	if err := query.Group("DATE(cl.created_at)").Order("DATE(cl.created_at)").Scan(&stats).Error; err != nil {
+		log.Printf("analytics daily failed: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "query failed"})
+		return
 	}
 	if stats == nil {
 		stats = []DailyStat{}
@@ -164,58 +133,39 @@ func (h *Handler) Events(c *gin.Context) {
 	}
 
 	var total int64
-	if err := h.db.QueryRow(c.Request.Context(), `
-		SELECT COUNT(*) FROM click_logs cl
-		JOIN links l ON cl.link_id = l.id
-		WHERE l.user_id = $1
-	`, userID).Scan(&total); err != nil {
+	if err := h.db.WithContext(c.Request.Context()).
+		Table("click_logs AS cl").
+		Joins("JOIN links l ON cl.link_id = l.id").
+		Where("l.user_id = ?", userID).
+		Count(&total).Error; err != nil {
 		log.Printf("events count failed: %v", err)
 		total = 0
 	}
-
-	rows, err := h.db.Query(c.Request.Context(), `
-		SELECT cl.id, cl.link_id, l.short_code, l.original_url, cl.platform, cl.ip, cl.referer, cl.created_at
-		FROM click_logs cl
-		JOIN links l ON cl.link_id = l.id
-		WHERE l.user_id = $1
-		ORDER BY cl.created_at DESC
-		LIMIT $2 OFFSET $3
-	`, userID, pageSize, (page-1)*pageSize)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "query failed"})
-		return
-	}
-	defer rows.Close()
 
 	type Event struct {
 		ID          int64     `json:"id"`
 		LinkID      int64     `json:"link_id"`
 		ShortCode   string    `json:"short_code"`
 		OriginalURL string    `json:"original_url"`
-		Platform    string    `json:"platform"`
-		IP          string    `json:"ip"`
-		Referer     string    `json:"referer"`
+		Platform    *string   `json:"platform"`
+		IP          *string   `json:"ip"`
+		Referer     *string   `json:"referer"`
 		CreatedAt   time.Time `json:"created_at"`
 	}
 
 	var events []Event
-	for rows.Next() {
-		var e Event
-		var platform, ip, referer *string
-		if err := rows.Scan(&e.ID, &e.LinkID, &e.ShortCode, &e.OriginalURL, &platform, &ip, &referer, &e.CreatedAt); err != nil {
-			log.Printf("events scan failed: %v", err)
-			continue
-		}
-		if platform != nil {
-			e.Platform = *platform
-		}
-		if ip != nil {
-			e.IP = *ip
-		}
-		if referer != nil {
-			e.Referer = *referer
-		}
-		events = append(events, e)
+	if err := h.db.WithContext(c.Request.Context()).
+		Table("click_logs AS cl").
+		Select("cl.id, cl.link_id, l.short_code, l.original_url, cl.platform, cl.ip, cl.referer, cl.created_at").
+		Joins("JOIN links l ON cl.link_id = l.id").
+		Where("l.user_id = ?", userID).
+		Order("cl.created_at DESC").
+		Limit(pageSize).
+		Offset((page - 1) * pageSize).
+		Scan(&events).Error; err != nil {
+		log.Printf("events query failed: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "query failed"})
+		return
 	}
 	if events == nil {
 		events = []Event{}
@@ -233,24 +183,6 @@ func (h *Handler) Events(c *gin.Context) {
 func (h *Handler) Customers(c *gin.Context) {
 	userID := middleware.GetUserID(c)
 
-	rows, err := h.db.Query(c.Request.Context(), `
-		SELECT cl.ip,
-		       COUNT(*) as click_count,
-		       MAX(cl.created_at) as last_seen,
-		       COUNT(DISTINCT cl.link_id) as unique_links
-		FROM click_logs cl
-		JOIN links l ON cl.link_id = l.id
-		WHERE l.user_id = $1 AND cl.ip IS NOT NULL AND cl.ip != ''
-		GROUP BY cl.ip
-		ORDER BY click_count DESC
-		LIMIT 50
-	`, userID)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "query failed"})
-		return
-	}
-	defer rows.Close()
-
 	type Customer struct {
 		IP          string    `json:"ip"`
 		ClickCount  int64     `json:"click_count"`
@@ -259,13 +191,18 @@ func (h *Handler) Customers(c *gin.Context) {
 	}
 
 	var customers []Customer
-	for rows.Next() {
-		var c Customer
-		if err := rows.Scan(&c.IP, &c.ClickCount, &c.LastSeen, &c.UniqueLinks); err != nil {
-			log.Printf("customers scan failed: %v", err)
-			continue
-		}
-		customers = append(customers, c)
+	if err := h.db.WithContext(c.Request.Context()).
+		Table("click_logs AS cl").
+		Select("cl.ip AS ip, COUNT(*) AS click_count, MAX(cl.created_at) AS last_seen, COUNT(DISTINCT cl.link_id) AS unique_links").
+		Joins("JOIN links l ON cl.link_id = l.id").
+		Where("l.user_id = ? AND cl.ip IS NOT NULL AND cl.ip != ''", userID).
+		Group("cl.ip").
+		Order("click_count DESC").
+		Limit(50).
+		Scan(&customers).Error; err != nil {
+		log.Printf("customers query failed: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "query failed"})
+		return
 	}
 	if customers == nil {
 		customers = []Customer{}

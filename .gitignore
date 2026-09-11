@@ -9,6 +9,8 @@ backend/tmp/
 # Go tool caches (agents/tooling sometimes point these inside the repo)
 backend/.gocache/
 backend/.gomodcache/
+backend/.gopath/
+backend/.golangci-cache/
 
 # Environment
 .env

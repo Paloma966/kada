@@ -9,15 +9,14 @@ import (
 	"fmt"
 	"log"
 	"regexp"
-	"strconv"
 	"strings"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgconn"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"golang.org/x/crypto/bcrypt"
+	"gorm.io/gorm"
 
 	"github.com/chun/kada-backend/internal/domain"
+	"github.com/chun/kada-backend/internal/domain/entity"
 	"github.com/chun/kada-backend/internal/infra/urlcheck"
 	"github.com/chun/kada-backend/internal/mq"
 )
@@ -26,14 +25,14 @@ import (
 var shortCodePattern = regexp.MustCompile(`^[a-zA-Z0-9_-]{4,20}$`)
 
 type LinkService struct {
-	db          *pgxpool.Pool
+	db          *gorm.DB
 	baseURL     string
 	cache       *CacheService
 	kafka       mq.ClickPublisher // Kafka publisher; nil means disabled
 	clickWriter ClickWriter       // direct write (used by the degraded fallback)
 }
 
-func NewLinkService(db *pgxpool.Pool, baseURL string, cache *CacheService, kafka mq.ClickPublisher, clickWriter ClickWriter) *LinkService {
+func NewLinkService(db *gorm.DB, baseURL string, cache *CacheService, kafka mq.ClickPublisher, clickWriter ClickWriter) *LinkService {
 	return &LinkService{db: db, baseURL: baseURL, cache: cache, kafka: kafka, clickWriter: clickWriter}
 }
 
@@ -49,14 +48,14 @@ func (s *LinkService) Create(ctx context.Context, userID int64, req domain.Creat
 	}
 
 	var shortCode string
+	customCode := req.ShortCode != nil && *req.ShortCode != ""
 
-	if req.ShortCode != nil && *req.ShortCode != "" {
+	if customCode {
 		if !shortCodePattern.MatchString(*req.ShortCode) {
 			return nil, errors.New("invalid short code format: only letters, digits, underscores and hyphens are allowed, length 4-20")
 		}
-		var exists bool
 		// fast-path check: on failure make no decision, the unique constraint is the final arbiter
-		if err := s.db.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM links WHERE short_code = $1)`, *req.ShortCode).Scan(&exists); err == nil && exists {
+		if s.shortCodeTaken(ctx, *req.ShortCode, 0) {
 			return nil, errors.New("that short code is already taken, please choose another")
 		}
 		shortCode = *req.ShortCode
@@ -64,9 +63,9 @@ func (s *LinkService) Create(ctx context.Context, userID int64, req domain.Creat
 		shortCode = generateShortCode()
 	}
 
-	domain_ := "kada.click"
+	domainName := "kada.click"
 	if req.Domain != nil && *req.Domain != "" {
-		domain_ = *req.Domain
+		domainName = *req.Domain
 	}
 
 	var expiresAt *time.Time
@@ -84,30 +83,37 @@ func (s *LinkService) Create(ctx context.Context, userID int64, req domain.Creat
 		passwordHash = &hash
 	}
 
-	var info domain.LinkInfo
+	var created entity.Link
 	// the unique constraint is the final arbiter for short-code conflicts: under a check-then-insert race the INSERT reports 23505,
 	// a custom short code returns a friendly error while a random short code is regenerated and retried
 	for attempt := 0; ; attempt++ {
-		err := s.db.QueryRow(ctx, `
-			INSERT INTO links (short_code, original_url, title, description, image_url, domain, password_hash, expires_at, user_id, workspace_id, folder_id, utm_source, utm_medium, utm_campaign, utm_term, utm_content, ios_url, android_url)
-			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
-			RETURNING id, short_code, original_url, COALESCE(title,''), COALESCE(description,''), COALESCE(image_url,''), domain, click_count, is_active, expires_at, created_at, updated_at
-		`,
-			shortCode, req.OriginalURL, req.Title, req.Description, req.ImageURL,
-			domain_, passwordHash, expiresAt, userID, req.WorkspaceID, req.FolderID,
-			req.UTMSource, req.UTMMedium, req.UTMCampaign, req.UTMTerm, req.UTMContent,
-			req.IosURL, req.AndroidURL,
-		).Scan(
-			&info.ID, &info.ShortCode, &info.OriginalURL, &info.Title, &info.Description,
-			&info.ImageURL, &info.Domain, &info.ClickCount, &info.IsActive,
-			&info.ExpiresAt, &info.CreatedAt, &info.UpdatedAt,
-		)
+		row := entity.Link{
+			ShortCode:    shortCode,
+			OriginalURL:  req.OriginalURL,
+			Title:        req.Title,
+			Description:  req.Description,
+			ImageURL:     req.ImageURL,
+			Domain:       domainName,
+			PasswordHash: passwordHash,
+			ExpiresAt:    expiresAt,
+			UserID:       &userID,
+			WorkspaceID:  req.WorkspaceID,
+			FolderID:     req.FolderID,
+			UTMSource:    req.UTMSource,
+			UTMMedium:    req.UTMMedium,
+			UTMCampaign:  req.UTMCampaign,
+			UTMTerm:      req.UTMTerm,
+			UTMContent:   req.UTMContent,
+			IosURL:       req.IosURL,
+			AndroidURL:   req.AndroidURL,
+		}
+		err := s.db.WithContext(ctx).Create(&row).Error
 		if err == nil {
+			created = row
 			break
 		}
-		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
-			if req.ShortCode != nil && *req.ShortCode != "" {
+		if isDuplicateKey(err) {
+			if customCode {
 				return nil, errors.New("that short code is already taken, please choose another")
 			}
 			if attempt >= 4 {
@@ -122,80 +128,35 @@ func (s *LinkService) Create(ctx context.Context, userID int64, req domain.Creat
 	}
 
 	// attach tags (only own tags may be attached, preventing tag name/color leaks across users)
-	for _, tagID := range req.TagIDs {
-		var tagOwner int64
-		if err := s.db.QueryRow(ctx, `SELECT user_id FROM tags WHERE id = $1`, tagID).Scan(&tagOwner); err != nil || tagOwner != userID {
-			log.Printf("skip non-owned tag %d for link %d (user %d)", tagID, info.ID, userID)
-			continue
-		}
-		if _, err := s.db.Exec(ctx, `INSERT INTO link_tags (link_id, tag_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`, info.ID, tagID); err != nil {
-			log.Printf("attach tag %d to link %d failed: %v", tagID, info.ID, err)
+	s.attachOwnedTags(ctx, userID, created.ID, req.TagIDs)
+
+	info := s.toLinkInfo(ctx, created.ID, userID)
+	if info == nil {
+		// Should not happen: the row was just created. Fall back to the entity we already have instead of
+		// returning a half-populated response.
+		info = &domain.LinkInfo{
+			ID:          created.ID,
+			ShortCode:   created.ShortCode,
+			OriginalURL: created.OriginalURL,
+			Domain:      created.Domain,
 		}
 	}
-
-	info.ShortURL = s.BuildShortURL(info.Domain, info.ShortCode)
 
 	// write to cache
 	if s.cache != nil {
-		s.cache.SetLink(ctx, &info)
+		s.cache.SetLink(ctx, info)
 	}
 
-	return &info, nil
+	return info, nil
 }
 
 // GetByID gets a link by ID (with full info such as folder, tags and UTM)
 func (s *LinkService) GetByID(ctx context.Context, linkID, userID int64) (*domain.LinkInfo, error) {
-	var info domain.LinkInfo
-	err := s.db.QueryRow(ctx, `
-		SELECT l.id, l.short_code, l.original_url, COALESCE(l.title,''), COALESCE(l.description,''),
-		       COALESCE(l.image_url,''), l.domain, l.click_count, l.is_active, l.expires_at,
-		       l.created_at, l.updated_at, l.folder_id,
-		       l.utm_source, l.utm_medium, l.utm_campaign, l.utm_term, l.utm_content,
-		       l.ios_url, l.android_url, l.password_hash
-		FROM links l WHERE l.id = $1 AND l.user_id = $2
-	`, linkID, userID).Scan(
-		&info.ID, &info.ShortCode, &info.OriginalURL, &info.Title, &info.Description,
-		&info.ImageURL, &info.Domain, &info.ClickCount, &info.IsActive,
-		&info.ExpiresAt, &info.CreatedAt, &info.UpdatedAt, &info.FolderID,
-		&info.UTMSource, &info.UTMMedium, &info.UTMCampaign, &info.UTMTerm, &info.UTMContent,
-		&info.IosURL, &info.AndroidURL, &info.PasswordHash,
-	)
-	if err != nil {
+	info := s.toLinkInfo(ctx, linkID, userID)
+	if info == nil {
 		return nil, domain.ErrLinkNotFound
 	}
-
-	// look up the folder name
-	if info.FolderID != nil {
-		var folderName string
-		folderErr := s.db.QueryRow(ctx, `SELECT name FROM folders WHERE id = $1`, *info.FolderID).Scan(&folderName)
-		if folderErr == nil {
-			info.FolderName = &folderName
-		}
-	}
-
-	// look up tags
-	rows, err := s.db.Query(ctx, `
-		SELECT t.id, t.name, t.color FROM tags t
-		JOIN link_tags lt ON t.id = lt.tag_id
-		WHERE lt.link_id = $1
-	`, linkID)
-	if err == nil {
-		defer rows.Close()
-		for rows.Next() {
-			var t domain.LinkTagInfo
-			if err := rows.Scan(&t.ID, &t.Name, &t.Color); err != nil {
-				log.Printf("scan link tags failed: %v", err)
-				continue
-			}
-			info.Tags = append(info.Tags, t)
-		}
-	}
-	if info.Tags == nil {
-		info.Tags = []domain.LinkTagInfo{}
-	}
-
-	info.ShortURL = s.BuildShortURL(info.Domain, info.ShortCode)
-	return &info, nil
+	return info, nil
 }
 
 // GetByCode gets a link by short code (reads from cache first)
@@ -212,76 +173,66 @@ func (s *LinkService) GetByCode(ctx context.Context, shortCode string) (*domain.
 		}
 	}
 
-	var info domain.LinkInfo
-	err := s.db.QueryRow(ctx, `
-		SELECT id, short_code, original_url, COALESCE(title,''), COALESCE(description,''), COALESCE(image_url,''), domain, click_count, is_active, expires_at, created_at, updated_at
-		FROM links WHERE short_code = $1 AND is_active = TRUE
-	`, shortCode).Scan(
-		&info.ID, &info.ShortCode, &info.OriginalURL, &info.Title, &info.Description,
-		&info.ImageURL, &info.Domain, &info.ClickCount, &info.IsActive,
-		&info.ExpiresAt, &info.CreatedAt, &info.UpdatedAt,
-	)
+	var row entity.Link
+	err := s.db.WithContext(ctx).
+		Where("short_code = ? AND is_active = TRUE", shortCode).
+		First(&row).Error
 	if err != nil {
 		return nil, domain.ErrLinkNotFound
 	}
+
+	info := linkInfoFromEntity(row)
 
 	// check whether it has expired
 	if info.ExpiresAt != nil && info.ExpiresAt.Before(time.Now()) {
 		return nil, errors.New("link has expired")
 	}
 
-	info.ShortURL = s.BuildShortURL(info.Domain, info.ShortCode)
-
 	// write to cache
 	if s.cache != nil {
-		s.cache.SetLink(ctx, &info)
+		s.cache.SetLink(ctx, info)
 	}
 
-	return &info, nil
+	return info, nil
 }
 
 // HasPassword checks whether the link has a password set
 func (s *LinkService) HasPassword(ctx context.Context, shortCode string) bool {
-	var passwordHash *string
-	err := s.db.QueryRow(ctx, `
-		SELECT password_hash FROM links WHERE short_code = $1
-	`, shortCode).Scan(&passwordHash)
-	if err != nil || passwordHash == nil || *passwordHash == "" {
+	var row entity.Link
+	if err := s.db.WithContext(ctx).
+		Select("password_hash").
+		Where("short_code = ?", shortCode).
+		First(&row).Error; err != nil {
 		return false
 	}
-	return true
+	return row.PasswordHash != nil && *row.PasswordHash != ""
 }
 
 // CheckPassword checks the link password
 func (s *LinkService) CheckPassword(ctx context.Context, shortCode, password string) (bool, *domain.LinkInfo, error) {
-	var passwordHash *string
-	var info domain.LinkInfo
-	err := s.db.QueryRow(ctx, `
-		SELECT id, short_code, original_url, COALESCE(title,''), COALESCE(description,''), domain, click_count, is_active, expires_at, password_hash, created_at, updated_at
-		FROM links WHERE short_code = $1 AND is_active = TRUE
-	`, shortCode).Scan(
-		&info.ID, &info.ShortCode, &info.OriginalURL, &info.Title, &info.Description,
-		&info.Domain, &info.ClickCount, &info.IsActive,
-		&info.ExpiresAt, &passwordHash, &info.CreatedAt, &info.UpdatedAt,
-	)
+	var row entity.Link
+	err := s.db.WithContext(ctx).
+		Where("short_code = ? AND is_active = TRUE", shortCode).
+		First(&row).Error
 	if err != nil {
 		return false, nil, domain.ErrLinkNotFound
 	}
+
+	info := linkInfoFromEntity(row)
 
 	if info.ExpiresAt != nil && info.ExpiresAt.Before(time.Now()) {
 		return false, nil, errors.New("link has expired")
 	}
 
-	if passwordHash == nil || *passwordHash == "" {
-		return true, &info, nil // no password
+	if row.PasswordHash == nil || *row.PasswordHash == "" {
+		return true, info, nil // no password
 	}
 
-	if password == "" || !checkPasswordHash(password, *passwordHash) {
-		return false, &info, nil
+	if password == "" || !checkPasswordHash(password, *row.PasswordHash) {
+		return false, info, nil
 	}
 
-	info.ShortURL = s.BuildShortURL(info.Domain, info.ShortCode)
-	return true, &info, nil
+	return true, info, nil
 }
 
 // List gets the user's link list
@@ -293,33 +244,32 @@ func (s *LinkService) List(ctx context.Context, userID int64, page, pageSize int
 		pageSize = 20
 	}
 
-	where := "WHERE l.user_id = $1"
-	args := []interface{}{userID}
-	argIdx := 2
+	// The filters are shared by the COUNT and the page query, so build them once. GORM keeps the SQL
+	// injection surface at zero because every value is passed as a bound parameter.
+	filters := []string{"l.user_id = ?"}
+	args := []any{userID}
 
 	if search != "" {
-		where += " AND (l.title ILIKE $" + strconv.Itoa(argIdx) + " OR l.original_url ILIKE $" + strconv.Itoa(argIdx) + " OR l.short_code ILIKE $" + strconv.Itoa(argIdx) + ")"
-		args = append(args, "%"+search+"%")
-		argIdx++
+		filters = append(filters, "(l.title ILIKE ? OR l.original_url ILIKE ? OR l.short_code ILIKE ?)")
+		like := "%" + search + "%"
+		args = append(args, like, like, like)
 	}
 	if folderID > 0 {
-		where += " AND l.folder_id = $" + strconv.Itoa(argIdx)
+		filters = append(filters, "l.folder_id = ?")
 		args = append(args, folderID)
-		argIdx++
 	}
 	if tagID > 0 {
-		where += " AND l.id IN (SELECT link_id FROM link_tags WHERE tag_id = $" + strconv.Itoa(argIdx) + ")"
+		filters = append(filters, "l.id IN (SELECT link_id FROM link_tags WHERE tag_id = ?)")
 		args = append(args, tagID)
-		argIdx++
 	}
 	if workspaceID > 0 {
-		where += " AND l.workspace_id = $" + strconv.Itoa(argIdx)
+		filters = append(filters, "l.workspace_id = ?")
 		args = append(args, workspaceID)
-		argIdx++
 	}
+	where := strings.Join(filters, " AND ")
 
 	var total int64
-	if err := s.db.QueryRow(ctx, `SELECT COUNT(*) FROM links l `+where, args...).Scan(&total); err != nil {
+	if err := s.db.WithContext(ctx).Model(&entity.Link{}).Where(where, args...).Count(&total).Error; err != nil {
 		log.Printf("count links failed: %v", err)
 		total = 0
 	}
@@ -334,27 +284,22 @@ func (s *LinkService) List(ctx context.Context, userID int64, page, pageSize int
 		orderBy = "l.created_at ASC"
 	}
 
-	query := `SELECT l.id, l.short_code, l.original_url, COALESCE(l.title,''), COALESCE(l.description,''), COALESCE(l.image_url,''), l.domain, l.click_count, l.is_active, l.expires_at, l.created_at, l.updated_at, l.folder_id
-		FROM links l ` + where + ` ORDER BY ` + orderBy + ` LIMIT $` + strconv.Itoa(argIdx) + ` OFFSET $` + strconv.Itoa(argIdx+1)
-	args = append(args, pageSize, (page-1)*pageSize)
-
-	rows, err := s.db.Query(ctx, query, args...)
+	var rows []entity.Link
+	err := s.db.WithContext(ctx).
+		Table("links AS l").
+		Select("l.*").
+		Where(where, args...).
+		Order(orderBy).
+		Limit(pageSize).
+		Offset((page - 1) * pageSize).
+		Find(&rows).Error
 	if err != nil {
 		return nil, errors.New("failed to list links")
 	}
-	defer rows.Close()
 
-	var links []domain.LinkInfo
-	for rows.Next() {
-		var l domain.LinkInfo
-		if err := rows.Scan(&l.ID, &l.ShortCode, &l.OriginalURL, &l.Title, &l.Description,
-			&l.ImageURL, &l.Domain, &l.ClickCount, &l.IsActive,
-			&l.ExpiresAt, &l.CreatedAt, &l.UpdatedAt, &l.FolderID); err != nil {
-			log.Printf("scan links failed: %v", err)
-			continue
-		}
-		l.ShortURL = s.BuildShortURL(l.Domain, l.ShortCode)
-		links = append(links, l)
+	links := make([]domain.LinkInfo, 0, len(rows))
+	for _, row := range rows {
+		links = append(links, *linkInfoFromEntity(row))
 	}
 
 	return &domain.PaginatedLinks{
@@ -382,81 +327,83 @@ func (s *LinkService) Update(ctx context.Context, linkID, userID int64, req doma
 		expiresAt = &t
 	}
 
-	var passwordHash *string
-	if req.Password != nil {
-		hash := hashPassword(*req.Password)
-		passwordHash = &hash
-	}
-
 	// get the old short code (used for cache invalidation); failure does not affect the main flow
 	var oldShortCode string
-	_ = s.db.QueryRow(ctx, `SELECT short_code FROM links WHERE id = $1`, linkID).Scan(&oldShortCode)
+	{
+		var existing entity.Link
+		if err := s.db.WithContext(ctx).Select("short_code").Where("id = ?", linkID).First(&existing).Error; err == nil {
+			oldShortCode = existing.ShortCode
+		}
+	}
 
 	// validate the custom short code
 	if req.ShortCode != nil && *req.ShortCode != "" {
 		if !shortCodePattern.MatchString(*req.ShortCode) {
 			return nil, errors.New("invalid short code format: only letters, digits, underscores and hyphens are allowed, length 4-20")
 		}
-		var exists bool
 		// fast-path check: on failure make no decision, the unique constraint is the final arbiter
-		if err := s.db.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM links WHERE short_code = $1 AND id != $2)`, *req.ShortCode, linkID).Scan(&exists); err == nil && exists {
+		if s.shortCodeTaken(ctx, *req.ShortCode, linkID) {
 			return nil, errors.New("that short code is already taken, please choose another")
 		}
 	}
 
-	var info domain.LinkInfo
-	err := s.db.QueryRow(ctx, `
-		UPDATE links SET
-			original_url = COALESCE($2, original_url),
-			short_code = COALESCE($3, short_code),
-			title = COALESCE($4, title),
-			description = COALESCE($5, description),
-			image_url = COALESCE($6, image_url),
-			domain = COALESCE($7, domain),
-			password_hash = COALESCE($8, password_hash),
-			expires_at = COALESCE($9, expires_at),
-			is_active = COALESCE($10, is_active),
-			folder_id = COALESCE($11, folder_id),
-			utm_source = COALESCE($12, utm_source),
-			utm_medium = COALESCE($13, utm_medium),
-			utm_campaign = COALESCE($14, utm_campaign),
-			utm_term = COALESCE($15, utm_term),
-			utm_content = COALESCE($16, utm_content),
-			ios_url = COALESCE($17, ios_url),
-			android_url = COALESCE($18, android_url),
-			updated_at = NOW()
-		WHERE id = $1 AND user_id = $19
-		RETURNING id, short_code, original_url, COALESCE(title,''), COALESCE(description,''), COALESCE(image_url,''), domain, click_count, is_active, expires_at, folder_id, created_at, updated_at
-	`,
-		linkID, req.OriginalURL, req.ShortCode, req.Title, req.Description, req.ImageURL,
-		req.Domain, passwordHash, expiresAt, req.IsActive, req.FolderID,
-		req.UTMSource, req.UTMMedium, req.UTMCampaign, req.UTMTerm, req.UTMContent,
-		req.IosURL, req.AndroidURL, userID,
-	).Scan(
-		&info.ID, &info.ShortCode, &info.OriginalURL, &info.Title, &info.Description,
-		&info.ImageURL, &info.Domain, &info.ClickCount, &info.IsActive,
-		&info.ExpiresAt, &info.FolderID, &info.CreatedAt, &info.UpdatedAt,
-	)
-	if err != nil {
-		return nil, errors.New("failed to update link, link not found or access denied")
+	// COALESCE semantics: a nil field means "leave the column alone" — a nil pointer passed to Updates()
+	// would otherwise be dropped, and a non-nil pointer to a zero value (is_active=false, folder_id=0)
+	// would be dropped too, which is exactly the difference this map preserves.
+	updates := map[string]any{"updated_at": gorm.Expr("NOW()")}
+	updateIfSet := func(column string, value any) {
+		if value != nil {
+			updates[column] = value
+		}
+	}
+	updateIfSet("original_url", req.OriginalURL)
+	updateIfSet("short_code", req.ShortCode)
+	updateIfSet("title", req.Title)
+	updateIfSet("description", req.Description)
+	updateIfSet("image_url", req.ImageURL)
+	updateIfSet("domain", req.Domain)
+	updateIfSet("expires_at", expiresAt)
+	updateIfSet("is_active", req.IsActive)
+	updateIfSet("folder_id", req.FolderID)
+	updateIfSet("utm_source", req.UTMSource)
+	updateIfSet("utm_medium", req.UTMMedium)
+	updateIfSet("utm_campaign", req.UTMCampaign)
+	updateIfSet("utm_term", req.UTMTerm)
+	updateIfSet("utm_content", req.UTMContent)
+	updateIfSet("ios_url", req.IosURL)
+	updateIfSet("android_url", req.AndroidURL)
+
+	// req.Password is a pointer-to-pointer: present-and-empty means "clear the password", absent means
+	// "leave it". The original SQL used COALESCE($8, password_hash) with a hash that is empty for "".
+	if req.Password != nil {
+		updates["password_hash"] = hashPassword(*req.Password)
 	}
 
-	// update tag associations
-	if req.TagIDs != nil {
-		if _, err := s.db.Exec(ctx, `DELETE FROM link_tags WHERE link_id = $1`, linkID); err != nil {
-			log.Printf("clear link tags failed: %v", err)
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		res := tx.Model(&entity.Link{}).
+			Where("id = ? AND user_id = ?", linkID, userID).
+			Updates(updates)
+		if res.Error != nil {
+			return res.Error
 		}
-		for _, tagID := range req.TagIDs {
-			// only own tags may be attached
-			var tagOwner int64
-			if err := s.db.QueryRow(ctx, `SELECT user_id FROM tags WHERE id = $1`, tagID).Scan(&tagOwner); err != nil || tagOwner != userID {
-				log.Printf("skip non-owned tag %d for link %d (user %d)", tagID, linkID, userID)
-				continue
-			}
-			if _, err := s.db.Exec(ctx, `INSERT INTO link_tags (link_id, tag_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`, linkID, tagID); err != nil {
-				log.Printf("attach tag %d to link %d failed: %v", tagID, linkID, err)
-			}
+		if res.RowsAffected == 0 {
+			return gorm.ErrRecordNotFound
 		}
+
+		// update tag associations
+		if req.TagIDs != nil {
+			if err := tx.Where("link_id = ?", linkID).Delete(&entity.LinkTag{}).Error; err != nil {
+				return err
+			}
+			return attachOwnedTagsTx(tx, userID, linkID, req.TagIDs)
+		}
+		return nil
+	})
+	if err != nil {
+		if isDuplicateKey(err) {
+			return nil, errors.New("that short code is already taken, please choose another")
+		}
+		return nil, errors.New("failed to update link, link not found or access denied")
 	}
 
 	// invalidate the cache
@@ -464,23 +411,32 @@ func (s *LinkService) Update(ctx context.Context, linkID, userID int64, req doma
 		if oldShortCode != "" {
 			s.cache.InvalidateLink(ctx, oldShortCode)
 		}
-		if info.ShortCode != oldShortCode {
-			s.cache.InvalidateLink(ctx, info.ShortCode)
+		if s.newShortCode(ctx, linkID) != oldShortCode {
+			s.cache.InvalidateLink(ctx, s.newShortCode(ctx, linkID))
 		}
 	}
 
-	info.ShortURL = s.BuildShortURL(info.Domain, info.ShortCode)
-	return &info, nil
+	info := s.toLinkInfo(ctx, linkID, userID)
+	if info == nil {
+		return nil, domain.ErrLinkNotFound
+	}
+	return info, nil
 }
 
 // Delete deletes a link
 func (s *LinkService) Delete(ctx context.Context, linkID, userID int64) error {
 	// get the short code for cache invalidation; failure does not affect the main flow
 	var shortCode string
-	_ = s.db.QueryRow(ctx, `SELECT short_code FROM links WHERE id = $1`, linkID).Scan(&shortCode)
+	{
+		var existing entity.Link
+		if err := s.db.WithContext(ctx).Select("short_code").Where("id = ?", linkID).First(&existing).Error; err == nil {
+			shortCode = existing.ShortCode
+		}
+	}
 
-	_, err := s.db.Exec(ctx, `DELETE FROM links WHERE id = $1 AND user_id = $2`, linkID, userID)
-	if err != nil {
+	if err := s.db.WithContext(ctx).
+		Where("id = ? AND user_id = ?", linkID, userID).
+		Delete(&entity.Link{}).Error; err != nil {
 		return errors.New("failed to delete link")
 	}
 
@@ -494,20 +450,16 @@ func (s *LinkService) Delete(ctx context.Context, linkID, userID int64) error {
 func (s *LinkService) BatchDelete(ctx context.Context, ids []int64, userID int64) (int64, error) {
 	// first fetch the short codes of the links to be deleted, to invalidate the cache afterwards (aligned with single Delete)
 	var codes []string
-	rows, err := s.db.Query(ctx, `SELECT short_code FROM links WHERE id = ANY($1) AND user_id = $2`, ids, userID)
-	if err == nil {
-		defer rows.Close()
-		for rows.Next() {
-			var c string
-			if scanErr := rows.Scan(&c); scanErr != nil {
-				continue
-			}
-			codes = append(codes, c)
-		}
+	if err := s.db.WithContext(ctx).Model(&entity.Link{}).
+		Where("id IN ? AND user_id = ?", ids, userID).
+		Pluck("short_code", &codes).Error; err != nil {
+		log.Printf("batch delete: fetching short codes failed: %v", err)
 	}
 
-	tag, err := s.db.Exec(ctx, `DELETE FROM links WHERE id = ANY($1) AND user_id = $2`, ids, userID)
-	if err != nil {
+	res := s.db.WithContext(ctx).
+		Where("id IN ? AND user_id = ?", ids, userID).
+		Delete(&entity.Link{})
+	if res.Error != nil {
 		return 0, errors.New("bulk delete failed")
 	}
 
@@ -517,26 +469,29 @@ func (s *LinkService) BatchDelete(ctx context.Context, ids []int64, userID int64
 			s.cache.InvalidateLink(ctx, c)
 		}
 	}
-	return tag.RowsAffected(), nil
+	return res.RowsAffected, nil
 }
 
 // BatchTag tags links in bulk
 func (s *LinkService) BatchTag(ctx context.Context, ids []int64, tagID int64, userID int64) error {
 	// the tag must belong to the current user
-	var tagOwner int64
-	if err := s.db.QueryRow(ctx, `SELECT user_id FROM tags WHERE id = $1`, tagID).Scan(&tagOwner); err != nil || tagOwner != userID {
+	var tagCount int64
+	if err := s.db.WithContext(ctx).Model(&entity.Tag{}).
+		Where("id = ? AND user_id = ?", tagID, userID).
+		Count(&tagCount).Error; err != nil || tagCount == 0 {
 		return errors.New("tag not found or access denied")
 	}
-	for _, linkID := range ids {
-		// verify the link belongs to that user
-		var ownerID int64
-		err := s.db.QueryRow(ctx, `SELECT user_id FROM links WHERE id = $1`, linkID).Scan(&ownerID)
-		if err != nil || ownerID != userID {
-			continue
-		}
-		if _, err := s.db.Exec(ctx, `INSERT INTO link_tags (link_id, tag_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`, linkID, tagID); err != nil {
-			log.Printf("batch tag link %d with tag %d failed: %v", linkID, tagID, err)
-		}
+
+	// One statement instead of a select+insert per link: the INSERT ... SELECT can only see rows whose
+	// user_id matches, which is exactly the ownership filter the loop implemented.
+	err := s.db.WithContext(ctx).Exec(`
+		INSERT INTO link_tags (link_id, tag_id)
+		SELECT id, ? FROM links WHERE id IN ? AND user_id = ?
+		ON CONFLICT DO NOTHING
+	`, tagID, ids, userID).Error
+	if err != nil {
+		log.Printf("batch tag links with tag %d failed: %v", tagID, err)
+		return errors.New("failed to apply tag")
 	}
 	return nil
 }
@@ -544,14 +499,18 @@ func (s *LinkService) BatchTag(ctx context.Context, ids []int64, tagID int64, us
 // validateOwnedRefs validates that the folder/workspace belongs to the current user (nil or 0 means unset)
 func (s *LinkService) validateOwnedRefs(ctx context.Context, userID int64, folderID, workspaceID *int64) error {
 	if folderID != nil && *folderID != 0 {
-		var owner int64
-		if err := s.db.QueryRow(ctx, `SELECT user_id FROM folders WHERE id = $1`, *folderID).Scan(&owner); err != nil || owner != userID {
+		var count int64
+		if err := s.db.WithContext(ctx).Model(&entity.Folder{}).
+			Where("id = ? AND user_id = ?", *folderID, userID).
+			Count(&count).Error; err != nil || count == 0 {
 			return errors.New("folder not found or access denied")
 		}
 	}
 	if workspaceID != nil && *workspaceID != 0 {
-		var owner int64
-		if err := s.db.QueryRow(ctx, `SELECT user_id FROM workspaces WHERE id = $1`, *workspaceID).Scan(&owner); err != nil || owner != userID {
+		var count int64
+		if err := s.db.WithContext(ctx).Model(&entity.Workspace{}).
+			Where("id = ? AND user_id = ?", *workspaceID, userID).
+			Count(&count).Error; err != nil || count == 0 {
 			return errors.New("workspace not found or access denied")
 		}
 	}
@@ -560,49 +519,39 @@ func (s *LinkService) validateOwnedRefs(ctx context.Context, userID int64, folde
 
 // ExportCSV exports the user's links as a CSV string
 func (s *LinkService) ExportCSV(ctx context.Context, userID int64) (string, error) {
-	rows, err := s.db.Query(ctx, `
-		SELECT short_code, original_url, COALESCE(title,''), domain, click_count, is_active, created_at
-		FROM links WHERE user_id = $1 ORDER BY created_at DESC
-	`, userID)
+	type exportRow struct {
+		ShortCode   string
+		OriginalURL string
+		Title       string
+		Domain      string
+		ClickCount  int64
+		IsActive    bool
+		CreatedAt   time.Time
+	}
+
+	var rows []exportRow
+	err := s.db.WithContext(ctx).
+		Model(&entity.Link{}).
+		Select("short_code, original_url, COALESCE(title, '') AS title, domain, click_count, is_active, created_at").
+		Where("user_id = ?", userID).
+		Order("created_at DESC").
+		Scan(&rows).Error
 	if err != nil {
 		return "", errors.New("failed to query link data")
 	}
-	defer rows.Close()
 
 	var sb strings.Builder
 	sb.WriteString("code,target_url,title,domain,clicks,status,created_at\n")
-	for rows.Next() {
-		var code, url, title, domain string
-		var clicks int64
-		var active bool
-		var created time.Time
-		if err := rows.Scan(&code, &url, &title, &domain, &clicks, &active, &created); err != nil {
-			log.Printf("export csv scan failed: %v", err)
-			continue
-		}
+	for _, r := range rows {
 		status := "enabled"
-		if !active {
+		if !r.IsActive {
 			status = "disabled"
 		}
 		fmt.Fprintf(&sb, "%s,%s,%s,%s,%d,%s,%s\n",
-			escapeCSV(code), escapeCSV(url), escapeCSV(title), escapeCSV(domain), clicks, status, created.Format("2006-01-02 15:04"))
+			escapeCSV(r.ShortCode), escapeCSV(r.OriginalURL), escapeCSV(r.Title),
+			escapeCSV(r.Domain), r.ClickCount, status, r.CreatedAt.Format("2006-01-02 15:04"))
 	}
 	return sb.String(), nil
-}
-
-// escapeCSV escapes a CSV field: fields starting with = + - @ or a tab get a single-quote prefix
-// (preventing Excel formula injection), and fields containing commas/quotes/newlines are wrapped in quotes.
-func escapeCSV(s string) string {
-	s = strings.ReplaceAll(s, "\r", "")
-	if strings.HasPrefix(s, "=") || strings.HasPrefix(s, "+") ||
-		strings.HasPrefix(s, "-") || strings.HasPrefix(s, "@") ||
-		strings.HasPrefix(s, "\t") {
-		s = "'" + s
-	}
-	if strings.ContainsAny(s, ",\"\n") {
-		s = `"` + strings.ReplaceAll(s, `"`, `""`) + `"`
-	}
-	return s
 }
 
 // LogClick publishes a click event to Kafka; falls back to a direct write when Kafka is unavailable so clicks are not lost
@@ -635,6 +584,137 @@ func (s *LinkService) LogClick(ctx context.Context, linkID int64, ip, userAgent,
 // BuildShortURL builds the full short URL
 func (s *LinkService) BuildShortURL(domain, code string) string {
 	return "https://" + domain + "/r/" + code
+}
+
+// ---- helpers ----
+
+// toLinkInfo loads a link with its folder name and tags and maps it onto the API model.
+// It returns nil when the link does not exist or is not owned by userID.
+func (s *LinkService) toLinkInfo(ctx context.Context, linkID, userID int64) *domain.LinkInfo {
+	var row entity.Link
+	err := s.db.WithContext(ctx).
+		Where("id = ? AND user_id = ?", linkID, userID).
+		First(&row).Error
+	if err != nil {
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			log.Printf("load link %d failed: %v", linkID, err)
+		}
+		return nil
+	}
+
+	info := linkInfoFromEntity(row)
+
+	// look up the folder name
+	if info.FolderID != nil {
+		var folder entity.Folder
+		if err := s.db.WithContext(ctx).Select("name").Where("id = ?", *info.FolderID).First(&folder).Error; err == nil {
+			name := folder.Name
+			info.FolderName = &name
+		}
+	}
+
+	// look up tags
+	var tags []domain.LinkTagInfo
+	if err := s.db.WithContext(ctx).
+		Model(&entity.Tag{}).
+		Select("tags.id, tags.name, tags.color").
+		Joins("JOIN link_tags lt ON tags.id = lt.tag_id").
+		Where("lt.link_id = ?", linkID).
+		Scan(&tags).Error; err != nil {
+		log.Printf("load link tags failed: %v", err)
+	}
+	if tags == nil {
+		tags = []domain.LinkTagInfo{}
+	}
+	info.Tags = tags
+
+	return info
+}
+
+// shortCodeTaken reports whether another link already uses the short code (exceptID=0 excludes nothing).
+func (s *LinkService) shortCodeTaken(ctx context.Context, shortCode string, exceptID int64) bool {
+	q := s.db.WithContext(ctx).Model(&entity.Link{}).Where("short_code = ?", shortCode)
+	if exceptID != 0 {
+		q = q.Where("id != ?", exceptID)
+	}
+	var count int64
+	return q.Count(&count).Error == nil && count > 0
+}
+
+// newShortCode reads back the stored short code (used for cache invalidation after an update).
+func (s *LinkService) newShortCode(ctx context.Context, linkID int64) string {
+	var row entity.Link
+	if err := s.db.WithContext(ctx).Select("short_code").Where("id = ?", linkID).First(&row).Error; err != nil {
+		return ""
+	}
+	return row.ShortCode
+}
+
+// attachOwnedTags inserts the tag associations that belong to userID, skipping anything else
+// (previously a non-owned tag could be attached, leaking its name/color across accounts).
+func (s *LinkService) attachOwnedTags(ctx context.Context, userID, linkID int64, tagIDs []int64) {
+	if len(tagIDs) == 0 {
+		return
+	}
+	if err := attachOwnedTagsTx(s.db.WithContext(ctx), userID, linkID, tagIDs); err != nil {
+		log.Printf("attach tags to link %d failed: %v", linkID, err)
+	}
+}
+
+// attachOwnedTagsTx is the shared implementation so the create/update paths use identical filtering.
+func attachOwnedTagsTx(tx *gorm.DB, userID, linkID int64, tagIDs []int64) error {
+	if len(tagIDs) == 0 {
+		return nil
+	}
+	return tx.Exec(`
+		INSERT INTO link_tags (link_id, tag_id)
+		SELECT ?, id FROM tags WHERE id IN ? AND user_id = ?
+		ON CONFLICT DO NOTHING
+	`, linkID, tagIDs, userID).Error
+}
+
+// linkInfoFromEntity maps a persistence row onto the API model.
+func linkInfoFromEntity(row entity.Link) *domain.LinkInfo {
+	info := &domain.LinkInfo{
+		ID:           row.ID,
+		ShortCode:    row.ShortCode,
+		OriginalURL:  row.OriginalURL,
+		Title:        row.Title,
+		Description:  row.Description,
+		ImageURL:     row.ImageURL,
+		Domain:       row.Domain,
+		ClickCount:   row.ClickCount,
+		IsActive:     row.IsActive,
+		ExpiresAt:    row.ExpiresAt,
+		CreatedAt:    row.CreatedAt,
+		UpdatedAt:    row.UpdatedAt,
+		FolderID:     row.FolderID,
+		PasswordHash: row.PasswordHash,
+		UTMSource:    row.UTMSource,
+		UTMMedium:    row.UTMMedium,
+		UTMCampaign:  row.UTMCampaign,
+		UTMTerm:      row.UTMTerm,
+		UTMContent:   row.UTMContent,
+		IosURL:       row.IosURL,
+		AndroidURL:   row.AndroidURL,
+	}
+	info.ShortURL = "https://" + row.Domain + "/r/" + row.ShortCode
+	return info
+}
+
+// escapeCSV escapes a CSV field: fields starting with = + - @ or a tab get a single-quote prefix
+// (preventing Excel formula injection), and fields containing commas/quotes/newlines are wrapped in quotes.
+func escapeCSV(s string) string {
+	s = strings.ReplaceAll(s, "\r", "")
+	if strings.HasPrefix(s, "=") || strings.HasPrefix(s, "+") ||
+		strings.HasPrefix(s, "-") || strings.HasPrefix(s, "@") ||
+		strings.HasPrefix(s, "\t") {
+		s = "'" + s
+	}
+	if strings.ContainsAny(s, ",\"\n") {
+		s = `"` + strings.ReplaceAll(s, `"`, `""`) + `"`
+	}
+	return s
 }
 
 // newEventID generates the click event idempotency key (16 random bytes -> 32 hex chars).

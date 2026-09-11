@@ -5,66 +5,83 @@ import (
 	"errors"
 	"log"
 
-	"github.com/jackc/pgx/v5/pgxpool"
+	"gorm.io/gorm"
 
 	"github.com/chun/kada-backend/internal/domain"
+	"github.com/chun/kada-backend/internal/domain/entity"
 )
 
 type UTMTemplateService struct {
-	db *pgxpool.Pool
+	db *gorm.DB
 }
 
-func NewUTMTemplateService(db *pgxpool.Pool) *UTMTemplateService {
+func NewUTMTemplateService(db *gorm.DB) *UTMTemplateService {
 	return &UTMTemplateService{db: db}
 }
 
 func (s *UTMTemplateService) Create(ctx context.Context, userID int64, req domain.CreateUTMTemplateRequest) (*domain.UTMTemplate, error) {
-	var t domain.UTMTemplate
-	err := s.db.QueryRow(ctx, `
-		INSERT INTO utm_templates (user_id, name, utm_source, utm_medium, utm_campaign, utm_term, utm_content)
-		VALUES ($1,$2,$3,$4,$5,$6,$7)
-		RETURNING id, user_id, name, utm_source, utm_medium, utm_campaign, utm_term, utm_content, created_at, updated_at
-	`, userID, req.Name, req.UTMSource, req.UTMMedium, req.UTMCampaign, req.UTMTerm, req.UTMContent).
-		Scan(&t.ID, &t.UserID, &t.Name, &t.UTMSource, &t.UTMMedium, &t.UTMCampaign, &t.UTMTerm, &t.UTMContent, &t.CreatedAt, &t.UpdatedAt)
-	if err != nil {
+	row := entity.UTMTemplate{
+		UserID:      userID,
+		Name:        req.Name,
+		UTMSource:   req.UTMSource,
+		UTMMedium:   req.UTMMedium,
+		UTMCampaign: req.UTMCampaign,
+		UTMTerm:     req.UTMTerm,
+		UTMContent:  req.UTMContent,
+	}
+	if err := s.db.WithContext(ctx).Create(&row).Error; err != nil {
 		log.Printf("create utm template failed: %v", err)
 		return nil, errors.New("failed to create template")
 	}
-	return &t, nil
+	return &domain.UTMTemplate{
+		ID:          row.ID,
+		UserID:      row.UserID,
+		Name:        row.Name,
+		UTMSource:   row.UTMSource,
+		UTMMedium:   row.UTMMedium,
+		UTMCampaign: row.UTMCampaign,
+		UTMTerm:     row.UTMTerm,
+		UTMContent:  row.UTMContent,
+		CreatedAt:   row.CreatedAt,
+		UpdatedAt:   row.UpdatedAt,
+	}, nil
 }
 
 func (s *UTMTemplateService) List(ctx context.Context, userID int64) ([]domain.UTMTemplate, error) {
-	rows, err := s.db.Query(ctx, `
-		SELECT id, user_id, name, utm_source, utm_medium, utm_campaign, utm_term, utm_content, created_at, updated_at
-		FROM utm_templates WHERE user_id = $1 ORDER BY created_at DESC
-	`, userID)
-	if err != nil {
-		return nil, err
+	var rows []entity.UTMTemplate
+	if err := s.db.WithContext(ctx).
+		Where("user_id = ?", userID).
+		Order("created_at DESC").
+		Find(&rows).Error; err != nil {
+		return nil, errors.New("failed to list templates")
 	}
-	defer rows.Close()
 
-	var templates []domain.UTMTemplate
-	for rows.Next() {
-		var t domain.UTMTemplate
-		if err := rows.Scan(&t.ID, &t.UserID, &t.Name, &t.UTMSource, &t.UTMMedium, &t.UTMCampaign, &t.UTMTerm, &t.UTMContent, &t.CreatedAt, &t.UpdatedAt); err != nil {
-			return nil, err
-		}
-		templates = append(templates, t)
-	}
-	if templates == nil {
-		templates = []domain.UTMTemplate{}
+	templates := make([]domain.UTMTemplate, 0, len(rows))
+	for _, r := range rows {
+		templates = append(templates, domain.UTMTemplate{
+			ID:          r.ID,
+			UserID:      r.UserID,
+			Name:        r.Name,
+			UTMSource:   r.UTMSource,
+			UTMMedium:   r.UTMMedium,
+			UTMCampaign: r.UTMCampaign,
+			UTMTerm:     r.UTMTerm,
+			UTMContent:  r.UTMContent,
+			CreatedAt:   r.CreatedAt,
+			UpdatedAt:   r.UpdatedAt,
+		})
 	}
 	return templates, nil
 }
 
 func (s *UTMTemplateService) Delete(ctx context.Context, userID, templateID int64) error {
-	tag, err := s.db.Exec(ctx, `
-		DELETE FROM utm_templates WHERE id = $1 AND user_id = $2
-	`, templateID, userID)
-	if err != nil {
-		return err
+	res := s.db.WithContext(ctx).
+		Where("id = ? AND user_id = ?", templateID, userID).
+		Delete(&entity.UTMTemplate{})
+	if res.Error != nil {
+		return res.Error
 	}
-	if tag.RowsAffected() == 0 {
+	if res.RowsAffected == 0 {
 		return errors.New("template not found")
 	}
 	return nil
