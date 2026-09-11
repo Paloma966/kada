@@ -193,6 +193,31 @@ func TestIndexesExist(t *testing.T) {
 	}
 }
 
+// A field that carries both a named and an unnamed index tag (`uniqueIndex;index`, or `uniqueIndex:name`
+// plus `index`) is parsed as two indexes over the same column, and the driver renders the column twice:
+//
+//	CREATE UNIQUE INDEX "idx_users_phone" ON "users" ("phone","phone")
+//
+// That is invalid in spirit and was the visible symptom of a worse problem: `uniqueIndex` only creates an
+// index, while the column-level `unique` flag is what the migrator compares, so the two have to be
+// declared together. This asserts on the parsed schema so the mistake cannot come back without a database.
+func TestNoIndexRepeatsAColumn(t *testing.T) {
+	for _, model := range Models() {
+		s := parse(t, model)
+		for name, index := range s.ParseIndexes() {
+			seen := make(map[string]bool, len(index.Fields))
+			for _, field := range index.Fields {
+				if seen[field.DBName] {
+					t.Errorf("%s: index %v covers column %s twice; "+
+						"a field must not carry both `index` and `uniqueIndex` as separate tags",
+						s.Table, name, field.DBName)
+				}
+				seen[field.DBName] = true
+			}
+		}
+	}
+}
+
 // Deleting a user must clean up everything that belongs to it, and deleting a folder/workspace must only
 // detach links. These constraints were explicit in the SQL migrations and drive real data-safety behavior.
 func TestDeleteConstraints(t *testing.T) {
