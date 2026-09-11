@@ -1,0 +1,72 @@
+package schema
+
+import (
+	"os"
+	"strings"
+	"testing"
+)
+
+// Every statement must be re-runnable: the reconciliation is executed on every deploy, including the
+// first one after a database has already been fixed.
+func TestLegacyConstraintStatementsAreIdempotent(t *testing.T) {
+	for _, stmt := range LegacyConstraintStatements() {
+		if !strings.Contains(stmt, "IF EXISTS") {
+			t.Errorf("statement is not idempotent, missing IF EXISTS: %s", stmt)
+		}
+		if !strings.HasPrefix(stmt, "ALTER TABLE ") || !strings.Contains(stmt, "DROP CONSTRAINT") {
+			t.Errorf("unexpected statement shape: %s", stmt)
+		}
+	}
+}
+
+// The list drives a DROP, so a typo in a table or column name would silently do nothing (the guard is
+// IF EXISTS) and leave the migration broken on the next run. Pin the full set.
+func TestLegacyConstraintStatementsCoverEveryAffectedColumn(t *testing.T) {
+	// Derived from the original raw-SQL migrations: they declared these UNIQUE, so PostgreSQL named the
+	// constraints <table>_<column>_key, while the models declare them with `uniqueIndex`.
+	want := []string{
+		"users_phone_key",
+		"users_email_key",
+		"users_wechat_openid_key",
+		"links_short_code_key",
+		"workspaces_slug_key",
+		"api_tokens_token_hash_key",
+		"click_logs_event_id_key",
+		"domains_user_id_name_key",
+	}
+
+	got := make(map[string]bool, len(want))
+	for _, stmt := range LegacyConstraintStatements() {
+		for _, name := range want {
+			if strings.Contains(stmt, name) {
+				got[name] = true
+			}
+		}
+	}
+
+	for _, name := range want {
+		if !got[name] {
+			t.Errorf("no statement drops the legacy constraint %s", name)
+		}
+	}
+}
+
+// The reconciliation targets PostgreSQL's generated constraint names, so it must not run any DDL on a
+// different engine. Pinning the guard keeps a non-Postgres deployment from failing every migration on
+// syntax it does not understand.
+func TestReconcileIsPostgresOnly(t *testing.T) {
+	src, err := os.ReadFile("compat.go")
+	if err != nil {
+		t.Fatalf("cannot read compat.go: %v", err)
+	}
+	body := string(src)
+
+	guard := `if db.Name() != "postgres"`
+	if !strings.Contains(body, guard) {
+		t.Errorf("ReconcileLegacyConstraints must return early for non-Postgres engines (expected %s)", guard)
+	}
+	// The guard has to come before any DDL is executed, otherwise it is useless.
+	if strings.Index(body, guard) > strings.Index(body, "db.Exec(") {
+		t.Error("the engine guard appears after the first db.Exec call")
+	}
+}

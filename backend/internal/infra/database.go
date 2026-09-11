@@ -12,6 +12,7 @@ import (
 	"gorm.io/gorm/logger"
 
 	"github.com/chun/kada-backend/internal/domain/entity"
+	"github.com/chun/kada-backend/internal/infra/schema"
 )
 
 // NewDB opens the PostgreSQL connection pool through GORM and verifies it with a ping.
@@ -71,13 +72,19 @@ func gormLogger() logger.Interface {
 //
 // This replaces the golang-migrate SQL files in db/migrations: the structs are now the single source of
 // truth, so a column that exists in the database but not in code (or the reverse) can no longer happen.
-// AutoMigrate is additive — it creates missing tables/columns/indexes/constraints and never drops
-// anything, so running it against an existing installation is safe.
+// AutoMigrate only creates missing tables, columns, indexes and constraints; it never drops anything.
+//
+// Order matters for a database created from the original raw-SQL migrations: the legacy constraint names
+// have to be reconciled first, otherwise AutoMigrate aborts while trying to drop a constraint that exists
+// under PostgreSQL's generated name instead of the one GORM derives from the model.
 func Migrate(db *gorm.DB) error {
+	if err := schema.ReconcileLegacyConstraints(db); err != nil {
+		return err
+	}
 	if err := db.AutoMigrate(entity.Models()...); err != nil {
 		return fmt.Errorf("auto migration failed: %w", err)
 	}
-	log.Println("✅ Database schema is up to date")
+	log.Println("Database schema is up to date")
 	return nil
 }
 
