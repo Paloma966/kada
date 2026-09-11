@@ -72,13 +72,20 @@ func main() {
 
 	// Initialize the Aliyun SMS verification service
 	var smsSender service.SMSSender
-	if cfg.SMSAccessKeyID != "" && cfg.SMSAccessKeySecret != "" {
+	if cfg.SMSCredentialsConfigured() {
 		smsSender, err = sms.NewAliyunSender(cfg.SMSAccessKeyID, cfg.SMSAccessKeySecret, cfg.SMSSignName, cfg.SMSTemplateCode)
 		if err != nil {
 			log.Printf("⚠️  failed to initialize SMS service: %v", err)
 		}
 	} else {
-		log.Println("⚠️  SMS service not configured; verification codes will only be printed to the log")
+		// Distinguish "not configured" from "configured with the .env.example placeholders": both end in the
+		// same warning, but the second one is the common cause of sign-up failing with a provider error.
+		if cfg.SMSAccessKeyID != "" || cfg.SMSAccessKeySecret != "" {
+			log.Println("⚠️  SMS_ACCESS_KEY_ID/SMS_ACCESS_KEY_SECRET still hold the .env.example placeholder values; " +
+				"SMS is disabled and phone sign-up cannot work until real Aliyun credentials are set")
+		} else {
+			log.Println("⚠️  SMS service not configured; verification codes will only be printed to the log")
+		}
 	}
 
 	// Initialize the cache service (if Redis is available)
