@@ -1,0 +1,269 @@
+# Contributing to Kada
+
+Thanks for taking the time to contribute. This document covers how to set the project up, how work
+is expected to flow, and what a good pull request looks like.
+
+Read [design.md](design.md) first for how the system fits together, and
+[code-style.md](code-style.md) for the conventions used in the code itself.
+
+## Contents
+
+- [1. Requirements](#1-requirements)
+- [2. Local setup](#2-local-setup)
+- [3. Running the stack](#3-running-the-stack)
+- [4. Everyday commands](#4-everyday-commands)
+- [5. Making a change](#5-making-a-change)
+- [6. Commit messages](#6-commit-messages)
+- [7. Pull requests](#7-pull-requests)
+- [8. Testing expectations](#8-testing-expectations)
+- [9. Changing the database schema](#9-changing-the-database-schema)
+- [10. Documentation](#10-documentation)
+
+## 1. Requirements
+
+| Tool | Version | Why |
+|---|---|---|
+| Go | 1.26+ | Backend; the module declares `go 1.26.4` |
+| Node.js | 22+ | Frontend |
+| Docker + Compose | recent | PostgreSQL, Redis, Kafka, and the full stack |
+| `make` | any | Task shortcuts (optional, the commands work standalone) |
+
+You do not need Docker for backend work if PostgreSQL and Redis are already reachable; only Kafka is
+genuinely awkward to install by hand, and every part of the product works without it (clicks fall
+back to a direct database write).
+
+## 2. Local setup
+
+```bash
+git clone git@github.com:Paloma966/kada.git
+cd kada
+
+# Root environment for Docker Compose (JWT_SECRET and POSTGRES_PASSWORD are required)
+cp .env.example .env
+
+# Backend environment when running the API directly on the host
+cp backend/.env.example backend/.env
+
+# Frontend dependencies
+cd frontend && npm ci && cd ..
+```
+
+Fill in `.env` before starting anything:
+
+- `JWT_SECRET` — a strong random value: `openssl rand -hex 32`.
+- `POSTGRES_PASSWORD` — anything non-default.
+- SMS variables — leave them **empty** to disable real sending. Verification codes are then printed
+  to the API log outside release mode, which is all a local setup needs. Copying the placeholder
+  value is worse than leaving them empty: the API starts and then fails on every sign-up.
+
+### Line endings
+
+The repository pins LF through `.gitattributes`. Keep that as is: `core.autocrlf=true` on Windows
+will otherwise check Go files out as CRLF, and every Go formatter will then report the whole tree as
+unformatted while CI sees it as clean.
+
+## 3. Running the stack
+
+### Everything in Docker
+
+```bash
+make docker-up      # nginx :80, API :8080, frontend :3000, PostgreSQL :5432
+make docker-logs
+make docker-down
+```
+
+The API applies the schema on startup (`DB_AUTO_MIGRATE=true` in Compose), so a fresh volume comes up
+ready to use. Nginx serves the app at `http://localhost`.
+
+### Backend and frontend on the host
+
+```bash
+make docker-up                # at least postgres + redis (kafka optional)
+make db-migrate               # apply the schema
+make dev                      # API on :8080
+make dev-fe                   # frontend on :3000
+```
+
+When the frontend runs on the host, keep `NEXT_PUBLIC_API_URL` pointing at the API
+(`http://localhost:8080`) in `frontend/.env.local`.
+
+## 4. Everyday commands
+
+| Command | Does |
+|---|---|
+| `make dev` / `make dev-fe` | Run the API / frontend locally |
+| `make test` | Go tests |
+| `make test-fe` | Frontend tests |
+| `make test-race` | Go tests with the race detector (what CI runs) |
+| `make lint` / `make lint-fe` | `go vet` / ESLint |
+| `make lint-ci` | `golangci-lint` (what CI runs) |
+| `make db-migrate` | Apply the schema |
+| `make db-reset` | Destroy the database volume and start over |
+| `make build` / `make build-fe` | Production builds |
+| `make docker-up` / `docker-down` / `docker-logs` | Compose lifecycle |
+
+Before opening a pull request, these should all pass:
+
+```bash
+make lint && make test && make test-fe && make lint-ci
+cd frontend && npx tsc --noEmit && npm run build
+```
+
+## 5. Making a change
+
+1. **Branch off `main`.** Use a short descriptive name: `feat/ai-support`, `fix/sms-signature-error`.
+2. **Keep the change focused.** One topic per branch and per pull request. Unrelated cleanups make a
+   change hard to review and hard to revert.
+3. **Follow the existing layering.** New behaviour belongs in a service; the handler stays thin. See
+   [design.md §4](design.md#4-backend).
+4. **Keep the layers honest.** Handlers do not run SQL, services do not touch `*gin.Context`,
+   ownership is enforced in the `WHERE` clause.
+5. **Write the tests that would have caught the bug** or that pin the new behaviour.
+6. **Update the documentation** in the same pull request: `docs/design.md` when a decision or a flow
+   changes, `README.md` when setup or commands change.
+
+### Adding a backend resource
+
+The pattern is the same for every resource:
+
+```text
+internal/domain/models.go         request/response structs (JSON + binding tags)
+internal/domain/entity/models.go  the table (only if the schema changes)
+internal/service/<res>_service.go business logic
+internal/handler/<res>/handler.go thin HTTP layer + RegisterRoutes
+cmd/server/main.go                build the service and register the routes
+```
+
+Add the rows to `entity.Models()` if you added a table, then run `make db-migrate`.
+
+### Adding UI text
+
+The UI is bilingual and keyed by the Chinese source string:
+
+```tsx
+const t = useT();
+<button>{t("创建链接")}</button>
+```
+
+Add the English entry to `frontend/src/lib/i18n/dictionary.ts` in the same change. Never hardcode
+display text in a component, and never leave a key untranslated.
+
+## 6. Commit messages
+
+Every commit message is **in English** and starts with a conventional-commit prefix:
+
+```text
+<type>: <short imperative summary>
+
+<optional body: what changed and why, wrapped at ~80 columns>
+```
+
+Allowed types:
+
+| Type | Use for |
+|---|---|
+| `feat` | A new user-visible capability |
+| `fix` | A bug fix |
+| `refactor` | Behaviour-preserving restructuring |
+| `perf` | Performance work |
+| `docs` | Documentation only |
+| `test` | Tests only |
+| `style` | Formatting, no behaviour change |
+| `chore` | Tooling, dependencies, maintenance |
+| `ci` | CI/CD configuration |
+| `build` | Build system or container changes |
+
+Rules:
+
+- **Imperative mood in the summary**: "add link expiry validation", not "added" or "adds".
+- **Lower case after the colon**, no trailing period, no emoji.
+- **A scope is welcome when it clarifies**: `fix(analytics): correct the daily bucket timezone`.
+- **Explain the cause in the body when the fix is not obvious.** A reviewer three months from now
+  needs to know why, not just what.
+- **No attribution trailers.** Do not add `Co-Authored-By` for tooling, and do not credit an
+  assistant in the message.
+
+Examples taken from the project's own history:
+
+```text
+fix: hash SMS codes and fix broken attempt limit
+refactor(db): move the backend to GORM with AutoMigrate
+docs: add README and interview prep doc
+ci: make security gates effective (gosec + frontend lint/tsc)
+```
+
+## 7. Pull requests
+
+A pull request should contain a short summary, and then:
+
+- **What changed and why.** Link the issue it closes, if one exists.
+- **How it was verified.** Name the commands you ran.
+- **Risk.** Say what could break and what you did about it - for example a schema change, a cache
+  invalidation, or a change to an authorization check.
+- **Screenshots** for anything visual.
+
+Keep the diff reviewable. If a change needs a large mechanical commit (a rename, a reformat), put it
+in its own commit so the meaningful part stays readable.
+
+The CI pipeline must be green before merge: `go vet`, `golangci-lint`, Go tests, ESLint,
+`tsc --noEmit`, and the frontend production build.
+
+### Reporting a bug
+
+Include what you did, what you expected, what happened, and the relevant log lines. For backend
+issues, the API logs the underlying cause of a failure; paste it rather than only the message the UI
+showed.
+
+## 8. Testing expectations
+
+| You changed | Add |
+|---|---|
+| Business logic or validation | A table-driven unit test in `internal/service` |
+| An HTTP handler | A test with a fake service implementation (`internal/handler/*/handler_test.go`) |
+| The schema | An assertion in `internal/domain/entity/models_test.go` |
+| A dynamic or bulk SQL statement | A dry-run test in `internal/service/db_dryrun_test.go` |
+| A pure frontend helper | A Vitest test next to it |
+
+A bug fix without a test that fails before the fix is usually incomplete. Tests must not require a
+database: services take `*gorm.DB`, so a `DryRun` session is enough to assert on generated SQL, and
+handlers take interfaces so they can be tested with fakes.
+
+## 9. Changing the database schema
+
+The schema is the GORM models in `backend/internal/domain/entity`. There are no SQL migration files.
+
+1. Edit or add the model, with explicit `gorm:"type:..."` tags so column types do not drift.
+2. Add the model to `entity.Models()` if it is a new table, in dependency order (referenced tables
+   first).
+3. Update `internal/domain/entity/models_test.go`: expected table name, expected columns, and any new
+   unique index or `ON DELETE` rule.
+4. Run `make db-migrate` and verify against a real database. The entity tests assert the model's
+   intent; only a database proves the DDL is accepted.
+
+AutoMigrate is additive, so an existing installation picks up new tables, columns, indexes and
+constraints without data loss - and anything it cannot express stays in place rather than being
+dropped. Constraints worth respecting when you edit a model:
+
+- Declare `ON DELETE` behaviour explicitly. It is real data-safety logic, not decoration: deleting a
+  user cascades to their own rows but only detaches links.
+- Put `constraint:` on the **association** field (for example `Link.User`), not on the foreign-key
+  field, or the generated DDL will disagree with the tag you wrote.
+- Set `type:` for anything where the Go type would pick the wrong column type.
+- Give every unique rule the repository depends on an explicit unique index.
+
+Things AutoMigrate does **not** do, and that therefore need a hand-written statement in a release
+procedure: renaming a column, narrowing a type, dropping a column, and backfilling data. Treat these
+as deliberate operations with a backup, not as part of a normal change.
+
+## 10. Documentation
+
+| Document | Owns |
+|---|---|
+| `README.md` | What the project is, how to run it |
+| `docs/design.md` | Architecture, data model, flows, decisions, limitations |
+| `docs/contributing.md` | This file: workflow, commits, pull requests |
+| `docs/code-style.md` | Conventions for Go, TypeScript and SQL |
+
+Documentation is part of the change, not a follow-up. If you make a decision a future reader would
+question, write the reason next to the code (`why`, not `what`) and mention it in `design.md` if it
+affects the architecture.

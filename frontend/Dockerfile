@@ -12,7 +12,7 @@ COPY --from=builder --chown=node:node /app/next.config.ts ./
 COPY --from=builder --chown=node:node /app/public ./public
 COPY --from=builder --chown=node:node /app/.next/standalone ./
 COPY --from=builder --chown=node:node /app/.next/static ./.next/static
-# 非 root 运行（node 镜像自带 uid 1000 的 node 用户）
+# Run as a non-root user (the node image ships the uid 1000 "node" user)
 USER node
 EXPOSE 3000
 CMD ["node", "server.js"]

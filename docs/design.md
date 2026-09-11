@@ -1,0 +1,436 @@
+# Kada Design
+
+Kada is a short-link management and analytics platform. Users create short links, organise them, and
+watch how they are clicked. This document explains how the system is put together and why.
+
+- [1. Product summary](#1-product-summary)
+- [2. System overview](#2-system-overview)
+- [3. Repository layout](#3-repository-layout)
+- [4. Backend](#4-backend)
+- [5. Data model](#5-data-model)
+- [6. Frontend](#6-frontend)
+- [7. Key flows](#7-key-flows)
+- [8. Cross-cutting decisions](#8-cross-cutting-decisions)
+- [9. Configuration](#9-configuration)
+- [10. Deployment](#10-deployment)
+- [11. Testing](#11-testing)
+- [12. Known limitations](#12-known-limitations)
+
+## 1. Product summary
+
+| Capability | Notes |
+|---|---|
+| Authentication | Phone + SMS code, email + password, JWT bearer token for the API |
+| Links | Create, edit, disable, expire, password protect, batch delete and batch tag |
+| Organisation | Folders, tags, workspaces |
+| Custom domains | DNS TXT ownership verification before a domain can serve links |
+| Analytics | Click totals, daily trend, platform breakdown, visitor list, raw event log |
+| Integrations | UTM templates, QR codes, CSV export, personal API tokens |
+| Presentation | Bilingual UI (Chinese / English), dark theme |
+
+The primary tension in the design is that **redirection is hot and analytics is cold**. Following a
+short link must be fast and must not fail because a database is busy, while counting clicks is
+allowed to lag by a second. The architecture is split along that line.
+
+## 2. System overview
+
+```text
+                       ┌────────────────────────────────────────────┐
+   browser ──────────► │ nginx :80                                  │
+                       │  /api/  and  /r/  ──► backend             │
+                       │  everything else  ──► frontend            │
+                       └───────┬───────────────────────┬────────────┘
+                               │                       │
+                    ┌──────────▼─────────┐   ┌─────────▼──────────┐
+                    │ backend (Go/Gin)   │   │ frontend (Next.js) │
+                    │  :8080             │   │  :3000             │
+                    └──┬───────┬─────┬───┘   └────────────────────┘
+                       │       │     │
+          ┌────────────▼─┐ ┌───▼───┐ │
+          │ PostgreSQL   │ │ Redis │ │ publish click
+          │ (source of   │ │ cache │ │
+          │  truth)      │ │ + rate│ │
+          └──────▲───────┘ │ limit │ │
+                 │         └───────┘ │
+                 │                   ▼
+                 │            ┌─────────────┐
+                 └────────────│   Kafka     │
+                    consume   │  topic:     │
+                 ┌────────────│  clicks     │
+                 │            └─────────────┘
+        ┌────────▼─────────┐
+        │ worker (Go)      │
+        │ :no http port    │
+        └──────────────────┘
+```
+
+Components:
+
+| Component | Process | Responsibility |
+|---|---|---|
+| `cmd/server` | `backend` | HTTP API, short-link redirection, publishes click events |
+| `cmd/worker` | `kafka-worker` | Consumes the `clicks` topic and persists click rows |
+| `cmd/migrate` | one-off | Applies the database schema (GORM AutoMigrate) |
+| `frontend` | `frontend` | Next.js App Router UI; talks to the API over HTTP only |
+| `postgres` | `postgres` | Source of truth; also the analytics store |
+| `redis` | `redis` | Short-code cache and rate-limit counters |
+| `kafka` | `kafka` | Durable buffer between request handling and click persistence |
+| `nginx` | `nginx` | Single entry point, routes `/api/` and `/r/` to the API |
+
+There is exactly one writer of the database schema (see
+[4.4 Schema ownership](#44-schema-ownership)) and no service talks to another service's database.
+The frontend never touches PostgreSQL or Redis.
+
+## 3. Repository layout
+
+```text
+backend/
+  cmd/server/          API entry point: wiring, routes, graceful shutdown
+  cmd/worker/          Kafka consumer entry point
+  cmd/migrate/         schema application
+  config/              environment parsing (single source of configuration)
+  internal/
+    domain/            transport models (JSON tags, request validation)
+      entity/          GORM models == the database schema
+    handler/           HTTP layer, one package per resource
+    service/           business logic and persistence
+    infra/             database, redis, SMS, URL safety, link preview, user-agent
+    middleware/        JWT auth, rate limiting, real client IP
+    mq/                Kafka publisher and event payloads
+  db/                  (removed) schema used to live here as SQL migrations
+frontend/
+  src/app/             routes: landing, (auth), dashboard/**, r/[code]
+  src/components/      shared UI components
+  src/lib/             API client, auth storage, i18n, canvas/starfield helpers
+docs/                  this documentation
+deploy/                server bootstrap scripts and systemd units
+nginx/                 reverse proxy configuration
+scripts/               maintenance scripts
+```
+
+## 4. Backend
+
+### 4.1 Layering
+
+```text
+HTTP request
+   │
+   ▼
+middleware        JWT validation, API-token validation, rate limiting, client IP
+   │
+   ▼
+handler/<res>     bind + validate JSON, map service errors to HTTP status
+   │  depends on a small interface it declares itself, so it can be tested with a fake
+   ▼
+service/<res>     business rules, ownership checks, transactions, cache invalidation
+   │  depends on *gorm.DB
+   ▼
+domain/entity     database rows
+```
+
+Rules that keep this honest:
+
+- A handler never touches the database. It declares the slice of the service it needs as an
+  interface (`handler/auth.AuthService`), which is why handler tests need no database.
+- A service never touches `*gin.Context`. It takes `context.Context` plus plain values.
+- Ownership is enforced in the service by putting `user_id` into the `WHERE` clause, never by
+  trusting an ID that arrived from the client.
+- Errors returned by services are safe to show to a user. Internal details stay in the logs.
+
+### 4.2 Request path
+
+`cmd/server/main.go` is the only place where the object graph is built. It creates the database
+handle, Redis client, SMS sender, cache service, Kafka publisher, then every service, then every
+handler, and finally registers routes:
+
+```go
+v1 := r.Group("/api")
+authH.RegisterRoutes(v1, authMW, strictMW)
+linkH.RegisterRoutes(v1, authMW)
+// ...
+```
+
+Each handler owns its own route table (`RegisterRoutes`), so adding a resource means adding one
+package and one line in `main.go`, not editing a central route list.
+
+Public endpoints that do not require a session (`/api/auth/*`, `/r/:code`) are registered inside the
+handler without the auth middleware; everything else is grouped behind it.
+
+### 4.3 Short-link resolution
+
+Redirection has its own hot path that deliberately avoids PostgreSQL:
+
+```text
+GET /r/:code
+   │
+   ├─ Redis cache hit ──► serve
+   │
+   └─ miss ──► SELECT ... WHERE short_code = $1 AND is_active
+                 │
+                 ├─ expired?      ──► error page
+                 ├─ has password? ──► password page / verify
+                 ├─ platform needs a guide page? ──► intermediate page with deeplinks
+                 └─ otherwise     ──► 302 to the target
+```
+
+The result is written back to Redis with a TTL, and every mutation (update, delete, batch delete,
+workspace delete) invalidates the affected short codes. This is a cache-aside pattern; PostgreSQL
+remains the source of truth and a cold cache only costs latency.
+
+### 4.4 Schema ownership
+
+The schema is defined by the GORM models in `internal/domain/entity` and applied with
+`AutoMigrate`. There are no SQL migration files.
+
+- `cmd/migrate` applies the schema; `make db-migrate` runs it.
+- The API server applies it on startup **only** when `DB_AUTO_MIGRATE=true`, so that in production a
+  restart cannot change the database as a side effect.
+- AutoMigrate is additive: it creates missing tables, columns, indexes and constraints, and never
+  drops anything. That makes it safe on an existing installation, and it means a rollback to an
+  older binary leaves the newer columns in place.
+- Because the models are the only definition, a column that exists in code but not in the database
+  (or the reverse) cannot happen.
+
+Raw SQL is still used where a single statement is the point — the atomic verification-code consume,
+the idempotent click insert, bulk insert-selects — and each of those sites is commented as such.
+
+### 4.5 Error mapping
+
+| Situation | HTTP |
+|---|---|
+| Invalid or missing body | 400 |
+| No or invalid token | 401 |
+| Code or password rejected | 401 |
+| Not the owner / duplicate resource | 403 / 409 |
+| Unknown resource | 404 |
+| Rate limited | 429 |
+| Anything unexpected | 500, with a generic message |
+
+Services return sentinel errors for the cases a handler must distinguish (for example
+`domain.ErrEmailTaken`), and wrap everything else with context so the log explains the failure while
+the response does not.
+
+## 5. Data model
+
+```text
+users ──┬── links ──┬── click_logs
+        │           └── link_tags ── tags
+        ├── folders ──┘ (links.folder_id)
+        ├── workspaces ─┘ (links.workspace_id)
+        ├── domains
+        ├── utm_templates
+        └── api_tokens
+
+sms_codes  (standalone, keyed by phone)
+```
+
+| Table | Purpose | Notable columns |
+|---|---|---|
+| `users` | Accounts | `phone`, `email` (unique), `wechat_openid`, `password_hash` |
+| `links` | Short links | `short_code` (unique), `original_url`, `domain`, `password_hash`, `expires_at`, `is_active`, `click_count` |
+| `click_logs` | One row per click | `platform`, `ip`, `referer`, `event_id` (unique, idempotency) |
+| `folders`, `tags`, `link_tags` | Organisation | `link_tags` is a plain junction table |
+| `workspaces` | Team/project grouping | `slug` (unique), `links.workspace_id` |
+| `domains` | Custom domains | `verified`, unique per `(user_id, name)` |
+| `utm_templates` | Reusable UTM sets | `utm_*` columns |
+| `api_tokens` | Programmatic access | `token_hash` (unique); the raw token is shown once |
+| `sms_codes` | Pending SMS logins | `code_hash` (sha256), `attempts`, `expires_at`; the plaintext code is never stored |
+
+Design rules:
+
+- **Passwords are never stored in a form that can be replayed.** Account and link passwords use
+  bcrypt; SMS codes and API tokens are stored as SHA-256 hashes.
+- **Deletion semantics are explicit.** Deleting a user cascades to their folders, tags, domains,
+  templates and tokens, but only detaches links (`ON DELETE SET NULL`) so public links do not vanish.
+  Deleting a folder or workspace detaches its links. Deleting a link cascades to its click logs.
+- **Timestamps are UTC** (`timestamptz`); the frontend formats for display.
+
+## 6. Frontend
+
+Next.js App Router with React Server Components only where they help; the dashboard is client-side
+because it is highly interactive.
+
+| Path | Content |
+|---|---|
+| `/` | Landing page with the animated starfield |
+| `/login`, `/register` | Auth pages (phone or email), dark glass card |
+| `/dashboard` | Overview: totals, trend, recent links |
+| `/dashboard/links`, `/new`, `/[id]` | Link list, creation form, detail/edit |
+| `/dashboard/analytics`, `/events`, `/customers` | Click analytics, raw events, visitors |
+| `/dashboard/folders`, `/tags`, `/domains`, `/utm`, `/settings` | Organisation and account settings |
+| `/r/[code]` | Client-side fallback page for a short code |
+
+Data fetching uses SWR against `src/lib/api.ts`, which is the single place where the API surface is
+declared and where the bearer token is attached. Components never call `fetch` directly.
+
+State that must survive a reload (session token, profile, locale) lives in `localStorage` behind
+helpers in `src/lib/auth.ts` and `src/lib/i18n`.
+
+### 6.1 Internationalisation
+
+The UI ships in Chinese and English. The dictionary is keyed by the **Chinese source string**:
+
+```tsx
+const t = useT();
+return <button>{t("创建链接")}</button>;
+```
+
+- `zh` is the identity map, so an untranslated key degrades to readable Chinese rather than a blank.
+- `en` holds the translation; a missing key falls back to the key itself.
+- The active locale is stored under `kada.locale`. `useT()` returns a stable function, and locale
+  changes re-render through the provider.
+- Server-rendered output always starts in `zh` because `localStorage` is unreadable during SSR; the
+  provider switches after hydration.
+
+When adding UI text: write the Chinese string, wrap it in `t()`, and add the English entry to
+`dictionary.ts`. The dictionary is the only place English copy lives.
+
+## 7. Key flows
+
+### 7.1 Sign-up by email
+
+```text
+POST /api/auth/register-by-email
+  → validate body (email, min password length, name)
+  → normalise email to lower case
+  → bcrypt hash
+  → INSERT users
+      duplicate → 409 (domain.ErrEmailTaken)
+      other     → 500, cause logged
+  → sign JWT → 201 { token, user }
+```
+
+### 7.2 Login by phone
+
+```text
+POST /api/auth/send-sms-code
+  → per-phone cooldown (60s) and daily cap (10) are checked against sms_codes
+  → provider sends the code, sha256(code) is stored with a 5-minute expiry
+      provider error → the provider code and message are surfaced (see 8.4)
+
+POST /api/auth/login-by-phone
+  → one UPDATE consumes the pending code atomically (unused, unexpired, attempts < 5)
+      failure → increment attempts for the phone, return 401
+  → find or create the user by phone
+  → sign JWT → 200 { token, user }
+```
+
+### 7.3 Recording a click
+
+```text
+GET /r/:code
+  → resolve the link (cache, then database)
+  → build a click event with a random event_id
+  → publish to Kafka
+      publish fails → write the click row directly (degraded mode, same event_id)
+  → redirect the visitor
+
+worker: FetchMessage → WriteClick → CommitMessages
+  INSERT click_logs ... ON CONFLICT (event_id) DO NOTHING
+      inserted → UPDATE links SET click_count = click_count + 1
+      conflict → commit only (the click was already counted)
+```
+
+Kafka is at-least-once, so `event_id` is what makes counting exact. The consumer commits offsets
+only after a successful write, and a poison message (invalid JSON, foreign-key violation) is dropped
+after three attempts rather than blocking the single-partition consumer group forever.
+
+## 8. Cross-cutting decisions
+
+### 8.1 Configuration
+
+One `Config` struct in `backend/config` is parsed once from the environment; nothing else reads
+`os.Getenv`. Missing values fall back to development defaults, except in release mode where weak JWT
+secrets are rejected outright. `backend/.env.example` and the root `.env.example` document every
+variable.
+
+### 8.2 Caching and degradation
+
+Redis is used for the short-code cache and for rate-limit counters, and both **fail open**: if Redis
+is unreachable the API keeps serving, caching is skipped, and rate limiting stops rejecting requests
+until the client reconnects. Availability of the product is ranked above strictness of the limiter.
+
+### 8.3 Rate limiting
+
+Sliding-window counters in Redis, in three tiers: a global limit for normal API traffic, a strict
+limit for auth endpoints, and a higher-throughput limit for redirection. The client IP comes from
+`X-Real-IP`, which nginx rewrites. `X-Forwarded-For` is not trusted, because a client can forge it.
+
+### 8.4 Third-party failures are made visible
+
+An SMS provider rejection (unapproved signature, unapproved template, disabled AccessKey) is a
+configuration mistake, not a transient failure. The provider's error code and message are logged and
+- outside release mode - returned to the caller, because a generic "please try again later" makes the
+configuration impossible to diagnose. Internal details are suppressed in release mode.
+
+### 8.5 Security posture
+
+- JWT: HS256 only, expiry required, secret strength enforced in release mode.
+- Link targets: only `http` and `https` are accepted, which also blocks `javascript:` and `data:`
+  payloads from the guide page.
+- Link preview: the fetcher refuses internal networks and cloud metadata addresses (SSRF).
+- CSV export: fields are escaped and formula-injection prefixes are neutralised.
+- Error responses never echo internal errors.
+- Containers run as a non-root user; nginx sets the usual response security headers.
+
+## 9. Configuration
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `DATABASE_URL` | local `kada` database | PostgreSQL DSN |
+| `DB_AUTO_MIGRATE` | `true` | Apply the schema on API startup |
+| `REDIS_URL` | `redis://localhost:6379` | Cache and rate limiting (optional) |
+| `JWT_SECRET` | weak dev value | Token signing; must be strong in release mode |
+| `JWT_EXPIRES_IN` | `720h` | Token lifetime |
+| `PORT` | `8080` | API listen port |
+| `GIN_MODE` | `debug` | `release` silences dev output and enables strict checks |
+| `API_BASE_URL` | `https://kada.click` | Base for generated short URLs |
+| `FRONTEND_URL` | `http://localhost:3000` | CORS and redirects |
+| `SMS_ACCESS_KEY_ID`, `SMS_ACCESS_KEY_SECRET` | empty | Alibaba Cloud credentials; empty disables real sending |
+| `SMS_SIGN_NAME`, `SMS_TEMPLATE_CODE` | empty | Must be approved by the provider |
+| `KAFKA_BROKERS` | empty | Comma-separated brokers; empty disables Kafka (clicks are written directly) |
+| `KAFKA_TOPIC` | `clicks` | Click event topic |
+| `NEXT_PUBLIC_API_URL` | `""` (same origin) | API base for the browser |
+
+## 10. Deployment
+
+Two supported shapes:
+
+1. **Docker Compose** (`docker compose up -d`): nginx, API, worker, frontend, PostgreSQL, Redis and
+   Kafka on one host. Suitable for a single server or local development.
+2. **systemd + released binaries** (`deploy/`): the API and worker run as native processes, with
+   PostgreSQL, Redis and Kafka provided separately. This is what the GitHub Actions deploy job uses:
+   it builds the binaries, applies the schema with `bin/migrate`, restarts `kada-api`, and verifies
+   the health endpoint, rolling back to the previous binary if the service does not come up.
+
+The deploy job applies the schema **before** replacing the binary, so a failed migration leaves the
+previous version running.
+
+## 11. Testing
+
+| Layer | Style |
+|---|---|
+| HTTP handlers | Table-driven tests with fake service implementations; no database |
+| Services | Pure-function tests (validation, short-code generation, CSV escaping) |
+| Schema | `internal/domain/entity` asserts table names, columns, unique indexes and delete rules against the GORM schema |
+| Query shapes | Dry-run GORM sessions assert the generated SQL for the dynamic and bulk statements |
+| Frontend | Vitest for pure helpers (starfield geometry, ophiuchus lines, utilities) |
+
+Run everything with `make test` and `make test-fe`; CI additionally runs `go vet`, `golangci-lint`,
+`tsc --noEmit` and the production build on every pull request.
+
+## 12. Known limitations
+
+These are deliberate trade-offs, not oversights:
+
+- **Analytics are computed on demand.** `click_logs` is queried directly; there is no rollup table.
+  Acceptable at the current volume, and the obvious first thing to change if the tables grow.
+- **Kafka has one partition.** Click ordering is preserved and the throughput ceiling is a single
+  consumer; a single-partition consumer group is also what makes the poison-message logic simple.
+- **AutoMigrate cannot express every future change.** Renames, type narrowing and data backfills need
+  a hand-written statement; there is no down-migration path.
+- **No background job scheduler.** Expiry is evaluated at read time rather than by a sweeper.
+- **Single-tenant deployment.** There is no organisation/role model beyond `workspaces`, which group
+  links but do not grant access to other users.
+- **Rate-limit state is per-Redis-instance**, so a multi-instance deployment needs a shared Redis
+  (which is the intended topology).
