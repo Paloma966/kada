@@ -32,6 +32,10 @@ export default function CreateLinkPage() {
   const [previewing, setPreviewing] = useState(false);
   const [preview, setPreview] = useState<{ title: string; description: string; image_url: string; favicon_url: string } | null>(null);
   const previewTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  // Latest field values, read by the preview effect below. Keeping them in refs (instead of in the
+  // effect's dependency list) is what stops a keystroke in the title from cancelling the debounce.
+  const titleRef = useRef("");
+  const descriptionRef = useRef("");
 
   // Debounced URL preview fetch
   useEffect(() => {
@@ -44,11 +48,11 @@ export default function CreateLinkPage() {
       try {
         const res = await linksAPI.preview(token, originalUrl);
         setPreview(res.preview);
-        // Auto-fill if empty
-        if (!title && res.preview.title && res.preview.title !== originalUrl) {
+        // Auto-fill only the fields the user has not typed into yet.
+        if (!titleRef.current && res.preview.title && res.preview.title !== originalUrl) {
           setTitle(res.preview.title.slice(0, 200));
         }
-        if (!description && res.preview.description) {
+        if (!descriptionRef.current && res.preview.description) {
           setDescription(res.preview.description.slice(0, 500));
         }
       } catch {
@@ -58,7 +62,7 @@ export default function CreateLinkPage() {
       }
     }, 800);
     return () => clearTimeout(previewTimer.current);
-  }, [originalUrl]);
+  }, [originalUrl, token]);
 
   const { data: domainData } = useSWR(token ? "domains" : null, () => domainsAPI.list(token!));
   const { data: utmData } = useSWR(token ? "utm-templates" : null, () => utmAPI.list(token!));
@@ -187,7 +191,7 @@ export default function CreateLinkPage() {
                 <input
                   type="text"
                   value={title}
-                  onChange={(e) => setTitle(e.target.value)}
+                  onChange={(e) => { titleRef.current = e.target.value; setTitle(e.target.value); }}
                   className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition"
                   placeholder={t("我的推广链接")}
                 />
@@ -197,7 +201,7 @@ export default function CreateLinkPage() {
                 <label className="block text-sm font-medium text-gray-700 mb-1.5">{t("描述")}</label>
                 <textarea
                   value={description}
-                  onChange={(e) => setDescription(e.target.value)}
+                  onChange={(e) => { descriptionRef.current = e.target.value; setDescription(e.target.value); }}
                   className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition resize-none"
                   placeholder={t("简短描述（可选）")}
                   rows={3}

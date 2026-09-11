@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Globe, Plus, Trash2, Check, X, ShieldCheck, ShieldAlert, ExternalLink, Info } from "lucide-react";
+import { Globe, Plus, Trash2, Check, X, ShieldCheck, ShieldAlert, Info } from "lucide-react";
 import useSWR from "swr";
 import { toast } from "sonner";
 import { domainsAPI } from "@/lib/api";

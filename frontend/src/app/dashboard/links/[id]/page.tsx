@@ -1,20 +1,17 @@
 "use client";
 
-import { use, useEffect, useState, useRef } from "react";
+import { use, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import {
   Copy, ExternalLink, Pencil, Save, X, Check, QrCode, Download,
-  BarChart3, Globe, Clock, Shield, Smartphone, Tags, ArrowLeft, Folder, Building2,
+  BarChart3, Globe, Clock, Shield, Smartphone, Tags, ArrowLeft, Folder,
 } from "lucide-react";
 import { toast } from "sonner";
 import useSWR from "swr";
 import { linksAPI, foldersAPI, tagsAPI, domainsAPI, workspacesAPI } from "@/lib/api";
 import { getToken } from "@/lib/auth";
 import { safeHref } from "@/lib/utils";
-import { useT } from "@/lib/i18n";
-// `useI18n` is defined in the i18n foundation's context module; the barrel
-// (`@/lib/i18n`) does not re-export it, and the foundation must stay untouched.
-import { useI18n } from "@/lib/i18n/context";
+import { useT, useI18n } from "@/lib/i18n";
 
 interface TagInfo {
   id: number;
@@ -104,7 +101,8 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
   const workspaces = workspaceData?.workspaces ?? [];
   const verifiedDomains = (domainData?.domains ?? []).filter((d: { verified: boolean }) => d.verified);
 
-  const fetchLink = () => {
+  // Memoised so the effect below can depend on it without refetching on every render.
+  const fetchLink = useCallback(() => {
     if (!token) return;
     // `loading` starts as true (useState(true)), so no synchronous setState
     // happens here; state is only updated in the async callbacks below.
@@ -131,9 +129,9 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
       })
       .catch(() => toast.error(t("加载链接失败")))
       .finally(() => setLoading(false));
-  };
+  }, [id, token, t]);
 
-  useEffect(() => { fetchLink(); }, [id, token]);
+  useEffect(() => { fetchLink(); }, [fetchLink]);
 
   // Fetch per-link analytics
   useEffect(() => {
@@ -152,7 +150,7 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
         });
       }).catch(() => toast.error(t("加载统计数据失败")));
     }
-  }, [showAnalytics, link, token]);
+  }, [showAnalytics, link, token, t]);
 
   // QR code
   useEffect(() => {

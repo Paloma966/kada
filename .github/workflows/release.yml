@@ -1,4 +1,4 @@
-name: Release — Build & Push Docker Images
+name: Release - Build and Push Docker Images
 
 on:
   push:
@@ -17,7 +17,7 @@ env:
   NODE_VERSION: "22"
 
 jobs:
-  # ========== Run tests ==========
+  # ----- Run tests -----
   test:
     name: Run Tests
     runs-on: ubuntu-latest
@@ -51,7 +51,7 @@ jobs:
           JWT_SECRET: test-secret
         run: go test ./... -v -count=1
 
-  # ========== Build and push Docker images ==========
+  # ----- Build and push Docker images -----
   build-and-push:
     name: Build & Push Images
     runs-on: ubuntu-latest
@@ -90,7 +90,7 @@ jobs:
             echo "version=latest" >> $GITHUB_OUTPUT
           fi
 
-      # ---- Backend image ----
+      # ----- Backend image -----
       - name: Build & push backend image
         uses: docker/build-push-action@v6
         with:
@@ -103,7 +103,7 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      # ---- Frontend image ----
+      # ----- Frontend image -----
       - name: Build & push frontend image
         uses: docker/build-push-action@v6
         with:

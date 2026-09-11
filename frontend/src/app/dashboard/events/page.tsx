@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import useSWR from "swr";
-import { ExternalLink, MousePointerClick, ChevronLeft, ChevronRight, Smartphone, Globe, Copy, QrCode, ExternalLinkIcon } from "lucide-react";
+import { ExternalLink, MousePointerClick, ChevronLeft, ChevronRight } from "lucide-react";
 import { analyticsAPI } from "@/lib/api";
 import { getToken } from "@/lib/auth";
 import { safeHref } from "@/lib/utils";

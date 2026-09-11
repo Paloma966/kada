@@ -79,7 +79,11 @@ export default function DashboardPage() {
   const handleSelect = (id: number, checked: boolean) => {
     setSelectedIds(prev => {
       const next = new Set(prev);
-      checked ? next.add(id) : next.delete(id);
+      if (checked) {
+        next.add(id);
+      } else {
+        next.delete(id);
+      }
       return next;
     });
   };

@@ -1,14 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { useParams } from "next/navigation";
 import { useT } from "@/lib/i18n";
 
 export default function RedirectPage() {
   const { code } = useParams<{ code: string }>();
   const t = useT();
-  const [status, setStatus] = useState<string>("redirecting");
-  const [targetUrl, setTargetUrl] = useState("");
 
   useEffect(() => {
     if (!code) return;

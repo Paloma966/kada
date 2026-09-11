@@ -15,7 +15,7 @@ env:
   NODE_VERSION: "22"
 
 jobs:
-  # ========== Go lint ==========
+  # ----- Go lint -----
   backend-lint:
     name: Go Lint
     runs-on: ubuntu-latest
@@ -34,7 +34,7 @@ jobs:
         working-directory: backend
         run: golangci-lint run --timeout=5m
 
-  # ========== Go backend tests ==========
+  # ----- Go tests -----
   backend-test:
     name: Go Tests
     runs-on: ubuntu-latest
@@ -83,7 +83,7 @@ jobs:
           path: backend/coverage.out
           retention-days: 7
 
-  # ========== Frontend lint ==========
+  # ----- Frontend lint -----
   frontend-lint:
     name: Frontend Lint
     runs-on: ubuntu-latest
@@ -109,7 +109,7 @@ jobs:
         working-directory: frontend
         run: npm run lint
 
-  # ========== Frontend build check ==========
+  # ----- Frontend build -----
   frontend-build:
     name: Frontend Build
     runs-on: ubuntu-latest
@@ -148,7 +148,7 @@ jobs:
         working-directory: frontend
         run: npm run build
 
-  # ========== Deploy to production server ==========
+  # ----- Deploy to production -----
   deploy:
     name: Deploy to Production
     runs-on: ubuntu-latest
@@ -166,15 +166,13 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
 
-      # ---- Build backend ----
       - name: Build Go binaries
         working-directory: backend
         run: |
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o bin/server ./cmd/server/
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o bin/migrate ./cmd/migrate/
 
-      # ---- Build frontend ----
-      - name: Install frontend deps
+      - name: Install frontend dependencies
         working-directory: frontend
         run: npm ci
 
@@ -189,13 +187,12 @@ jobs:
           tar czf ../deploy-pkg/kada-fe-standalone.tar.gz -C .next/standalone .
           tar czf ../deploy-pkg/kada-fe-static.tar.gz -C .next static/
 
-      # ---- Deploy ----
       - name: Create deploy marker
         run: |
           echo "${{ github.sha }}" > deploy-version.txt
           echo "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> deploy-version.txt
 
-      - name: Upload to server
+      - name: Upload artifacts
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.SERVER_HOST }}
@@ -206,7 +203,7 @@ jobs:
           target: /tmp/kada-deploy/
           strip_components: 0
 
-      - name: Migrate schema & restart services
+      - name: Apply schema and restart services
         uses: appleboy/ssh-action@v1.2.2
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
@@ -217,76 +214,86 @@ jobs:
           port: 22
           envs: DATABASE_URL
           script: |
-            set -e
-            echo "📦 Starting deploy: $(cat /tmp/kada-deploy/deploy-version.txt | head -1)"
+            set -euo pipefail
 
-            # ---- 1. Back up the current version (enables rollback) ----
-            echo "💾 Backing up current version..."
-            mkdir -p /opt/kada/backups
-            cp /opt/kada/backend/bin/server /opt/kada/backups/server.$(date +%Y%m%d%H%M%S) 2>/dev/null || true
-            # Keep the 5 most recent backups
-            ls -t /opt/kada/backups/server.* 2>/dev/null | tail -n +6 | xargs rm -f 2>/dev/null || true
+            DEPLOY_DIR=/tmp/kada-deploy
+            BACKEND_DIR=/opt/kada/backend
+            FRONTEND_DIR=/opt/kada/frontend
 
-            # ---- 2. Apply the database schema ----
+            echo "Deploying $(head -1 "$DEPLOY_DIR/deploy-version.txt")"
+
+            # 1. Back up the running binary so a failed start can be rolled back.
+            echo "Backing up the current binary"
+            mkdir -p "$BACKEND_DIR/backups"
+            cp "$BACKEND_DIR/bin/server" "$BACKEND_DIR/backups/server.$(date +%Y%m%d%H%M%S)" 2>/dev/null || true
+            ls -t "$BACKEND_DIR"/backups/server.* 2>/dev/null | tail -n +6 | xargs rm -f 2>/dev/null || true
+
+            # 2. Apply the database schema.
             # The schema is defined by the GORM models in backend/internal/domain/entity and applied by
-            # cmd/migrate (AutoMigrate). It only ever adds missing tables/columns/indexes — nothing is
-            # dropped — so it is safe to run on every deploy, and it runs BEFORE the new binary starts.
-            echo "🗄️  Applying schema..."
-            cp -f /tmp/kada-deploy/backend/bin/migrate /opt/kada/backend/bin/migrate
-            chmod +x /opt/kada/backend/bin/migrate
-            cd /opt/kada/backend && DATABASE_URL="$DATABASE_URL" ./bin/migrate
+            # cmd/migrate: it reconciles legacy constraint names, then runs AutoMigrate (additive only).
+            # It reads DATABASE_URL from the environment when the secret is set, and otherwise from
+            # /opt/kada/backend/.env through godotenv, which is how this host is configured.
+            echo "Applying the database schema"
+            cp -f "$DEPLOY_DIR/backend/bin/migrate" "$BACKEND_DIR/bin/migrate"
+            chmod +x "$BACKEND_DIR/bin/migrate"
+            cd "$BACKEND_DIR" && DATABASE_URL="$DATABASE_URL" ./bin/migrate
 
-            # ---- 3. Replace backend ----
-            echo "🔄 Replacing backend..."
+            # 3. Replace the backend binary.
+            echo "Restarting the backend"
             systemctl stop kada-api
-            cp /tmp/kada-deploy/backend/bin/server /opt/kada/backend/bin/server
-            chmod +x /opt/kada/backend/bin/server
+            cp "$DEPLOY_DIR/backend/bin/server" "$BACKEND_DIR/bin/server"
+            chmod +x "$BACKEND_DIR/bin/server"
             systemctl start kada-api
             sleep 2
 
-            # ---- Health check ----
-            if systemctl is-active --quiet kada-api; then
-              echo "✅ Backend started successfully"
-            else
-              echo "❌ Backend failed to start — rolling back!"
-              cp /opt/kada/backups/server.* /opt/kada/backend/bin/server 2>/dev/null || true
+            if ! systemctl is-active --quiet kada-api; then
+              echo "kada-api failed to start, rolling back"
+              cp "$BACKEND_DIR"/backups/server.* "$BACKEND_DIR/bin/server" 2>/dev/null || true
               systemctl start kada-api || true
               exit 1
             fi
+            echo "kada-api is running"
 
-            # ---- 4. Replace frontend ----
-            echo "🔄 Replacing frontend..."
-            cd /opt/kada/frontend
+            # 4. Replace the frontend build.
+            echo "Deploying the frontend"
+            cd "$FRONTEND_DIR"
             rm -rf .next/static node_modules server.js package.json static 2>/dev/null || true
-            tar xzf /tmp/kada-deploy/deploy-pkg/kada-fe-standalone.tar.gz
+            tar xzf "$DEPLOY_DIR/deploy-pkg/kada-fe-standalone.tar.gz"
             mkdir -p .next
-            tar xzf /tmp/kada-deploy/deploy-pkg/kada-fe-static.tar.gz -C .next
+            tar xzf "$DEPLOY_DIR/deploy-pkg/kada-fe-static.tar.gz" -C .next
 
-            # ---- 5. Restart frontend ----
+            # 5. Restart the frontend.
             systemctl restart kada-frontend
             sleep 2
-            if systemctl is-active --quiet kada-frontend; then
-              echo "✅ Frontend restarted"
-            else
-              echo "⚠️  Frontend may have issues — check logs"
+            if ! systemctl is-active --quiet kada-frontend; then
+              echo "kada-frontend is not active after restart"
+              journalctl -u kada-frontend -n 30 --no-pager || true
+              exit 1
             fi
+            echo "kada-frontend is running"
 
-            # ---- 6. Cleanup ----
-            rm -rf /tmp/kada-deploy
-            cp /opt/kada/backend/bin/server -v 2>/dev/null || true
-            echo "🚀 Deploy complete: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            # 6. Clean up.
+            rm -rf "$DEPLOY_DIR"
+            echo "Deploy finished at $(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
+      # Runs on the runner, so it proves the deployed service is reachable from the outside and not just
+      # that systemd reports the unit as active. A failure here fails the job.
       - name: Verify deployment
         run: |
+          set -euo pipefail
+          BASE_URL="http://${{ secrets.SERVER_HOST }}"
           sleep 3
-          echo "=== Health Check ==="
-          curl -sf http://${{ secrets.SERVER_HOST }}/api/health && echo "" || echo "❌ Health check failed"
-          echo "=== Frontend ==="
-          curl -sf -o /dev/null -w "Frontend: HTTP %{http_code}\n" http://${{ secrets.SERVER_HOST }}/ || echo "❌ Frontend check failed"
-          echo "=== QR Code ==="
-          curl -sf -o /dev/null -w "QR API: HTTP %{http_code}\n" http://${{ secrets.SERVER_HOST }}/api/links || echo "⚠️  API check"
 
-  # ========== Summary ==========
+          echo "Checking the API health endpoint"
+          curl -sS --fail --max-time 15 "$BASE_URL/api/health" | tee health.json
+          grep -q '"status":"ok"' health.json
+          echo "Health endpoint is ok"
+
+          echo "Checking the frontend"
+          curl -sS --fail --max-time 15 -o /dev/null "$BASE_URL/"
+          echo "Frontend is reachable"
+
+  # ----- Summary -----
   pipeline-summary:
     name: Pipeline Summary
     runs-on: ubuntu-latest
@@ -295,28 +302,21 @@ jobs:
     steps:
       - name: Report status
         run: |
-          echo "## 🚀 CI Pipeline Results" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| Job | Result |" >> $GITHUB_STEP_SUMMARY
-          echo "|-----|--------|" >> $GITHUB_STEP_SUMMARY
-
-          declare -A results
-          results[backend-lint]="${{ needs.backend-lint.result }}"
-          results[backend-test]="${{ needs.backend-test.result }}"
-          results[frontend-lint]="${{ needs.frontend-lint.result }}"
-          results[frontend-build]="${{ needs.frontend-build.result }}"
-          results[deploy]="${{ needs.deploy.result }}"
-
-          for job in backend-lint backend-test frontend-lint frontend-build deploy; do
-            result="${results[$job]}"
-            case "$result" in
-              success) icon="✅" ;;
-              skipped) icon="⏭️" ;;
-              failure) icon="❌" ;;
-              *) icon="⚠️" ;;
-            esac
-            echo "| $job | $icon $result |" >> $GITHUB_STEP_SUMMARY
-          done
-
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "🔗 [View run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})" >> $GITHUB_STEP_SUMMARY
+          {
+            echo "## CI Pipeline Results"
+            echo ""
+            echo "| Job | Result |"
+            echo "|-----|--------|"
+            for job in backend-lint backend-test frontend-lint frontend-build deploy; do
+              case "$job" in
+                backend-lint) result="${{ needs.backend-lint.result }}" ;;
+                backend-test) result="${{ needs.backend-test.result }}" ;;
+                frontend-lint) result="${{ needs.frontend-lint.result }}" ;;
+                frontend-build) result="${{ needs.frontend-build.result }}" ;;
+                deploy) result="${{ needs.deploy.result }}" ;;
+              esac
+              echo "| $job | $result |"
+            done
+            echo ""
+            echo "[View run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"
+          } >> "$GITHUB_STEP_SUMMARY"
