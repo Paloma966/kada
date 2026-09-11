@@ -76,8 +76,12 @@ func gormLogger() logger.Interface {
 //
 // Order matters for a database created from the original raw-SQL migrations: the legacy constraint names
 // have to be reconciled first, otherwise AutoMigrate aborts while trying to drop a constraint that exists
-// under PostgreSQL's generated name instead of the one GORM derives from the model.
+// under PostgreSQL's generated name instead of the one GORM derives from the model. The enum types come
+// first of all, because a table whose column uses one cannot be created until the type exists.
 func Migrate(db *gorm.DB) error {
+	if err := schema.EnsureEnumTypes(db); err != nil {
+		return err
+	}
 	if err := schema.ReconcileLegacyConstraints(db); err != nil {
 		return err
 	}
