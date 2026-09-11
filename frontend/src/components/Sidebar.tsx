@@ -16,6 +16,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useT } from "@/lib/i18n";
 
 interface NavItem {
   name: string;
@@ -29,6 +30,8 @@ interface NavSection {
   items: NavItem[];
 }
 
+// Labels live here as Chinese source strings; they are resolved through t() at
+// render time because this table is evaluated before React context is available.
 const NAV_SECTIONS: NavSection[] = [
   {
     items: [
@@ -58,6 +61,7 @@ const NAV_SECTIONS: NavSection[] = [
 
 export function Sidebar({ onCloseMobile }: { onCloseMobile?: () => void }) {
   const pathname = usePathname();
+  const t = useT();
 
   const handleClick = () => {
     // Close mobile sidebar after navigation
@@ -87,7 +91,7 @@ export function Sidebar({ onCloseMobile }: { onCloseMobile?: () => void }) {
           <div key={secIdx} className={cn(secIdx > 0 && "mt-6")}>
             {section.name && (
               <p className="mb-1.5 px-3 text-xs font-medium text-gray-400 uppercase tracking-wider">
-                {section.name}
+                {t(section.name)}
               </p>
             )}
             <div className="space-y-0.5">
@@ -110,7 +114,7 @@ export function Sidebar({ onCloseMobile }: { onCloseMobile?: () => void }) {
                     )}
                   >
                     <Icon className={cn("size-4 shrink-0", isActive && "text-indigo-600")} />
-                    <span>{item.name}</span>
+                    <span>{t(item.name)}</span>
                   </Link>
                 );
               })}
@@ -132,7 +136,7 @@ export function Sidebar({ onCloseMobile }: { onCloseMobile?: () => void }) {
           )}
         >
           <Settings className={cn("size-4 shrink-0", pathname === "/dashboard/settings" && "text-indigo-600")} />
-          <span>设置</span>
+          <span>{t("设置")}</span>
         </Link>
         <p className="px-3 text-xs text-gray-400">Kada v0.2</p>
       </div>

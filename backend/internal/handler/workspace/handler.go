@@ -28,7 +28,7 @@ func (h *Handler) RegisterRoutes(r *gin.RouterGroup, authMW gin.HandlerFunc) {
 	auth.DELETE("/workspaces/:id", h.Delete)
 }
 
-// List 获取工作区列表
+// List returns the list of workspaces.
 func (h *Handler) List(c *gin.Context) {
 	userID := middleware.GetUserID(c)
 
@@ -41,13 +41,13 @@ func (h *Handler) List(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"workspaces": workspaces})
 }
 
-// Create 创建工作区
+// Create creates a workspace.
 func (h *Handler) Create(c *gin.Context) {
 	userID := middleware.GetUserID(c)
 
 	var req domain.CreateWorkspaceRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "请提供名称和 slug"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "name and slug are required"})
 		return
 	}
 
@@ -60,12 +60,12 @@ func (h *Handler) Create(c *gin.Context) {
 	c.JSON(http.StatusCreated, gin.H{"workspace": w})
 }
 
-// Get 获取单个工作区
+// Get returns a single workspace.
 func (h *Handler) Get(c *gin.Context) {
 	userID := middleware.GetUserID(c)
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的工作区 ID"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid workspace ID"})
 		return
 	}
 
@@ -78,18 +78,18 @@ func (h *Handler) Get(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"workspace": w})
 }
 
-// Update 更新工作区
+// Update updates a workspace.
 func (h *Handler) Update(c *gin.Context) {
 	userID := middleware.GetUserID(c)
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的工作区 ID"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid workspace ID"})
 		return
 	}
 
 	var req domain.UpdateWorkspaceRequest
 	if bindErr := c.ShouldBindJSON(&req); bindErr != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "请求格式无效"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request format"})
 		return
 	}
 
@@ -102,12 +102,12 @@ func (h *Handler) Update(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"workspace": w})
 }
 
-// Delete 删除工作区
+// Delete deletes a workspace.
 func (h *Handler) Delete(c *gin.Context) {
 	userID := middleware.GetUserID(c)
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的工作区 ID"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid workspace ID"})
 		return
 	}
 
@@ -116,5 +116,5 @@ func (h *Handler) Delete(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "工作区已删除"})
+	c.JSON(http.StatusOK, gin.H{"message": "workspace deleted"})
 }

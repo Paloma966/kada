@@ -53,24 +53,24 @@ func TestProcessClickMessage_InvalidJSON(t *testing.T) {
 }
 
 func TestIsPermanentError(t *testing.T) {
-	// 非法 JSON → 永久性错误
+	// Invalid JSON -> permanent error
 	if err := processClickMessage([]byte("{bad"), &recorderWriter{}); !isPermanentError(err) {
 		t.Error("processClickMessage invalid json should be classified permanent")
 	}
 
-	// 外键违反（23503，如链接已删除）→ 永久性错误
+	// Foreign key violation (23503, e.g. the link was deleted) -> permanent error
 	fkErr := &pgconn.PgError{Code: "23503", Message: "violates foreign key constraint"}
 	if !isPermanentError(fkErr) {
 		t.Error("foreign key violation should be permanent")
 	}
 
-	// 连接类错误（08006 连接丢失）→ 可重试
+	// Connection-class error (08006 connection lost) -> retryable
 	connErr := &pgconn.PgError{Code: "08006", Message: "connection lost"}
 	if isPermanentError(connErr) {
 		t.Error("connection failure should be retryable")
 	}
 
-	// 普通错误 → 可重试
+	// Plain error -> retryable
 	if isPermanentError(assertErr("boom")) {
 		t.Error("plain error should be retryable")
 	}

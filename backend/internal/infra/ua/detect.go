@@ -8,26 +8,26 @@ import (
 	"github.com/chun/kada-backend/internal/domain"
 )
 
-// Detect 根据 User-Agent 判断来源平台
+// Detect determines the source platform from the User-Agent
 func Detect(userAgent string) domain.Platform {
 	ua := strings.ToLower(userAgent)
 
-	// 微信内置浏览器
+	// WeChat in-app browser
 	if strings.Contains(ua, "micromessenger") {
 		return domain.PlatformWechat
 	}
 
-	// QQ 内置浏览器（注意顺序：要先检测 QQ 再检测微信，因为 QQ 可能也含 MQQBrowser）
+	// QQ in-app browser (note the order: check QQ before WeChat, since QQ UAs may also contain MQQBrowser)
 	if strings.Contains(ua, "qq/") || strings.Contains(ua, "mqqbrowser") {
 		return domain.PlatformQQ
 	}
 
-	// 微博
+	// Weibo
 	if strings.Contains(ua, "weibo") || strings.Contains(ua, "weibo__") {
 		return domain.PlatformWeibo
 	}
 
-	// 小红书
+	// Xiaohongshu
 	if strings.Contains(ua, "xhs") || strings.Contains(ua, "redapp") {
 		return domain.PlatformXiaohongshu
 	}
@@ -35,7 +35,7 @@ func Detect(userAgent string) domain.Platform {
 	return domain.PlatformBrowser
 }
 
-// NeedsIntermediatePage 判断是否需要中间引导页（而非直接 302）
+// NeedsIntermediatePage reports whether an intermediate guidance page is required (instead of a direct 302)
 func NeedsIntermediatePage(platform domain.Platform) bool {
 	switch platform {
 	case domain.PlatformWechat, domain.PlatformQQ, domain.PlatformXiaohongshu:
@@ -45,50 +45,50 @@ func NeedsIntermediatePage(platform domain.Platform) bool {
 	}
 }
 
-// PlatformName 返回中文平台名
+// PlatformName returns the platform display name
 func PlatformName(platform domain.Platform) string {
 	switch platform {
 	case domain.PlatformWechat:
-		return "微信"
+		return "WeChat"
 	case domain.PlatformQQ:
 		return "QQ"
 	case domain.PlatformWeibo:
-		return "微博"
+		return "Weibo"
 	case domain.PlatformXiaohongshu:
-		return "小红书"
+		return "Xiaohongshu"
 	case domain.PlatformSMS:
-		return "短信"
+		return "SMS"
 	default:
-		return "浏览器"
+		return "Browser"
 	}
 }
 
-// PlatformTips 返回平台专属引导文案
+// PlatformTips returns the platform-specific guidance copy
 func PlatformTips(platform domain.Platform) string {
 	switch platform {
 	case domain.PlatformWechat:
-		return "请在微信内打开链接，或点击右上角菜单选择「在浏览器中打开」"
+		return "Please open the link in WeChat, or tap the menu in the top-right corner and choose \"Open in Browser\""
 	case domain.PlatformQQ:
-		return "QQ 内置浏览器可能限制页面跳转，建议使用外部浏览器打开"
+		return "The built-in QQ browser may block page redirects; please open the link in an external browser"
 	case domain.PlatformXiaohongshu:
-		return "小红书暂不支持直接跳转外链，请复制链接后在浏览器中打开"
+		return "Xiaohongshu does not support direct external links; please copy the link and open it in a browser"
 	case domain.PlatformWeibo:
-		return "微博内打开链接可能受限，建议在浏览器中打开"
+		return "Opening links inside Weibo may be restricted; please open it in a browser"
 	default:
-		return "正在为您打开链接..."
+		return "Opening the link for you..."
 	}
 }
 
-// GetDeeplinks 为目标 URL 生成各平台的 deeplink 尝试方案
+// GetDeeplinks builds per-platform deeplink fallback options for the target URL
 func GetDeeplinks(targetURL string) []domain.DeepLink {
-	// 去掉 protocol 前缀，用于 intent scheme
+	// Strip the protocol prefix for use in the intent scheme
 	stripped := strings.TrimPrefix(targetURL, "https://")
 	stripped = strings.TrimPrefix(stripped, "http://")
 	encoded := url.QueryEscape(targetURL)
 
 	links := []domain.DeepLink{
 		{
-			Name:   "直接打开",
+			Name:   "Open directly",
 			Scheme: targetURL,
 		},
 		{
@@ -96,12 +96,12 @@ func GetDeeplinks(targetURL string) []domain.DeepLink {
 			Scheme: fmt.Sprintf("intent://%s#Intent;scheme=https;package=com.android.chrome;end", stripped),
 		},
 		{
-			Name:   "系统浏览器",
+			Name:   "System browser",
 			Scheme: fmt.Sprintf("intent://%s#Intent;scheme=https;end", stripped),
 		},
 	}
 
-	// 微信内部跳转：尝试通过微信 URL scheme 中转
+	// In-WeChat navigation: try relaying through a WeChat URL scheme
 	_ = encoded // reserved for WeChat-specific schemes
 
 	return links

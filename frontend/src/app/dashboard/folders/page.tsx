@@ -6,6 +6,7 @@ import useSWR from "swr";
 import { toast } from "sonner";
 import { foldersAPI } from "@/lib/api";
 import { getToken } from "@/lib/auth";
+import { useT } from "@/lib/i18n";
 
 interface FolderItem {
   id: number;
@@ -15,6 +16,7 @@ interface FolderItem {
 
 export default function FoldersPage() {
   const token = getToken();
+  const t = useT();
 
   const { data, error, isLoading, mutate } = useSWR(
     token ? "folders" : null,
@@ -36,9 +38,9 @@ export default function FoldersPage() {
       await foldersAPI.create(token, newName.trim());
       setNewName("");
       mutate();
-      toast.success("文件夹已创建");
+      toast.success(t("文件夹已创建"));
     } catch {
-      toast.error("创建失败");
+      toast.error(t("创建失败"));
     } finally {
       setCreating(false);
     }
@@ -51,9 +53,9 @@ export default function FoldersPage() {
       setEditingId(null);
       setEditingName("");
       mutate();
-      toast.success("已重命名");
+      toast.success(t("已重命名"));
     } catch {
-      toast.error("重命名失败");
+      toast.error(t("重命名失败"));
     }
   };
 
@@ -63,17 +65,17 @@ export default function FoldersPage() {
       await foldersAPI.delete(token, id);
       setDeletingId(null);
       mutate();
-      toast.success("已删除");
+      toast.success(t("已删除"));
     } catch {
-      toast.error("删除失败");
+      toast.error(t("删除失败"));
     }
   };
 
   return (
     <div className="space-y-5">
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">文件夹</h1>
-        <p className="text-sm text-gray-500 mt-1">用文件夹组织你的短链接</p>
+        <h1 className="text-2xl font-bold text-gray-900">{t("文件夹")}</h1>
+        <p className="text-sm text-gray-500 mt-1">{t("用文件夹组织你的短链接")}</p>
       </div>
 
       {/* Create new */}
@@ -92,7 +94,7 @@ export default function FoldersPage() {
             type="text"
             value={newName}
             onChange={(e) => setNewName(e.target.value)}
-            placeholder="新建文件夹..."
+            placeholder={t("新建文件夹...")}
             className="flex-1 border-none bg-transparent text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none"
             maxLength={50}
           />
@@ -102,7 +104,7 @@ export default function FoldersPage() {
             className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed transition shrink-0"
           >
             <Plus className="size-3.5" />
-            新建
+            {t("新建")}
           </button>
         </form>
       </div>
@@ -111,13 +113,13 @@ export default function FoldersPage() {
       {error ? (
         <div className="flex flex-col items-center justify-center py-16 text-center">
           <div className="text-3xl mb-3">😞</div>
-          <h3 className="text-lg font-semibold text-gray-900">加载失败</h3>
-          <p className="mt-1 text-sm text-gray-500">请检查网络后重试</p>
+          <h3 className="text-lg font-semibold text-gray-900">{t("加载失败")}</h3>
+          <p className="mt-1 text-sm text-gray-500">{t("请检查网络后重试")}</p>
           <button
             onClick={() => mutate()}
             className="mt-3 text-sm font-medium text-indigo-600 hover:text-indigo-500"
           >
-            重新加载
+            {t("重新加载")}
           </button>
         </div>
       ) : isLoading ? (
@@ -142,9 +144,9 @@ export default function FoldersPage() {
           <div className="flex size-14 items-center justify-center rounded-2xl bg-gray-100 mb-4">
             <FolderOpen className="size-7 text-gray-400" />
           </div>
-          <h3 className="text-lg font-semibold text-gray-900">还没有文件夹</h3>
+          <h3 className="text-lg font-semibold text-gray-900">{t("还没有文件夹")}</h3>
           <p className="mt-1 text-sm text-gray-500">
-            在上方输入框输入名称来创建第一个文件夹
+            {t("在上方输入框输入名称来创建第一个文件夹")}
           </p>
         </div>
       ) : (
@@ -200,12 +202,12 @@ export default function FoldersPage() {
                         setEditingId(f.id);
                         setEditingName(f.name);
                       }}
-                      title="点击编辑名称"
+                      title={t("点击编辑名称")}
                     >
                       {f.name}
                     </p>
                     <p className="text-xs text-gray-400 mt-0.5">
-                      {f.link_count} 个链接
+                      {t("{f.link_count} 个链接", { "f.link_count": f.link_count })}
                     </p>
                   </>
                 )}
@@ -224,7 +226,7 @@ export default function FoldersPage() {
 
                 {deletingId === f.id ? (
                   <div className="flex items-center gap-1.5 bg-red-50 px-2 py-1 rounded-lg">
-                    <span className="text-xs text-red-600">删除？</span>
+                    <span className="text-xs text-red-600">{t("删除？")}</span>
                     <button
                       onClick={() => handleDelete(f.id)}
                       className="p-1 rounded text-red-600 hover:bg-red-100 transition"

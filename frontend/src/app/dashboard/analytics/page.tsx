@@ -4,8 +4,10 @@ import { BarChart3, Link2, MousePointerClick, TrendingUp } from "lucide-react";
 import useSWR from "swr";
 import { analyticsAPI } from "@/lib/api";
 import { getToken } from "@/lib/auth";
+import { useT } from "@/lib/i18n";
 
 export default function AnalyticsPage() {
+  const t = useT();
   const token = getToken();
 
   const { data: overview } = useSWR(
@@ -30,26 +32,26 @@ export default function AnalyticsPage() {
 
   const statCards = [
     {
-      label: "总链接数",
+      label: t("总链接数"),
       value: totalLinks.toLocaleString(),
       icon: Link2,
       color: "text-indigo-600 bg-indigo-50",
     },
     {
-      label: "总点击数",
+      label: t("总点击数"),
       value: totalClicks.toLocaleString(),
       icon: MousePointerClick,
       color: "text-emerald-600 bg-emerald-50",
     },
     {
-      label: "平均点击",
+      label: t("平均点击"),
       value: totalLinks > 0 ? Math.round(totalClicks / totalLinks).toLocaleString() : "0",
       icon: BarChart3,
       color: "text-amber-600 bg-amber-50",
     },
     {
-      label: "平台来源",
-      value: `${platforms.length} 种`,
+      label: t("平台来源"),
+      value: t("${platforms.length} 种").replace("${platforms.length}", String(platforms.length)),
       icon: TrendingUp,
       color: "text-rose-600 bg-rose-50",
     },
@@ -58,20 +60,20 @@ export default function AnalyticsPage() {
   const maxDailyCount = Math.max(...daily.map((d) => d.count), 1);
 
   const platformLabels: Record<string, string> = {
-    browser: "浏览器",
-    wechat: "微信",
+    browser: t("浏览器"),
+    wechat: t("微信"),
     qq: "QQ",
-    weibo: "微博",
-    xiaohongshu: "小红书",
-    sms: "短信",
-    unknown: "其他",
+    weibo: t("微博"),
+    xiaohongshu: t("小红书"),
+    sms: t("短信"),
+    unknown: t("其他"),
   };
 
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">数据统计</h1>
-        <p className="text-sm text-gray-500 mt-1">链接点击数据和概览</p>
+        <h1 className="text-2xl font-bold text-gray-900">{t("数据统计")}</h1>
+        <p className="text-sm text-gray-500 mt-1">{t("链接点击数据和概览")}</p>
       </div>
 
       {/* Stat Cards */}
@@ -91,13 +93,13 @@ export default function AnalyticsPage() {
         {/* Platform Distribution */}
         <div className="lg:col-span-2 rounded-xl border border-gray-100 bg-white shadow-sm">
           <div className="border-b border-gray-100 px-5 py-4">
-            <h2 className="font-semibold text-gray-900">平台来源分布</h2>
+            <h2 className="font-semibold text-gray-900">{t("平台来源分布")}</h2>
           </div>
           <div className="p-5">
             {platforms.length === 0 ? (
               <div className="flex flex-col items-center py-8 text-center">
                 <BarChart3 className="size-8 text-gray-300 mb-2" />
-                <p className="text-sm text-gray-500">暂无点击数据</p>
+                <p className="text-sm text-gray-500">{t("暂无点击数据")}</p>
               </div>
             ) : (
               <div className="space-y-3">
@@ -126,13 +128,13 @@ export default function AnalyticsPage() {
         {/* Daily Clicks Chart */}
         <div className="lg:col-span-3 rounded-xl border border-gray-100 bg-white shadow-sm">
           <div className="border-b border-gray-100 px-5 py-4">
-            <h2 className="font-semibold text-gray-900">每日点击量（近30天）</h2>
+            <h2 className="font-semibold text-gray-900">{t("每日点击量（近30天）")}</h2>
           </div>
           <div className="p-5">
             {daily.length === 0 ? (
               <div className="flex flex-col items-center py-12 text-center">
                 <BarChart3 className="size-8 text-gray-300 mb-2" />
-                <p className="text-sm text-gray-500">暂无点击数据</p>
+                <p className="text-sm text-gray-500">{t("暂无点击数据")}</p>
               </div>
             ) : (
               <div className="flex items-end gap-1 h-40">
@@ -144,7 +146,9 @@ export default function AnalyticsPage() {
                         <div
                           className="w-full rounded-t bg-indigo-500 hover:bg-indigo-600 transition-colors min-h-[2px]"
                           style={{ height: `${Math.max(height, 1)}%` }}
-                          title={`${d.date}: ${d.count} 点击`}
+                          title={t("${d.date}: ${d.count} 点击")
+                            .replace("${d.date}", d.date)
+                            .replace("${d.count}", String(d.count))}
                         />
                       </div>
                       <span className="text-[10px] text-gray-400 truncate w-full text-center">

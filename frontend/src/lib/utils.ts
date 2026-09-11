@@ -3,9 +3,9 @@ export function cn(...classes: (string | boolean | undefined | null)[]): string 
 }
 
 /**
- * safeHref 只允许 http/https 链接用于 <a href>。
- * 后端已拒绝 javascript:/data: 协议，这里再兜底存量数据，
- * 防止点击时在面板源内执行脚本；非法值返回 "#"。
+ * safeHref only allows http/https links for <a href>.
+ * The backend already rejects javascript:/data: protocols; this also covers legacy data,
+ * preventing script execution inside the panel origin on click; invalid values return "#".
  */
 export function safeHref(url: string | null | undefined): string {
   if (!url) return "#";
@@ -15,7 +15,7 @@ export function safeHref(url: string | null | undefined): string {
       return url;
     }
   } catch {
-    // 无法解析按不安全处理
+    // Unparseable values are treated as unsafe
   }
   return "#";
 }

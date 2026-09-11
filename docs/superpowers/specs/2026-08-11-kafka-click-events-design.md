@@ -1,59 +1,59 @@
-# Kafka 点击事件流 设计
+# Kafka click event stream design
 
-日期：2026-08-11
-状态：已与用户确认
+Date: 2026-08-11
+Status: confirmed with user
 
-## 目标
+## Goals
 
-把短链点击日志从请求路径解耦成 Kafka 异步消息流：
+Decouple short link click logging from the request path into a Kafka asynchronous message stream:
 
-- 重定向处理器不再直接写库，而是把点击事件发布到 Kafka
-- 独立 worker 消费消息，写 `click_logs` + 更新 `click_count`
-- Kafka 不可用时自动回退直写，保证点击不丢、重定向路径不受影响
+- The redirect handler no longer writes to the DB directly, but publishes click events to Kafka
+- A separate worker consumes the messages, writing `click_logs` + updating `click_count`
+- When Kafka is unavailable it automatically falls back to direct writes, so clicks are never lost and the redirect path is unaffected
 
-这是简历项目的核心亮点：**「点击日志异步化 + 生产/消费解耦 + 优雅降级」**。
+This is the core highlight of the resume project: **"asynchronous click logging + producer/consumer decoupling + graceful degradation"**.
 
-## 现状（已核实）
+## Current state (verified)
 
-- `backend/internal/handler/redirect/handler.go`：`Redirect` 里 `go h.svc.LogClick(...)`（goroutine 直写）
-- `backend/internal/service/link_service.go:486` `LogClick`：`INSERT INTO click_logs` + `UPDATE links SET click_count = click_count + 1`
-- `LinkService` 接口（redirect handler 内）含 `LogClick`，签名保持即可零改动 handler
-- `config/config.go`：`Config` 结构 + `getEnv`；新增字段走同模式
-- docker-compose：postgres / redis / backend / frontend / nginx；backend Dockerfile 只构建 `/server`
-- 数据层仍用 pgx（**本设计不引入 GORM / gRPC**）
+- `backend/internal/handler/redirect/handler.go`: `go h.svc.LogClick(...)` inside `Redirect` (goroutine direct write)
+- `backend/internal/service/link_service.go:486` `LogClick`: `INSERT INTO click_logs` + `UPDATE links SET click_count = click_count + 1`
+- The `LinkService` interface (inside the redirect handler) includes `LogClick`; keeping the signature means zero handler changes
+- `config/config.go`: `Config` struct + `getEnv`; new fields follow the same pattern
+- docker-compose: postgres / redis / backend / frontend / nginx; the backend Dockerfile only builds `/server`
+- The data layer still uses pgx (**this design does not introduce GORM / gRPC**)
 
-## 架构
+## Architecture
 
 ```
-重定向请求
-   └─ LinkService.LogClick（生产）
-        ├─ 发布 click.event → Kafka topic "clicks"      （正常）
-        └─ Kafka 不可用 → 回退直写 click_logs            （降级，不丢）
+redirect request
+   └─ LinkService.LogClick (producer)
+        ├─ publish click.event → Kafka topic "clicks"      (normal)
+        └─ Kafka unavailable → fall back to direct write click_logs  (degraded, nothing lost)
                     ▼
-        Kafka broker（docker 单节点 KRaft）
+        Kafka broker (docker single node KRaft)
                     ▼
-        cmd/worker（独立消费者进程）
-        └─ 消费 → 事务写 click_logs + 更新 click_count
+        cmd/worker (separate consumer process)
+        └─ consume → transactionally write click_logs + update click_count
 ```
 
-## 范围
+## Scope
 
-**新增**
-- `backend/internal/mq/click.go` — ClickEvent + ClickPublisher 接口 + Kafka 实现
-- `backend/internal/service/click_store.go` — ClickStore（直写逻辑，生产回退与 worker 共用）
-- `backend/cmd/worker/main.go` — Kafka 消费者
+**New**
+- `backend/internal/mq/click.go` — ClickEvent + ClickPublisher interface + Kafka implementation
+- `backend/internal/service/click_store.go` — ClickStore (direct write logic, shared by the producer fallback and the worker)
+- `backend/cmd/worker/main.go` — Kafka consumer
 
-**修改**
-- `backend/internal/service/link_service.go` — `LogClick` 改为发 Kafka，失败回退 ClickStore；构造器加 publisher 参数
-- `backend/config/config.go` — 加 `KafkaBrokers` / `KafkaTopic`
-- `backend/go.mod` — 加 `github.com/segmentio/kafka-go`
-- `backend/Dockerfile` — 同时构建 `/server` 与 `/worker`
-- `docker-compose.yml` — 加 `kafka` + `kafka-worker` 服务
-- `.env.example` — 补 KAFKA_BROKERS / KAFKA_TOPIC 说明
+**Modified**
+- `backend/internal/service/link_service.go` — `LogClick` changed to publish to Kafka, falling back to ClickStore on failure; constructor gains a publisher parameter
+- `backend/config/config.go` — add `KafkaBrokers` / `KafkaTopic`
+- `backend/go.mod` — add `github.com/segmentio/kafka-go`
+- `backend/Dockerfile` — build both `/server` and `/worker`
+- `docker-compose.yml` — add `kafka` + `kafka-worker` services
+- `.env.example` — document KAFKA_BROKERS / KAFKA_TOPIC
 
-**不在范围内**：前端、GORM、gRPC、数据库 schema、其余 service。
+**Out of scope**: frontend, GORM, gRPC, database schema, other services.
 
-## 组件设计
+## Component design
 
 ### 1. `internal/mq/click.go`
 
@@ -67,89 +67,89 @@ type ClickEvent struct {
     CreatedAt time.Time `json:"created_at"`
 }
 
-// ClickPublisher 发布点击事件（生产端接口，便于测试 mock）
+// ClickPublisher publishes click events (producer-side interface, easy to mock in tests)
 type ClickPublisher interface {
     PublishClick(ctx context.Context, e ClickEvent) error
 }
 
-// KafkaClickPublisher 基于 segmentio/kafka-go 的实现
+// KafkaClickPublisher is the implementation based on segmentio/kafka-go
 type KafkaClickPublisher struct {
     writer *kafka.Writer
 }
 func NewKafkaClickPublisher(brokers []string, topic string) *KafkaClickPublisher
-func (p *KafkaClickPublisher) PublishClick(ctx, e) error  // JSON 序列化后写 topic
+func (p *KafkaClickPublisher) PublishClick(ctx, e) error  // JSON serialize then write to topic
 func (p *KafkaClickPublisher) Close() error
 ```
 
 ### 2. `internal/service/click_store.go`
 
 ```go
-// ClickStore 直写点击日志（生产降级回退 + worker 消费共用）
+// ClickStore writes click logs directly (shared by the producer fallback + worker consumption)
 type ClickStore struct { db *pgxpool.Pool }
 func NewClickStore(db *pgxpool.Pool) *ClickStore
 func (s *ClickStore) WriteClick(ctx, linkID int64, ip, userAgent, platform, referer string) error
-// 事务内：INSERT INTO click_logs + UPDATE links SET click_count = click_count + 1
+// inside a transaction: INSERT INTO click_logs + UPDATE links SET click_count = click_count + 1
 ```
 
-### 3. `link_service.go` LogClick 改造
+### 3. `link_service.go` LogClick change
 
 ```go
-// LogClick 发布点击事件到 Kafka；Kafka 不可用时回退直写
+// LogClick publishes the click event to Kafka; falls back to a direct write when Kafka is unavailable
 func (s *LinkService) LogClick(ctx context.Context, linkID int64, ip, userAgent, platform, referer string) {
     if s.kafka != nil {
         if err := s.kafka.PublishClick(ctx, ClickEvent{...}); err == nil {
             return
         }
-        // Kafka 失败 → 落到直写，保证不丢
+        // Kafka failed → fall through to direct write, so nothing is lost
     }
     _ = s.clickStore.WriteClick(ctx, linkID, ip, userAgent, platform, referer)
 }
 ```
 
-- `LinkService` 增加字段 `kafka ClickPublisher`、`clickStore *ClickStore`
-- `NewLinkService(db, baseURL, cache, kafka, clickStore)` — 构造器签名变化，main.go 同步
-- `kafka == nil` 即 `KafkaBrokers` 为空 → 永远直写（默认禁用 Kafka 的降级态）
+- `LinkService` gains the fields `kafka ClickPublisher`, `clickStore *ClickStore`
+- `NewLinkService(db, baseURL, cache, kafka, clickStore)` — constructor signature changes, main.go updated in sync
+- `kafka == nil` means `KafkaBrokers` is empty → always direct write (the degraded state with Kafka fully disabled)
 
 ### 4. `cmd/worker/main.go`
 
-- 读环境变量：`DATABASE_URL`、`KAFKA_BROKERS`、`KAFKA_TOPIC`（默认 `clicks`）
-- `kafka.Reader`（groupID `click-worker`），循环 `ReadMessage`
-- 每条消息反序列化 `ClickEvent` → `ClickStore.WriteClick`（事务）
-- 消费失败记日志、不 crash；优雅退出（signal 处理 + `reader.Close`）
-- `KAFKA_BROKERS` 为空时直接报错退出（worker 没 Kafka 没意义）
+- Read env vars: `DATABASE_URL`, `KAFKA_BROKERS`, `KAFKA_TOPIC` (default `clicks`)
+- `kafka.Reader` (groupID `click-worker`), loop `ReadMessage`
+- Deserialize each message into `ClickEvent` → `ClickStore.WriteClick` (transaction)
+- Consumption failures are logged, no crash; graceful shutdown (signal handling + `reader.Close`)
+- Exits with an error when `KAFKA_BROKERS` is empty (a worker without Kafka is pointless)
 
-### 5. config 与部署
+### 5. config and deployment
 
 ```go
-// config.go 新增
-KafkaBrokers string // getEnv("KAFKA_BROKERS", "") 空 = 禁用
+// config.go additions
+KafkaBrokers string // getEnv("KAFKA_BROKERS", "") empty = disabled
 KafkaTopic   string // getEnv("KAFKA_TOPIC", "clicks")
 ```
 
-- docker-compose：
-  - `kafka`：`apache/kafka:3.8.0`（或 bitnami/kafka），单节点 KRaft，`PLAINTEXT://:9092`，healthcheck 用 `kafka-topics.sh`/`kafka-broker-api-versions.sh`
-  - `kafka-worker`：`build: ./backend`，command 覆盖为 `/worker`，env 加 `KAFKA_BROKERS: kafka:9092`
-  - `backend` env 加 `KAFKA_BROKERS: kafka:9092`
-- Dockerfile：builder 阶段 `go build -o /server ./cmd/server/` + `go build -o /worker ./cmd/worker/`，runtime 阶段 copy 两个
+- docker-compose:
+  - `kafka`: `apache/kafka:3.8.0` (or bitnami/kafka), single node KRaft, `PLAINTEXT://:9092`, healthcheck using `kafka-topics.sh`/`kafka-broker-api-versions.sh`
+  - `kafka-worker`: `build: ./backend`, command overridden to `/worker`, env adds `KAFKA_BROKERS: kafka:9092`
+  - `backend` env adds `KAFKA_BROKERS: kafka:9092`
+- Dockerfile: builder stage `go build -o /server ./cmd/server/` + `go build -o /worker ./cmd/worker/`, runtime stage copies both
 
-## 错误处理 / 降级
+## Error handling / degradation
 
-- `KafkaBrokers` 为空 → `kafka` 字段为 nil → `LogClick` 直写（Kafka 完全关闭也可用）
-- `PublishClick` 返回错误 → 回退直写
-- worker：单条消费失败记日志继续（不退出）；Kafka 不可达时 reader 重试
-- 重定向路径：`go LogClick` 仍在 goroutine 中，请求响应不被 Kafka/DB 阻塞
+- `KafkaBrokers` empty → the `kafka` field is nil → `LogClick` writes directly (works with Kafka fully off)
+- `PublishClick` returns an error → fall back to direct write
+- worker: a single failed consumption is logged and it continues (no exit); the reader retries while Kafka is unreachable
+- redirect path: `go LogClick` is still in a goroutine, so the request response is not blocked by Kafka/DB
 
-## 测试
+## Testing
 
-- `internal/mq/click_test.go`：ClickEvent JSON 序列化/反序列化 round-trip
-- `internal/service/link_service_test.go` 扩展：`LogClick` 发布成功路径（fake `ClickPublisher`，记录被调用、不触碰 DB）
-- 端到端手动验证：
-  - `docker compose up kafka backend kafka-worker`（或本地起 kafka）
-  - 造一个短链，浏览器访问 `/r/:code` 触发点击
-  - 观察 worker 日志消费、`click_logs` 新增记录、`click_count` +1
-  - 停掉 kafka 再点击 → 走回退直写，`click_logs` 仍有记录
-- `go build ./...`、`go test ./...`、`go vet ./...` 通过
+- `internal/mq/click_test.go`: ClickEvent JSON serialization/deserialization round-trip
+- `internal/service/link_service_test.go` extension: `LogClick` success publish path (fake `ClickPublisher`, records the call, does not touch the DB)
+- end-to-end manual verification:
+  - `docker compose up kafka backend kafka-worker` (or run kafka locally)
+  - create a short link, visit `/r/:code` in a browser to trigger a click
+  - observe the worker log consuming, a new record in `click_logs`, `click_count` +1
+  - stop kafka and click again → takes the direct write fallback, `click_logs` still has the record
+- `go build ./...`, `go test ./...`, `go vet ./...` pass
 
-## 简历表述
+## Resume wording
 
-「将短链点击日志从请求路径解耦为 Kafka 异步消息流：生产端发布 click.event，独立 worker 消费落库；Kafka 故障自动降级直写，保证点击不丢、重定向零阻塞。」
+"Decoupled short link click logging from the request path into a Kafka asynchronous message stream: the producer publishes click.event and a separate worker consumes and persists it; a Kafka failure automatically degrades to a direct write, ensuring clicks are never lost and redirects never block."

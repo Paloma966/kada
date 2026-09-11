@@ -10,7 +10,7 @@ import (
 	"github.com/chun/kada-backend/internal/middleware"
 )
 
-// AuthService 认证服务接口（方便测试 mock）
+// AuthService is the authentication service interface (mockable for tests).
 type AuthService interface {
 	SendSMSCode(ctx context.Context, phone string) error
 	LoginByPhone(ctx context.Context, phone, code string) (*domain.AuthResponse, error)
@@ -29,7 +29,7 @@ func NewHandler(svc AuthService) *Handler {
 }
 
 func (h *Handler) RegisterRoutes(r *gin.RouterGroup, authMW gin.HandlerFunc, strictMW ...gin.HandlerFunc) {
-	// 公开路由（可施加严格速率限制）
+	// Public routes (strict rate limiting can be applied).
 	public := r.Group("")
 	if len(strictMW) > 0 && strictMW[0] != nil {
 		public.Use(strictMW[0])
@@ -39,17 +39,17 @@ func (h *Handler) RegisterRoutes(r *gin.RouterGroup, authMW gin.HandlerFunc, str
 	public.POST("/auth/login-by-email", h.LoginByEmail)
 	public.POST("/auth/register-by-email", h.RegisterByEmail)
 
-	// 需要认证的路由
+	// Routes that require authentication.
 	auth := r.Group("").Use(authMW)
 	auth.GET("/me", h.GetMe)
 	auth.PATCH("/me", h.UpdateMe)
 }
 
-// SendSMSCode 发送短信验证码
+// SendSMSCode sends an SMS verification code.
 func (h *Handler) SendSMSCode(c *gin.Context) {
 	var req domain.SendSMSRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "请提供有效的手机号"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "a valid phone number is required"})
 		return
 	}
 
@@ -59,16 +59,16 @@ func (h *Handler) SendSMSCode(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"message": "验证码已发送",
+		"message": "verification code sent",
 		"phone":   req.Phone,
 	})
 }
 
-// LoginByPhone 手机号+验证码登录
+// LoginByPhone logs in with phone number + verification code.
 func (h *Handler) LoginByPhone(c *gin.Context) {
 	var req domain.LoginByPhoneRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "请提供手机号和验证码"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "phone number and verification code are required"})
 		return
 	}
 
@@ -81,11 +81,11 @@ func (h *Handler) LoginByPhone(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"token": resp.Token, "user": resp.User})
 }
 
-// LoginByEmail 邮箱+密码登录
+// LoginByEmail logs in with email + password.
 func (h *Handler) LoginByEmail(c *gin.Context) {
 	var req domain.LoginByEmailRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "请提供邮箱和密码"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "email and password are required"})
 		return
 	}
 
@@ -98,7 +98,7 @@ func (h *Handler) LoginByEmail(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"token": resp.Token, "user": resp.User})
 }
 
-// RegisterByEmail 邮箱注册
+// RegisterByEmail registers an account by email.
 func (h *Handler) RegisterByEmail(c *gin.Context) {
 	var req struct {
 		Email    string `json:"email" binding:"required,email"`
@@ -106,7 +106,7 @@ func (h *Handler) RegisterByEmail(c *gin.Context) {
 		Name     string `json:"name" binding:"required"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "请提供有效的注册信息"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "valid registration details are required"})
 		return
 	}
 
@@ -119,14 +119,14 @@ func (h *Handler) RegisterByEmail(c *gin.Context) {
 	c.JSON(http.StatusCreated, gin.H{"token": resp.Token, "user": resp.User})
 }
 
-// UpdateMe 更新当前用户信息
+// UpdateMe updates the current user's profile.
 func (h *Handler) UpdateMe(c *gin.Context) {
 	var req struct {
 		Name  *string `json:"name"`
 		Email *string `json:"email" binding:"omitempty,email"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "请提供有效的更新信息"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "valid update details are required"})
 		return
 	}
 
@@ -139,13 +139,13 @@ func (h *Handler) UpdateMe(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"user": user})
 }
 
-// GetMe 获取当前用户信息
+// GetMe returns the current user's profile.
 func (h *Handler) GetMe(c *gin.Context) {
 	userID := middleware.GetUserID(c)
 
 	user, err := h.svc.GetUserByID(c.Request.Context(), userID)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "用户不存在"})
+		c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
 		return
 	}
 

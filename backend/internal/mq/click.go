@@ -9,9 +9,9 @@ import (
 	"github.com/segmentio/kafka-go"
 )
 
-// ClickEvent 短链点击事件（生产/消费共用的消息载荷）
+// ClickEvent is a short-link click event (message payload shared by producer and consumer)
 type ClickEvent struct {
-	EventID   string    `json:"event_id"` // 幂等键，用于 worker 去重
+	EventID   string    `json:"event_id"` // idempotency key used by the worker for deduplication
 	LinkID    int64     `json:"link_id"`
 	IP        string    `json:"ip"`
 	UserAgent string    `json:"user_agent"`
@@ -20,22 +20,22 @@ type ClickEvent struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
-// ClickPublisher 发布点击事件（生产端接口，便于测试 mock 与降级）
+// ClickPublisher publishes click events (producer-side interface, eases test mocks and degradation)
 type ClickPublisher interface {
 	PublishClick(ctx context.Context, e ClickEvent) error
 }
 
-// messageWriter 收窄 kafka.Writer 的写接口，便于单测注入 fake
+// messageWriter narrows kafka.Writer's write interface so tests can inject a fake
 type messageWriter interface {
 	WriteMessages(ctx context.Context, msgs ...kafka.Message) error
 }
 
-// KafkaClickPublisher 基于 segmentio/kafka-go 的实现
+// KafkaClickPublisher is the segmentio/kafka-go based implementation
 type KafkaClickPublisher struct {
 	writer messageWriter
 }
 
-// NewKafkaClickPublisher 构造发布者；brokers 为空时返回 nil（表示 Kafka 禁用）
+// NewKafkaClickPublisher builds a publisher; returns nil when brokers is empty (Kafka disabled)
 func NewKafkaClickPublisher(brokers []string, topic string) *KafkaClickPublisher {
 	var valid []string
 	for _, b := range brokers {
@@ -56,7 +56,7 @@ func NewKafkaClickPublisher(brokers []string, topic string) *KafkaClickPublisher
 	}
 }
 
-// PublishClick 序列化 ClickEvent 并写入 topic
+// PublishClick serializes a ClickEvent and writes it to the topic
 func (p *KafkaClickPublisher) PublishClick(ctx context.Context, e ClickEvent) error {
 	b, err := json.Marshal(e)
 	if err != nil {
@@ -65,7 +65,7 @@ func (p *KafkaClickPublisher) PublishClick(ctx context.Context, e ClickEvent) er
 	return p.writer.WriteMessages(ctx, kafka.Message{Value: b})
 }
 
-// Close 关闭底层 writer
+// Close closes the underlying writer
 func (p *KafkaClickPublisher) Close() error {
 	if w, ok := p.writer.(*kafka.Writer); ok {
 		return w.Close()

@@ -4,6 +4,7 @@ import { Copy, ExternalLink, Pencil, Trash2, BarChart3, Check, QrCode, Download,
 import Link from "next/link";
 import { useState, useEffect, useRef } from "react";
 import { toast } from "sonner";
+import { useT } from "@/lib/i18n";
 
 export interface LinkItem {
   id: number;
@@ -30,6 +31,7 @@ interface LinkCardProps {
 }
 
 export function LinkCard({ link, onDelete, selectable, selected, onSelect }: LinkCardProps) {
+  const t = useT();
   const [copied, setCopied] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [showQR, setShowQR] = useState(false);
@@ -41,7 +43,7 @@ export function LinkCard({ link, onDelete, selectable, selected, onSelect }: Lin
     e.stopPropagation();
     navigator.clipboard.writeText(link.short_url);
     setCopied(true);
-    toast.success("已复制到剪贴板");
+    toast.success(t("已复制到剪贴板"));
     setTimeout(() => setCopied(false), 2000);
   };
 
@@ -52,9 +54,9 @@ export function LinkCard({ link, onDelete, selectable, selected, onSelect }: Lin
     setDeleting(true);
     try {
       await onDelete(link.id);
-      toast.success("链接已删除");
+      toast.success(t("链接已删除"));
     } catch {
-      toast.error("删除失败");
+      toast.error(t("删除失败"));
       setDeleting(false);
     }
   };
@@ -107,7 +109,7 @@ export function LinkCard({ link, onDelete, selectable, selected, onSelect }: Lin
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 mb-1">
                 <h3 className="font-medium text-gray-900 truncate text-sm sm:text-base">
-                  {link.title || "未命名链接"}
+                  {link.title || t("未命名链接")}
                 </h3>
                 <span
                   className={`shrink-0 px-1.5 py-0.5 text-[10px] font-medium rounded-full ${
@@ -116,7 +118,7 @@ export function LinkCard({ link, onDelete, selectable, selected, onSelect }: Lin
                       : "bg-gray-100 text-gray-500"
                   }`}
                 >
-                  {link.is_active ? "启用" : "停用"}
+                  {link.is_active ? t("启用") : t("停用")}
                 </span>
               </div>
 
@@ -131,7 +133,7 @@ export function LinkCard({ link, onDelete, selectable, selected, onSelect }: Lin
                       ? "text-green-500 bg-green-50"
                       : "text-gray-400 hover:text-indigo-500"
                   }`}
-                  title="复制链接"
+                  title={t("复制链接")}
                 >
                   {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
                 </button>
@@ -158,7 +160,7 @@ export function LinkCard({ link, onDelete, selectable, selected, onSelect }: Lin
               <button
                 onClick={handleShowQR}
                 className="p-1.5 text-gray-400 hover:text-indigo-500 hover:bg-indigo-50 rounded-lg transition-colors"
-                title="二维码"
+                title={t("二维码")}
               >
                 <QrCode className="w-4 h-4" />
               </button>
@@ -169,7 +171,7 @@ export function LinkCard({ link, onDelete, selectable, selected, onSelect }: Lin
                 rel="noopener noreferrer"
                 onClick={(e) => e.stopPropagation()}
                 className="p-1.5 text-gray-400 hover:text-indigo-500 hover:bg-indigo-50 rounded-lg transition-colors"
-                title="打开链接"
+                title={t("打开链接")}
               >
                 <ExternalLink className="w-4 h-4" />
               </a>
@@ -178,7 +180,7 @@ export function LinkCard({ link, onDelete, selectable, selected, onSelect }: Lin
                 href={`/dashboard/links/${link.id}`}
                 onClick={(e) => e.stopPropagation()}
                 className="p-1.5 text-gray-400 hover:text-indigo-500 hover:bg-indigo-50 rounded-lg transition-colors"
-                title="编辑"
+                title={t("编辑")}
               >
                 <Pencil className="w-4 h-4" />
               </Link>
@@ -187,7 +189,7 @@ export function LinkCard({ link, onDelete, selectable, selected, onSelect }: Lin
                 onClick={handleDelete}
                 disabled={deleting}
                 className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50"
-                title="删除"
+                title={t("删除")}
               >
                 <Trash2 className="w-4 h-4" />
               </button>
@@ -208,7 +210,7 @@ export function LinkCard({ link, onDelete, selectable, selected, onSelect }: Lin
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between mb-4">
-              <h3 className="font-semibold text-gray-900">二维码</h3>
+              <h3 className="font-semibold text-gray-900">{t("二维码")}</h3>
               <button
                 onClick={() => setShowQR(false)}
                 className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition"
@@ -241,12 +243,12 @@ export function LinkCard({ link, onDelete, selectable, selected, onSelect }: Lin
                 <button
                   onClick={() => {
                     navigator.clipboard.writeText(link.short_url);
-                    toast.success("已复制");
+                    toast.success(t("已复制"));
                   }}
                   className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 transition"
                 >
                   <Copy className="size-3.5" />
-                  复制链接
+                  {t("复制链接")}
                 </button>
                 {qrDataURL && (
                   <a
@@ -255,7 +257,7 @@ export function LinkCard({ link, onDelete, selectable, selected, onSelect }: Lin
                     className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 transition"
                   >
                     <Download className="size-3.5" />
-                    下载
+                    {t("下载")}
                   </a>
                 )}
               </div>

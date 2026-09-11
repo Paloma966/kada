@@ -4,8 +4,14 @@ import useSWR from "swr";
 import { Users, Monitor } from "lucide-react";
 import { analyticsAPI } from "@/lib/api";
 import { getToken } from "@/lib/auth";
+import { useT } from "@/lib/i18n";
+// `useI18n` is not re-exported from the "@/lib/i18n" barrel, so it is imported
+// from the context module it is defined in.
+import { useI18n } from "@/lib/i18n/context";
 
 export default function CustomersPage() {
+  const t = useT();
+  const { locale } = useI18n();
   const token = getToken();
 
   const { data, isLoading } = useSWR(
@@ -18,8 +24,8 @@ export default function CustomersPage() {
   return (
     <div className="space-y-5">
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">客户</h1>
-        <p className="text-sm text-gray-500 mt-1">独立访客统计（按 IP）</p>
+        <h1 className="text-2xl font-bold text-gray-900">{t("客户")}</h1>
+        <p className="text-sm text-gray-500 mt-1">{t("独立访客统计（按 IP）")}</p>
       </div>
 
       {/* Summary cards */}
@@ -31,7 +37,7 @@ export default function CustomersPage() {
           <p className="mt-3 text-2xl font-bold text-gray-900 tabular-nums">
             {customers.length.toLocaleString()}
           </p>
-          <p className="mt-0.5 text-sm text-gray-500">独立 IP 数</p>
+          <p className="mt-0.5 text-sm text-gray-500">{t("独立 IP 数")}</p>
         </div>
         <div className="rounded-xl border border-gray-100 bg-white p-5 shadow-sm">
           <div className="inline-flex size-10 items-center justify-center rounded-lg text-emerald-600 bg-emerald-50">
@@ -40,7 +46,7 @@ export default function CustomersPage() {
           <p className="mt-3 text-2xl font-bold text-gray-900 tabular-nums">
             {customers.reduce((sum: number, c: { click_count: number }) => sum + c.click_count, 0).toLocaleString()}
           </p>
-          <p className="mt-0.5 text-sm text-gray-500">总点击次数</p>
+          <p className="mt-0.5 text-sm text-gray-500">{t("总点击次数")}</p>
         </div>
       </div>
 
@@ -50,10 +56,10 @@ export default function CustomersPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-100 bg-gray-50/50">
-                <th className="text-left px-5 py-3 text-xs font-medium text-gray-500 uppercase">IP 地址</th>
-                <th className="text-left px-5 py-3 text-xs font-medium text-gray-500 uppercase">点击次数</th>
-                <th className="text-left px-5 py-3 text-xs font-medium text-gray-500 uppercase">独立链接</th>
-                <th className="text-left px-5 py-3 text-xs font-medium text-gray-500 uppercase">最近访问</th>
+                <th className="text-left px-5 py-3 text-xs font-medium text-gray-500 uppercase">{t("IP 地址")}</th>
+                <th className="text-left px-5 py-3 text-xs font-medium text-gray-500 uppercase">{t("点击次数")}</th>
+                <th className="text-left px-5 py-3 text-xs font-medium text-gray-500 uppercase">{t("独立链接")}</th>
+                <th className="text-left px-5 py-3 text-xs font-medium text-gray-500 uppercase">{t("最近访问")}</th>
               </tr>
             </thead>
             <tbody>
@@ -69,7 +75,7 @@ export default function CustomersPage() {
                 <tr>
                   <td colSpan={4} className="px-5 py-16 text-center">
                     <Users className="size-8 text-gray-300 mx-auto mb-2" />
-                    <p className="text-sm text-gray-500">暂无访客数据</p>
+                    <p className="text-sm text-gray-500">{t("暂无访客数据")}</p>
                   </td>
                 </tr>
               ) : (
@@ -88,7 +94,7 @@ export default function CustomersPage() {
                     </td>
                     <td className="px-5 py-3 text-gray-500 tabular-nums">{c.unique_links}</td>
                     <td className="px-5 py-3 text-gray-500 text-xs">
-                      {new Date(c.last_seen).toLocaleString("zh-CN")}
+                      {new Date(c.last_seen).toLocaleString(locale === "en" ? "en-US" : "zh-CN")}
                     </td>
                   </tr>
                 ))

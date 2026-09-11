@@ -30,7 +30,7 @@ func (h *Handler) RegisterRoutes(r *gin.RouterGroup, authMW gin.HandlerFunc) {
 	auth.GET("/analytics/customers", h.Customers)
 }
 
-// Overview 统计概览
+// Overview returns the statistics overview.
 func (h *Handler) Overview(c *gin.Context) {
 	userID := middleware.GetUserID(c)
 
@@ -39,7 +39,7 @@ func (h *Handler) Overview(c *gin.Context) {
 		`SELECT COUNT(*), COALESCE(SUM(click_count), 0) FROM links WHERE user_id = $1`, userID,
 	).Scan(&totalLinks, &totalClicks); err != nil {
 		log.Printf("analytics overview failed: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询失败"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "query failed"})
 		return
 	}
 
@@ -49,7 +49,7 @@ func (h *Handler) Overview(c *gin.Context) {
 	})
 }
 
-// Platforms 平台来源分布
+// Platforms returns the distribution of platform sources.
 func (h *Handler) Platforms(c *gin.Context) {
 	userID := middleware.GetUserID(c)
 	linkID, _ := strconv.ParseInt(c.Query("link_id"), 10, 64)
@@ -72,7 +72,7 @@ func (h *Handler) Platforms(c *gin.Context) {
 		`, userID)
 	}
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询失败"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "query failed"})
 		return
 	}
 	defer rows.Close()
@@ -98,7 +98,7 @@ func (h *Handler) Platforms(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"platforms": stats})
 }
 
-// DailyClicks 每日点击量（最近30天）
+// DailyClicks returns daily click counts for the last 30 days.
 func (h *Handler) DailyClicks(c *gin.Context) {
 	userID := middleware.GetUserID(c)
 	linkID, _ := strconv.ParseInt(c.Query("link_id"), 10, 64)
@@ -121,7 +121,7 @@ func (h *Handler) DailyClicks(c *gin.Context) {
 		`, userID)
 	}
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询失败"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "query failed"})
 		return
 	}
 	defer rows.Close()
@@ -151,7 +151,7 @@ func (h *Handler) DailyClicks(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"daily": stats})
 }
 
-// Events 点击事件列表
+// Events returns the list of click events.
 func (h *Handler) Events(c *gin.Context) {
 	userID := middleware.GetUserID(c)
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
@@ -182,7 +182,7 @@ func (h *Handler) Events(c *gin.Context) {
 		LIMIT $2 OFFSET $3
 	`, userID, pageSize, (page-1)*pageSize)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询失败"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "query failed"})
 		return
 	}
 	defer rows.Close()
@@ -229,7 +229,7 @@ func (h *Handler) Events(c *gin.Context) {
 	})
 }
 
-// Customers 独立访客列表
+// Customers returns the list of unique visitors.
 func (h *Handler) Customers(c *gin.Context) {
 	userID := middleware.GetUserID(c)
 
@@ -246,7 +246,7 @@ func (h *Handler) Customers(c *gin.Context) {
 		LIMIT 50
 	`, userID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询失败"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "query failed"})
 		return
 	}
 	defer rows.Close()

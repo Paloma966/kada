@@ -7,9 +7,9 @@ import (
 
 var ErrLinkNotFound = errors.New("link not found")
 
-// ==================== 请求/响应模型 ====================
+// ==================== Request/Response models ====================
 
-// ---- 认证 ----
+// ---- Auth ----
 
 type SendSMSRequest struct {
 	Phone string `json:"phone" binding:"required"`
@@ -39,7 +39,7 @@ type UserInfo struct {
 	WechatOpenID *string `json:"wechat_openid,omitempty"`
 }
 
-// ---- 短链 ----
+// ---- Links ----
 
 type CreateLinkRequest struct {
 	OriginalURL string  `json:"original_url" binding:"required,url"`
@@ -123,7 +123,7 @@ type PaginatedLinks struct {
 	PageSize   int        `json:"page_size"`
 }
 
-// ==================== 平台检测 ====================
+// ==================== Platform detection ====================
 
 type Platform string
 
@@ -137,13 +137,13 @@ const (
 	PlatformUnknown     Platform = "unknown"
 )
 
-// DeepLink 表示一个 deeplink 尝试方案
+// DeepLink represents one deeplink fallback option
 type DeepLink struct {
-	Name   string `json:"name"`   // 方案名称，如 "Chrome Intent"
-	Scheme string `json:"scheme"` // URL scheme，如 "intent://..."
+	Name   string `json:"name"`   // option name, e.g. "Chrome Intent"
+	Scheme string `json:"scheme"` // URL scheme, e.g. "intent://..."
 }
 
-// ==================== 文件夹 ====================
+// ==================== Folders ====================
 
 type Folder struct {
 	ID        int64     `json:"id"`
@@ -158,7 +158,7 @@ type CreateFolderRequest struct {
 	Name string `json:"name" binding:"required"`
 }
 
-// ==================== 标签 ====================
+// ==================== Tags ====================
 
 type Tag struct {
 	ID        int64     `json:"id"`
@@ -173,7 +173,7 @@ type CreateTagRequest struct {
 	Color *string `json:"color"`
 }
 
-// ==================== 域名 ====================
+// ==================== Domains ====================
 
 type Domain struct {
 	ID               int64      `json:"id"`
@@ -190,7 +190,7 @@ type CreateDomainRequest struct {
 	Name string `json:"name" binding:"required"`
 }
 
-// ==================== UTM 模板 ====================
+// ==================== UTM templates ====================
 
 type UTMTemplate struct {
 	ID          int64     `json:"id"`
@@ -233,7 +233,7 @@ type CreateAPITokenResponse struct {
 	APIToken APIToken `json:"api_token"`
 }
 
-// ---- 工作区 ----
+// ---- Workspaces ----
 
 type Workspace struct {
 	ID        int64     `json:"id"`
@@ -259,7 +259,7 @@ type WorkspaceListResponse struct {
 	Workspaces []Workspace `json:"workspaces"`
 }
 
-// ==================== 链接预览 ====================
+// ==================== Link preview ====================
 
 type LinkPreviewRequest struct {
 	URL string `json:"url" binding:"required,url"`

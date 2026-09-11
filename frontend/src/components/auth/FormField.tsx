@@ -17,11 +17,11 @@ export function FormField({ id, label, error, children }: FormFieldProps) {
   );
 }
 
-/** 输入框基础样式（不含边框色/聚焦态）——暗色星空主题 */
+/** Base input styles (excluding border colour/focus state) — dark starfield theme */
 export const inputBase =
   "w-full rounded-lg border bg-white/10 px-4 py-2.5 text-sm text-white placeholder:text-neutral-400/70 transition focus:outline-none focus:ring-2";
 
-/** 输入框边框/聚焦状态：invalid 传 true 显示红色错误态 */
+/** Input border/focus state: pass invalid=true to show the red error state */
 export function fieldState(invalid: boolean): string {
   return invalid
     ? "border-red-400/60 focus:border-red-400 focus:ring-red-400/30"

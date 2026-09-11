@@ -9,13 +9,13 @@ export interface Vec3 {
 export interface OphiuchusStar {
   id: string;
   name: string;
-  /** 赤经（度） */
+  /** Right ascension (degrees) */
   ra: number;
-  /** 赤纬（度） */
+  /** Declination (degrees) */
   dec: number;
 }
 
-/** 蛇夫座主星星表（RA/Dec 为近似目录值；实现时以视觉校验为准）。 */
+/** Ophiuchus main-star catalog (RA/Dec are approximate catalog values; the visual check governs). */
 export const OPHIUCHUS_STARS: OphiuchusStar[] = [
   { id: "alpha", name: "Rasalhague α", ra: 263.73, dec: 12.56 },
   { id: "beta", name: "Cebalrai β", ra: 265.87, dec: 4.57 },
@@ -31,11 +31,11 @@ export const OPHIUCHUS_STARS: OphiuchusStar[] = [
   { id: "s58", name: "58 Oph", ra: 265.86, dec: -21.68 },
 ];
 
-/** 连线（IAU 风格持蛇者轮廓）：成对索引指向 OPHIUCHUS_STARS。 */
+/** Connecting lines (IAU-style serpent-bearer outline): index pairs pointing into OPHIUCHUS_STARS. */
 export const OPHIUCHUS_LINES: Array<[number, number]> = [
-  [8, 0], // κ–α 头部
-  [0, 3], // α–δ 左臂/蛇头
-  [3, 4], // δ–ε 蛇头
+  [8, 0], // κ–α head
+  [0, 3], // α–δ left arm / serpent head
+  [3, 4], // δ–ε serpent head
   [4, 5], // ε–ζ
   [5, 6], // ζ–η
   [6, 7], // η–θ
@@ -48,7 +48,7 @@ export const OPHIUCHUS_LINES: Array<[number, number]> = [
   [10, 9], // 42–36
 ];
 
-/** 赤经/赤纬 → 球面 3D 坐标（ra 沿 +X，dec 沿 +Y，符合相机正视方向）。 */
+/** Right ascension / declination → spherical 3D coordinates (ra along +X, dec along +Y, matching the camera's forward direction). */
 export function raDecToVec3(ra: number, dec: number, radius: number): Vec3 {
   const raRad = (ra * Math.PI) / 180;
   const decRad = (dec * Math.PI) / 180;
@@ -59,7 +59,7 @@ export function raDecToVec3(ra: number, dec: number, radius: number): Vec3 {
   };
 }
 
-/* ---- 私有向量工具 ---- */
+/* ---- Private vector helpers ---- */
 
 function dot(a: Vec3, b: Vec3): number {
   return a.x * b.x + a.y * b.y + a.z * b.z;
@@ -78,12 +78,13 @@ function norm(a: Vec3): number {
 }
 
 /**
- * 生成蛇夫座 3D 数据。
+ * Builds the Ophiuchus 3D data.
  *
- * 用**切平面投影**把星表方向向量投到以星座质心方向为法线的平面上，
- * 使图案正对相机（镜头在 +z）、上下直立（Rasalhague 在上、Sabik 在下），
- * 再缩放 scale 并居中于原点；z 带轻微抖动增加立体感。
- * depthJitter 相对 scale 应很小（默认 1.5 / scale≈30）。
+ * A **tangent-plane projection** projects the catalog direction vectors onto the plane
+ * whose normal is the constellation centroid direction, so the pattern faces the camera
+ * (lens at +z) and stands upright (Rasalhague on top, Sabik at the bottom); it is then
+ * scaled by `scale` and centered on the origin; z gets a slight jitter for depth.
+ * depthJitter should be small relative to scale (default 1.5 / scale≈30).
  */
 export function buildOphiuchus(
   scale: number,

@@ -28,7 +28,7 @@ func (s *UTMTemplateService) Create(ctx context.Context, userID int64, req domai
 		Scan(&t.ID, &t.UserID, &t.Name, &t.UTMSource, &t.UTMMedium, &t.UTMCampaign, &t.UTMTerm, &t.UTMContent, &t.CreatedAt, &t.UpdatedAt)
 	if err != nil {
 		log.Printf("create utm template failed: %v", err)
-		return nil, errors.New("创建模板失败")
+		return nil, errors.New("failed to create template")
 	}
 	return &t, nil
 }
@@ -65,7 +65,7 @@ func (s *UTMTemplateService) Delete(ctx context.Context, userID, templateID int6
 		return err
 	}
 	if tag.RowsAffected() == 0 {
-		return errors.New("模板不存在")
+		return errors.New("template not found")
 	}
 	return nil
 }

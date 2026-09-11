@@ -10,20 +10,20 @@ func TestSlugPattern(t *testing.T) {
 		isValid bool
 		reason  string
 	}{
-		{"my-project", true, "标准 slug"},
-		{"test123", true, "字母数字"},
-		{"a-b-c", true, "含多个连字符"},
-		{"abc", true, "3 位（下限）"},
-		{"a1b", true, "3 位混合"},
-		{"a", false, "太短（1位）"},
-		{"ab", false, "太短（2位）"},
-		{"-abc", false, "以连字符开头"},
-		{"abc-", false, "以连字符结尾"},
-		{"ABC-DEF", false, "含大写字母"},
-		{"abc_def", false, "含下划线"},
-		{"abc def", false, "含空格"},
-		{"abc.def", false, "含点号"},
-		{"", false, "空字符串"},
+		{"my-project", true, "standard slug"},
+		{"test123", true, "alphanumeric"},
+		{"a-b-c", true, "contains multiple hyphens"},
+		{"abc", true, "3 chars (lower bound)"},
+		{"a1b", true, "3 chars mixed"},
+		{"a", false, "too short (1 char)"},
+		{"ab", false, "too short (2 chars)"},
+		{"-abc", false, "starts with a hyphen"},
+		{"abc-", false, "ends with a hyphen"},
+		{"ABC-DEF", false, "contains uppercase letters"},
+		{"abc_def", false, "contains underscore"},
+		{"abc def", false, "contains space"},
+		{"abc.def", false, "contains period"},
+		{"", false, "empty string"},
 	}
 
 	for _, tt := range tests {

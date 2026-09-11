@@ -30,7 +30,7 @@ linters:
         linters:
           - errcheck
           - unused
-      # 允许不检查常见的 DB/IO 操作返回值
+      # Allow ignoring return values of common DB/IO operations
       - linters: [errcheck]
         text: "Scan|Exec|Close|Write|Execute"
 

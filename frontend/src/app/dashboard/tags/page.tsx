@@ -6,6 +6,7 @@ import useSWR from "swr";
 import { toast } from "sonner";
 import { tagsAPI } from "@/lib/api";
 import { getToken } from "@/lib/auth";
+import { useT } from "@/lib/i18n";
 
 const TAG_COLORS = [
   "#3B82F6", // blue
@@ -27,6 +28,7 @@ interface TagItem {
 
 export default function TagsPage() {
   const token = getToken();
+  const t = useT();
 
   const { data, error, isLoading, mutate } = useSWR(
     token ? "tags" : null,
@@ -48,9 +50,9 @@ export default function TagsPage() {
       setNewName("");
       setNewColor(TAG_COLORS[0]);
       mutate();
-      toast.success("标签已创建");
+      toast.success(t("标签已创建"));
     } catch {
-      toast.error("创建失败");
+      toast.error(t("创建失败"));
     } finally {
       setCreating(false);
     }
@@ -62,17 +64,17 @@ export default function TagsPage() {
       await tagsAPI.delete(token, id);
       setDeletingId(null);
       mutate();
-      toast.success("已删除");
+      toast.success(t("已删除"));
     } catch {
-      toast.error("删除失败");
+      toast.error(t("删除失败"));
     }
   };
 
   return (
     <div className="space-y-5">
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">标签</h1>
-        <p className="text-sm text-gray-500 mt-1">用标签标记和筛选链接</p>
+        <h1 className="text-2xl font-bold text-gray-900">{t("标签")}</h1>
+        <p className="text-sm text-gray-500 mt-1">{t("用标签标记和筛选链接")}</p>
       </div>
 
       {/* Create new tag */}
@@ -94,7 +96,7 @@ export default function TagsPage() {
             type="text"
             value={newName}
             onChange={(e) => setNewName(e.target.value)}
-            placeholder="新建标签..."
+            placeholder={t("新建标签...")}
             className="flex-1 min-w-[140px] border-none bg-transparent text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none"
             maxLength={30}
           />
@@ -127,7 +129,7 @@ export default function TagsPage() {
             className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed transition shrink-0"
           >
             <Plus className="size-3.5" />
-            新建
+            {t("新建")}
           </button>
         </form>
       </div>
@@ -136,13 +138,13 @@ export default function TagsPage() {
       {error ? (
         <div className="flex flex-col items-center justify-center py-16 text-center">
           <div className="text-3xl mb-3">😞</div>
-          <h3 className="text-lg font-semibold text-gray-900">加载失败</h3>
-          <p className="mt-1 text-sm text-gray-500">请检查网络后重试</p>
+          <h3 className="text-lg font-semibold text-gray-900">{t("加载失败")}</h3>
+          <p className="mt-1 text-sm text-gray-500">{t("请检查网络后重试")}</p>
           <button
             onClick={() => mutate()}
             className="mt-3 text-sm font-medium text-indigo-600 hover:text-indigo-500"
           >
-            重新加载
+            {t("重新加载")}
           </button>
         </div>
       ) : isLoading ? (
@@ -161,50 +163,50 @@ export default function TagsPage() {
           <div className="flex size-14 items-center justify-center rounded-2xl bg-gray-100 mb-4">
             <Hash className="size-7 text-gray-400" />
           </div>
-          <h3 className="text-lg font-semibold text-gray-900">还没有标签</h3>
+          <h3 className="text-lg font-semibold text-gray-900">{t("还没有标签")}</h3>
           <p className="mt-1 text-sm text-gray-500">
-            在上方输入框创建标签，用于标记和筛选链接
+            {t("在上方输入框创建标签，用于标记和筛选链接")}
           </p>
         </div>
       ) : (
         /* Tag list - pill style */
         <div className="flex flex-wrap gap-2">
-          {tags.map((t) => (
+          {tags.map((tag) => (
             <div
-              key={t.id}
+              key={tag.id}
               className="group inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium transition"
               style={{
-                backgroundColor: (t.color || "#3B82F6") + "15",
-                color: t.color || "#3B82F6",
+                backgroundColor: (tag.color || "#3B82F6") + "15",
+                color: tag.color || "#3B82F6",
               }}
             >
-              {t.name}
+              {tag.name}
               <span className="text-xs opacity-60">
-                {t.link_count ?? 0}
+                {tag.link_count ?? 0}
               </span>
 
-              {deletingId === t.id ? (
+              {deletingId === tag.id ? (
                 <span className="inline-flex items-center gap-1 ml-1">
                   <button
-                    onClick={() => handleDelete(t.id)}
+                    onClick={() => handleDelete(tag.id)}
                     className="hover:opacity-80 transition"
-                    title="确认删除"
+                    title={t("确认删除")}
                   >
                     <Check className="size-3" />
                   </button>
                   <button
                     onClick={() => setDeletingId(null)}
                     className="hover:opacity-80 transition"
-                    title="取消"
+                    title={t("取消")}
                   >
                     <X className="size-3" />
                   </button>
                 </span>
               ) : (
                 <button
-                  onClick={() => setDeletingId(t.id)}
+                  onClick={() => setDeletingId(tag.id)}
                   className="opacity-0 group-hover:opacity-100 hover:opacity-80 transition ml-1"
-                  title="删除标签"
+                  title={t("删除标签")}
                 >
                   <Trash2 className="size-3" />
                 </button>

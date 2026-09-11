@@ -1,11 +1,11 @@
 @import "tailwindcss";
 
 @theme {
-  --color-brand: #4f46e5;        /* indigo-600 主色 */
+  --color-brand: #4f46e5;        /* indigo-600 brand color */
   --color-brand-dark: #4338ca;   /* indigo-700 */
   --color-brand-soft: #eef2ff;   /* indigo-50 */
-  --color-hairline: #e5e5e5;     /* neutral-200 发丝边框 */
-  --color-surface: #fafafa;      /* neutral-50 页面底色 */
+  --color-hairline: #e5e5e5;     /* neutral-200 hairline border */
+  --color-surface: #fafafa;      /* neutral-50 page background */
 }
 
 :root {
@@ -20,7 +20,7 @@ body {
     "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
 }
 
-/* 首页深空背景：深 navy → 靛蓝 → 微紫径向渐变 */
+/* Homepage deep-space background: deep navy → indigo → subtle violet radial gradient */
 .bg-deep-space {
   background:
     radial-gradient(90% 70% at 70% 20%, rgba(79, 70, 229, 0.16) 0%, transparent 60%),

@@ -11,6 +11,10 @@ import useSWR from "swr";
 import { linksAPI, foldersAPI, tagsAPI, domainsAPI, workspacesAPI } from "@/lib/api";
 import { getToken } from "@/lib/auth";
 import { safeHref } from "@/lib/utils";
+import { useT } from "@/lib/i18n";
+// `useI18n` is defined in the i18n foundation's context module; the barrel
+// (`@/lib/i18n`) does not re-export it, and the foundation must stay untouched.
+import { useI18n } from "@/lib/i18n/context";
 
 interface TagInfo {
   id: number;
@@ -45,13 +49,16 @@ interface LinkDetail {
   tags?: TagInfo[];
 }
 
-const platformLabels: Record<string, string> = {
-  browser: "浏览器", wechat: "微信", qq: "QQ",
-  weibo: "微博", xiaohongshu: "小红书", sms: "短信", unknown: "其他",
-};
-
 export default function LinkDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
+  const t = useT();
+  const { locale } = useI18n();
+  const dateLocale = locale === "en" ? "en-US" : "zh-CN";
+
+  const platformLabels: Record<string, string> = {
+    browser: t("浏览器"), wechat: t("微信"), qq: "QQ",
+    weibo: t("微博"), xiaohongshu: t("小红书"), sms: t("短信"), unknown: t("其他"),
+  };
 
   const [link, setLink] = useState<LinkDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -99,8 +106,8 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
 
   const fetchLink = () => {
     if (!token) return;
-    // loading 初始为 true（useState(true)），此处不再同步 setState，
-    // 仅在各异步回调中更新状态
+    // `loading` starts as true (useState(true)), so no synchronous setState
+    // happens here; state is only updated in the async callbacks below.
     linksAPI.get(token, id)
       .then((data) => {
         const l = data.link || data;
@@ -113,7 +120,7 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
         setEditExpiresAt(l.expires_at ? l.expires_at.slice(0, 16) : "");
         setEditFolderId(l.folder_id ?? null);
         setEditWorkspaceId(l.workspace_id ?? null);
-        setEditTagIds((l.tags ?? []).map((t: TagInfo) => t.id));
+        setEditTagIds((l.tags ?? []).map((tag: TagInfo) => tag.id));
         setEditUtmSource(l.utm_source || "");
         setEditUtmMedium(l.utm_medium || "");
         setEditUtmCampaign(l.utm_campaign || "");
@@ -122,7 +129,7 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
         setEditIosUrl(l.ios_url || "");
         setEditAndroidUrl(l.android_url || "");
       })
-      .catch(() => toast.error("加载链接失败"))
+      .catch(() => toast.error(t("加载链接失败")))
       .finally(() => setLoading(false));
   };
 
@@ -143,7 +150,7 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
           daily: dailyData.daily ?? [],
           platforms: platformsData.platforms ?? [],
         });
-      }).catch(() => toast.error("加载统计数据失败"));
+      }).catch(() => toast.error(t("加载统计数据失败")));
     }
   }, [showAnalytics, link, token]);
 
@@ -165,7 +172,7 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
     setCopied(true);
-    toast.success("已复制");
+    toast.success(t("已复制"));
     setTimeout(() => setCopied(false), 2000);
   };
 
@@ -195,9 +202,9 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
       const updated = await linksAPI.update(token, link.id, payload);
       setLink({ ...link, ...updated });
       setEditing(false);
-      toast.success("已更新");
+      toast.success(t("已更新"));
     } catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : "更新失败");
+      toast.error(e instanceof Error ? e.message : t("更新失败"));
     } finally {
       setSaving(false);
     }
@@ -208,9 +215,9 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
     try {
       await linksAPI.update(token, link.id, { is_active: !link.is_active });
       setLink({ ...link, is_active: !link.is_active });
-      toast.success(link.is_active ? "已停用" : "已启用");
+      toast.success(link.is_active ? t("已停用") : t("已启用"));
     } catch {
-      toast.error("状态更新失败");
+      toast.error(t("状态更新失败"));
     }
   };
 
@@ -229,8 +236,8 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
     return (
       <div className="max-w-2xl mx-auto text-center py-16">
         <div className="text-4xl mb-4">🔍</div>
-        <h2 className="text-lg font-medium text-gray-900">链接不存在</h2>
-        <Link href="/dashboard" className="inline-block mt-4 text-indigo-600 text-sm">返回列表</Link>
+        <h2 className="text-lg font-medium text-gray-900">{t("链接不存在")}</h2>
+        <Link href="/dashboard" className="inline-block mt-4 text-indigo-600 text-sm">{t("返回列表")}</Link>
       </div>
     );
   }
@@ -238,7 +245,7 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
   return (
     <div className="max-w-2xl mx-auto space-y-6">
       <Link href="/dashboard" className="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 transition">
-        <ArrowLeft className="size-4" /> 返回链接列表
+        <ArrowLeft className="size-4" /> {t("返回链接列表")}
       </Link>
 
       <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
@@ -250,17 +257,17 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
                 type="text" value={editTitle}
                 onChange={(e) => setEditTitle(e.target.value)}
                 className="flex-1 text-xl font-bold text-gray-900 border-b-2 border-indigo-300 focus:border-indigo-500 focus:outline-none px-2 py-1"
-                placeholder="链接标题" autoFocus
+                placeholder={t("链接标题")} autoFocus
               />
             ) : (
               <div className="flex items-center gap-3 flex-1 min-w-0">
-                <h1 className="text-xl font-bold text-gray-900 truncate">{link.title || "未命名链接"}</h1>
+                <h1 className="text-xl font-bold text-gray-900 truncate">{link.title || t("未命名链接")}</h1>
                 <button onClick={handleToggleActive}
                   className={`shrink-0 inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium transition ${
                     link.is_active ? "bg-emerald-50 text-emerald-700" : "bg-gray-100 text-gray-500"
                   }`}
                 >
-                  {link.is_active ? "启用中" : "已停用"}
+                  {link.is_active ? t("启用中") : t("已停用")}
                 </button>
               </div>
             )}
@@ -270,7 +277,7 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
                   className="p-2 text-gray-400 hover:text-gray-600 transition"><X className="size-4" /></button>
                 <button onClick={handleSave} disabled={saving}
                   className="inline-flex items-center gap-1 px-4 py-2 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition disabled:opacity-50">
-                  <Save className="size-3.5" /> {saving ? "保存中..." : "保存"}
+                  <Save className="size-3.5" /> {saving ? t("保存中...") : t("保存")}
                 </button>
               </div>
             ) : (
@@ -287,9 +294,9 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
                 {link.folder_name}
               </span>
             )}
-            {(link.tags ?? []).map((t) => (
-              <span key={t.id} className="text-xs px-2 py-0.5 rounded-full text-white" style={{ backgroundColor: t.color }}>
-                {t.name}
+            {(link.tags ?? []).map((tag) => (
+              <span key={tag.id} className="text-xs px-2 py-0.5 rounded-full text-white" style={{ backgroundColor: tag.color }}>
+                {tag.name}
               </span>
             ))}
           </div>
@@ -312,11 +319,11 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
         <div className="grid grid-cols-3 divide-x border-b border-gray-100">
           <div className="p-4 text-center">
             <p className="text-2xl font-bold text-gray-900 tabular-nums">{link.click_count.toLocaleString()}</p>
-            <p className="text-xs text-gray-500 mt-0.5">总点击</p>
+            <p className="text-xs text-gray-500 mt-0.5">{t("总点击")}</p>
           </div>
           <div className="p-4 text-center">
-            <p className="text-sm font-bold text-gray-900">{new Date(link.created_at).toLocaleDateString("zh-CN")}</p>
-            <p className="text-xs text-gray-500 mt-0.5">创建日期</p>
+            <p className="text-sm font-bold text-gray-900">{new Date(link.created_at).toLocaleDateString(dateLocale)}</p>
+            <p className="text-xs text-gray-500 mt-0.5">{t("创建日期")}</p>
           </div>
           <div className="p-4 text-center">
             <button
@@ -324,22 +331,22 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
               className={`text-sm font-bold transition ${showAnalytics ? "text-indigo-600" : "text-gray-900"}`}
             >
               <BarChart3 className="size-4 inline mr-1" />
-              统计
+              {t("统计")}
             </button>
-            <p className="text-xs text-gray-500 mt-0.5">点击详情</p>
+            <p className="text-xs text-gray-500 mt-0.5">{t("点击详情")}</p>
           </div>
         </div>
 
         {/* Per-link analytics */}
         {showAnalytics && (
           <div className="p-6 border-b border-gray-100 bg-gray-50/50 space-y-4">
-            <h3 className="text-sm font-semibold text-gray-900">点击统计</h3>
+            <h3 className="text-sm font-semibold text-gray-900">{t("点击统计")}</h3>
             {clickData ? (
               <>
                 {/* Daily chart */}
                 {clickData.daily.length > 0 && (
                   <div>
-                    <p className="text-xs text-gray-500 mb-2">每日点击量（近30天）</p>
+                    <p className="text-xs text-gray-500 mb-2">{t("每日点击量（近30天）")}</p>
                     <div className="flex items-end gap-1 h-24">
                       {clickData.daily.map((d) => {
                         const max = Math.max(...clickData.daily.map(dd => dd.count), 1);
@@ -348,7 +355,7 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
                           <div key={d.date} className="flex-1 flex flex-col items-center gap-1 min-w-0">
                             <div className="w-full flex flex-col justify-end" style={{ height: "80px" }}>
                               <div className="w-full rounded-t bg-indigo-500 min-h-[2px]" style={{ height: `${Math.max(h, 1)}%` }}
-                                title={`${d.date}: ${d.count} 点击`} />
+                                title={`${d.date}: ${d.count} ${t("点击")}`} />
                             </div>
                             <span className="text-[9px] text-gray-400 truncate w-full text-center">{d.date.slice(5)}</span>
                           </div>
@@ -360,7 +367,7 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
                 {/* Platforms */}
                 {clickData.platforms.length > 0 && (
                   <div>
-                    <p className="text-xs text-gray-500 mb-2">平台分布</p>
+                    <p className="text-xs text-gray-500 mb-2">{t("平台分布")}</p>
                     <div className="space-y-1.5">
                       {clickData.platforms.map((p) => {
                         const total = clickData.platforms.reduce((s, pp) => s + pp.count, 0);
@@ -379,7 +386,7 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
                   </div>
                 )}
                 {clickData.daily.length === 0 && clickData.platforms.length === 0 && (
-                  <p className="text-xs text-gray-400 py-2">暂无点击数据</p>
+                  <p className="text-xs text-gray-400 py-2">{t("暂无点击数据")}</p>
                 )}
               </>
             ) : (
@@ -394,12 +401,12 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
         {editing && (
           <div className="p-6 border-b border-gray-100 bg-gray-50/50 space-y-4">
             <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">目标 URL</label>
+              <label className="block text-xs font-medium text-gray-500 mb-1">{t("目标 URL")}</label>
               <input type="url" value={editOriginalUrl} onChange={(e) => setEditOriginalUrl(e.target.value)}
                 className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition" />
             </div>
             <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">描述</label>
+              <label className="block text-xs font-medium text-gray-500 mb-1">{t("描述")}</label>
               <textarea value={editDescription} onChange={(e) => setEditDescription(e.target.value)}
                 className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition" rows={2} />
             </div>
@@ -407,13 +414,13 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
             {/* Folder + Workspace + Tags edit */}
             <div className="grid gap-4 sm:grid-cols-3">
               <div>
-                <label className="block text-xs font-medium text-gray-500 mb-1">文件夹</label>
+                <label className="block text-xs font-medium text-gray-500 mb-1">{t("文件夹")}</label>
                 <select
                   value={editFolderId ?? ""}
                   onChange={(e) => setEditFolderId(e.target.value ? Number(e.target.value) : null)}
                   className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition bg-white"
                 >
-                  <option value="">不分类</option>
+                  <option value="">{t("不分类")}</option>
                   {folders.map((f: { id: number; name: string }) => (
                     <option key={f.id} value={f.id}>{f.name}</option>
                   ))}
@@ -421,13 +428,13 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
               </div>
               {workspaces.length > 0 && (
                 <div>
-                  <label className="block text-xs font-medium text-gray-500 mb-1">工作区</label>
+                  <label className="block text-xs font-medium text-gray-500 mb-1">{t("工作区")}</label>
                   <select
                     value={editWorkspaceId ?? ""}
                     onChange={(e) => setEditWorkspaceId(e.target.value ? Number(e.target.value) : null)}
                     className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition bg-white"
                   >
-                    <option value="">默认</option>
+                    <option value="">{t("默认")}</option>
                     {workspaces.map((w: { id: number; name: string }) => (
                       <option key={w.id} value={w.id}>{w.name}</option>
                     ))}
@@ -435,7 +442,7 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
                 </div>
               )}
               <div>
-                <label className="block text-xs font-medium text-gray-500 mb-1">标签</label>
+                <label className="block text-xs font-medium text-gray-500 mb-1">{t("标签")}</label>
                 <select
                   value=""
                   onChange={(e) => {
@@ -446,20 +453,20 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
                   }}
                   className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition bg-white"
                 >
-                  <option value="">添加标签...</option>
-                  {allTags.filter((t: { id: number }) => !editTagIds.includes(t.id)).map((t: { id: number; name: string }) => (
-                    <option key={t.id} value={t.id}>{t.name}</option>
+                  <option value="">{t("添加标签...")}</option>
+                  {allTags.filter((tag: { id: number }) => !editTagIds.includes(tag.id)).map((tag: { id: number; name: string }) => (
+                    <option key={tag.id} value={tag.id}>{tag.name}</option>
                   ))}
                 </select>
                 {editTagIds.length > 0 && (
                   <div className="flex flex-wrap gap-1 mt-1.5">
-                    {allTags.filter((t: { id: number }) => editTagIds.includes(t.id)).map((t: { id: number; name: string; color: string }) => (
-                      <span key={t.id}
+                    {allTags.filter((tag: { id: number }) => editTagIds.includes(tag.id)).map((tag: { id: number; name: string; color: string }) => (
+                      <span key={tag.id}
                         className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full text-white"
-                        style={{ backgroundColor: t.color }}
+                        style={{ backgroundColor: tag.color }}
                       >
-                        {t.name}
-                        <button type="button" onClick={() => setEditTagIds(prev => prev.filter(id => id !== t.id))}
+                        {tag.name}
+                        <button type="button" onClick={() => setEditTagIds(prev => prev.filter(id => id !== tag.id))}
                           className="hover:bg-white/20 rounded-full p-0.5 -mr-1">
                           <X className="size-2.5" />
                         </button>
@@ -472,13 +479,13 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
 
             <div className="grid gap-4 sm:grid-cols-2">
               <div>
-                <label className="block text-xs font-medium text-gray-500 mb-1">密码保护</label>
+                <label className="block text-xs font-medium text-gray-500 mb-1">{t("密码保护")}</label>
                 <input type="text" value={editPassword} onChange={(e) => setEditPassword(e.target.value)}
                   className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition"
-                  placeholder="留空则不加密" />
+                  placeholder={t("留空则不加密")} />
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-500 mb-1">过期时间</label>
+                <label className="block text-xs font-medium text-gray-500 mb-1">{t("过期时间")}</label>
                 <input type="datetime-local" value={editExpiresAt} onChange={(e) => setEditExpiresAt(e.target.value)}
                   className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition" />
               </div>
@@ -487,33 +494,33 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
             {/* Advanced toggle */}
             <button type="button" onClick={() => setEditShowAdvanced(!editShowAdvanced)}
               className="text-xs text-indigo-600 hover:text-indigo-700 font-medium">
-              {editShowAdvanced ? "隐藏高级选项 ▲" : "展开高级选项 ▼"}
+              {editShowAdvanced ? t("隐藏高级选项 ▲") : t("展开高级选项 ▼")}
             </button>
 
             {editShowAdvanced && (
               <div className="space-y-4 pt-2">
                 <div>
-                  <label className="block text-xs font-medium text-gray-500 mb-1">短码</label>
+                  <label className="block text-xs font-medium text-gray-500 mb-1">{t("短码")}</label>
                   <input type="text" value={editShortCode} onChange={(e) => setEditShortCode(e.target.value.replace(/[^a-zA-Z0-9_-]/g, ""))}
                     className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-mono focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition"
-                    placeholder="修改短码" />
+                    placeholder={t("修改短码")} />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-500 mb-1">域名</label>
+                  <label className="block text-xs font-medium text-gray-500 mb-1">{t("域名")}</label>
                   <select value={editDomain} onChange={(e) => setEditDomain(e.target.value)}
                     className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition bg-white">
-                    <option value="">kada.click（默认）</option>
+                    <option value="">{t("kada.click（默认）")}</option>
                     {verifiedDomains.map((d: { id: number; name: string }) => (
                       <option key={d.id} value={d.name}>{d.name}</option>
                     ))}
                   </select>
                 </div>
                 <div className="grid gap-4 sm:grid-cols-2">
-                  {[["utm_source", "来源", editUtmSource, setEditUtmSource],
-                    ["utm_medium", "媒介", editUtmMedium, setEditUtmMedium],
-                    ["utm_campaign", "活动", editUtmCampaign, setEditUtmCampaign],
-                    ["utm_term", "关键词", editUtmTerm, setEditUtmTerm],
-                    ["utm_content", "内容", editUtmContent, setEditUtmContent],
+                  {[["utm_source", t("来源"), editUtmSource, setEditUtmSource],
+                    ["utm_medium", t("媒介"), editUtmMedium, setEditUtmMedium],
+                    ["utm_campaign", t("活动"), editUtmCampaign, setEditUtmCampaign],
+                    ["utm_term", t("关键词"), editUtmTerm, setEditUtmTerm],
+                    ["utm_content", t("内容"), editUtmContent, setEditUtmContent],
                   ].map(([key, label, value, setter]) => (
                     <div key={key as string}>
                       <label className="block text-xs font-medium text-gray-500 mb-1">UTM {label as string}</label>
@@ -524,12 +531,12 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
                 </div>
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div>
-                    <label className="block text-xs font-medium text-gray-500 mb-1">iOS 深度链接</label>
+                    <label className="block text-xs font-medium text-gray-500 mb-1">{t("iOS 深度链接")}</label>
                     <input type="text" value={editIosUrl} onChange={(e) => setEditIosUrl(e.target.value)}
                       className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-mono focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition" />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-gray-500 mb-1">Android 深度链接</label>
+                    <label className="block text-xs font-medium text-gray-500 mb-1">{t("Android 深度链接")}</label>
                     <input type="text" value={editAndroidUrl} onChange={(e) => setEditAndroidUrl(e.target.value)}
                       className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-mono focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition" />
                   </div>
@@ -542,13 +549,13 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
         {/* Details */}
         <div className="p-6 space-y-2">
           {[
-            { label: "短码", value: link.short_code, mono: true },
-            { label: "域名", value: link.domain, icon: Globe },
-            { label: "描述", value: link.description },
-            { label: "创建时间", value: new Date(link.created_at).toLocaleString("zh-CN") },
-            { label: "更新时间", value: new Date(link.updated_at).toLocaleString("zh-CN") },
-            { label: "过期时间", value: link.expires_at ? new Date(link.expires_at).toLocaleString("zh-CN") : "永不过期", icon: Clock },
-            { label: "密码保护", value: link.password_hash ? "已设置" : "未设置", icon: Shield },
+            { label: t("短码"), value: link.short_code, mono: true },
+            { label: t("域名"), value: link.domain, icon: Globe },
+            { label: t("描述"), value: link.description },
+            { label: t("创建时间"), value: new Date(link.created_at).toLocaleString(dateLocale) },
+            { label: t("更新时间"), value: new Date(link.updated_at).toLocaleString(dateLocale) },
+            { label: t("过期时间"), value: link.expires_at ? new Date(link.expires_at).toLocaleString(dateLocale) : t("永不过期"), icon: Clock },
+            { label: t("密码保护"), value: link.password_hash ? t("已设置") : t("未设置"), icon: Shield },
           ].filter(({ value }) => value).map(({ label, value, icon: Icon, mono }) => (
             <div key={label} className="flex items-center justify-between py-1.5 text-sm">
               <span className="text-gray-500 flex items-center gap-1.5">
@@ -562,11 +569,11 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
           {[link.utm_source, link.utm_medium, link.utm_campaign, link.utm_term, link.utm_content].some(Boolean) && (
             <div className="mt-3 pt-3 border-t">
               <p className="text-xs font-medium text-gray-500 mb-2 flex items-center gap-1.5">
-                <Tags className="size-3.5" />UTM 参数
+                <Tags className="size-3.5" />{t("UTM 参数")}
               </p>
               {[
-                ["来源", link.utm_source], ["媒介", link.utm_medium], ["活动", link.utm_campaign],
-                ["关键词", link.utm_term], ["内容", link.utm_content],
+                [t("来源"), link.utm_source], [t("媒介"), link.utm_medium], [t("活动"), link.utm_campaign],
+                [t("关键词"), link.utm_term], [t("内容"), link.utm_content],
               ].filter(([, v]) => v).map(([k, v]) => (
                 <div key={k} className="flex items-center justify-between py-1 text-sm">
                   <span className="text-gray-400 text-xs">{k}</span>
@@ -580,7 +587,7 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
           {(link.ios_url || link.android_url) && (
             <div className="mt-3 pt-3 border-t">
               <p className="text-xs font-medium text-gray-500 mb-2 flex items-center gap-1.5">
-                <Smartphone className="size-3.5" />深度链接
+                <Smartphone className="size-3.5" />{t("深度链接")}
               </p>
               {link.ios_url && <div className="flex justify-between py-1 text-sm"><span className="text-gray-400 text-xs">iOS</span><code className="text-xs text-gray-700">{link.ios_url}</code></div>}
               {link.android_url && <div className="flex justify-between py-1 text-sm"><span className="text-gray-400 text-xs">Android</span><code className="text-xs text-gray-700">{link.android_url}</code></div>}
@@ -589,7 +596,7 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
 
           {/* Target URL */}
           <div className="mt-3 pt-3 border-t">
-            <p className="text-xs font-medium text-gray-500 mb-1">目标 URL</p>
+            <p className="text-xs font-medium text-gray-500 mb-1">{t("目标 URL")}</p>
             <a href={safeHref(link.original_url)} target="_blank" rel="noopener noreferrer" className="text-indigo-600 text-sm break-all hover:underline">
               {link.original_url}
             </a>
@@ -603,7 +610,7 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
           onClick={() => { setShowQR(false); setQrURL(null); }}>
           <div className="bg-white rounded-2xl shadow-xl p-6 max-w-sm w-full mx-4" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
-              <h3 className="font-semibold text-gray-900">二维码</h3>
+              <h3 className="font-semibold text-gray-900">{t("二维码")}</h3>
               <button onClick={() => { setShowQR(false); setQrURL(null); }} className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-100 transition"><X className="size-4" /></button>
             </div>
             <div className="flex flex-col items-center gap-4">
@@ -616,7 +623,7 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
               {qrURL && (
                 <a href={qrURL} download={`kada-${link.short_code}.png`}
                   className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 transition">
-                  <Download className="size-3.5" />下载 PNG
+                  <Download className="size-3.5" />{t("下载 PNG")}
                 </a>
               )}
             </div>

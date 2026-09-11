@@ -28,7 +28,7 @@ func (s *TagService) Create(ctx context.Context, userID int64, req domain.Create
 		userID, req.Name, color,
 	).Scan(&t.ID, &t.UserID, &t.Name, &t.Color, &t.CreatedAt)
 	if err != nil {
-		return nil, errors.New("创建标签失败")
+		return nil, errors.New("failed to create tag")
 	}
 	return &t, nil
 }
@@ -37,7 +37,7 @@ func (s *TagService) List(ctx context.Context, userID int64) ([]domain.Tag, erro
 	rows, err := s.db.Query(ctx,
 		`SELECT id, user_id, name, color, created_at FROM tags WHERE user_id = $1 ORDER BY name`, userID)
 	if err != nil {
-		return nil, errors.New("查询标签列表失败")
+		return nil, errors.New("failed to list tags")
 	}
 	defer rows.Close()
 
@@ -45,7 +45,7 @@ func (s *TagService) List(ctx context.Context, userID int64) ([]domain.Tag, erro
 	for rows.Next() {
 		var t domain.Tag
 		if err := rows.Scan(&t.ID, &t.UserID, &t.Name, &t.Color, &t.CreatedAt); err != nil {
-			return nil, errors.New("查询标签列表失败")
+			return nil, errors.New("failed to list tags")
 		}
 		tags = append(tags, t)
 	}
@@ -58,29 +58,29 @@ func (s *TagService) List(ctx context.Context, userID int64) ([]domain.Tag, erro
 func (s *TagService) Delete(ctx context.Context, userID, tagID int64) error {
 	_, err := s.db.Exec(ctx, `DELETE FROM tags WHERE id = $1 AND user_id = $2`, tagID, userID)
 	if err != nil {
-		return errors.New("删除标签失败")
+		return errors.New("failed to delete tag")
 	}
 	return nil
 }
 
-// AddTagToLink 为链接添加标签
+// AddTagToLink adds a tag to a link
 func (s *TagService) AddTagToLink(ctx context.Context, userID, linkID, tagID int64) error {
-	// 验证链接属于用户
+	// verify the link belongs to the user
 	var ownerID int64
 	err := s.db.QueryRow(ctx, `SELECT user_id FROM links WHERE id = $1`, linkID).Scan(&ownerID)
 	if err != nil || ownerID != userID {
-		return errors.New("链接不存在或无权限")
+		return errors.New("link not found or access denied")
 	}
-	// 验证标签也属于该用户（此前可挂接他人标签，泄漏其标签名/颜色）
+	// verify the tag also belongs to that user (previously another user's tag could be attached, leaking its name/color)
 	var tagOwner int64
 	if tagErr := s.db.QueryRow(ctx, `SELECT user_id FROM tags WHERE id = $1`, tagID).Scan(&tagOwner); tagErr != nil || tagOwner != userID {
-		return errors.New("标签不存在或无权限")
+		return errors.New("tag not found or access denied")
 	}
 	_, err = s.db.Exec(ctx, `INSERT INTO link_tags (link_id, tag_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`, linkID, tagID)
 	return err
 }
 
-// RemoveTagFromLink 移除链接标签
+// RemoveTagFromLink removes a link tag
 func (s *TagService) RemoveTagFromLink(ctx context.Context, userID, linkID, tagID int64) error {
 	_, err := s.db.Exec(ctx,
 		`DELETE FROM link_tags WHERE link_id = $1 AND tag_id = $2 AND link_id IN (SELECT id FROM links WHERE user_id = $3)`,

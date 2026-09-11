@@ -1,36 +1,36 @@
-# KADA 首页 3D 星空重构 实现计划
+# KADA Homepage 3D Starfield Rewrite Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 把首页 `/` 重构成单屏无滚动的沉浸式 3D 星空页——蛇夫座星座连线图案为主体，周围散布星星，标题 + 右上角登录/注册入口。
+**Goal:** Rewrite the homepage `/` as a single-screen, scroll-free immersive 3D starfield page — an Ophiuchus constellation line pattern as the main subject, stars scattered around it, and a title plus login/sign-up entry points in the top-right corner.
 
-**Architecture:** 用原生 Three.js 写一个 `StarfieldCanvas` 客户端组件渲染全屏 canvas（星星两层 + 蛇夫座星点/连线/辉光精灵 + 星云精灵，鼠标视差 + 动画），`page.tsx` 提供 `h-dvh overflow-hidden` 外壳 + 覆盖层文字。纯逻辑抽到 `src/lib/` 两个文件并用 Vitest 测试。
+**Architecture:** Write a `StarfieldCanvas` client component in vanilla Three.js that renders a full-screen canvas (two star layers + Ophiuchus star points/lines/glow sprites + nebula sprites, mouse parallax + animation); `page.tsx` supplies the `h-dvh overflow-hidden` shell + overlay text. Pure logic is extracted into two files under `src/lib/` and covered by Vitest tests.
 
-**Tech Stack:** Next.js 16 (App Router, Turbopack), React 19, TypeScript, Tailwind v4, Three.js, Vitest。
+**Tech Stack:** Next.js 16 (App Router, Turbopack), React 19, TypeScript, Tailwind v4, Three.js, Vitest.
 
 **Spec:** `docs/superpowers/specs/2026-08-10-homepage-3d-starfield-design.md`
 
 ## Global Constraints
 
-- **本项目是定制版 Next.js**（见 `frontend/AGENTS.md`）：写 React/Next 代码前先读 `frontend/node_modules/next/dist/docs/01-app/03-api-reference/01-directives/use-client.md`，遵守其约定。
-- 客户端组件在文件顶部（所有 import 之前）声明 `"use client"`。
-- 不引入外部字体（国内网络不稳定）；标题排版用系统字体栈 + 字重/字距/辉光。
-- 深空配色：深 navy → 靛蓝 → 微紫径向渐变，品牌 indigo `#4f46e5`。
-- 前端验证命令：`npm run lint` 与 `npm run build` 必须通过；测试命令 `npm run test`（= `vitest run`）。
-- 纯逻辑测试用 Vitest，测试文件与源码同目录，用**相对路径**导入（不依赖 `@/` 别名，避免配置成本）。
-- 保持既有代码风格：Tailwind 类、`lucide-react` 图标、React 函数组件。
+- **This project uses a customized Next.js build** (see `frontend/AGENTS.md`): before writing React/Next code, read `frontend/node_modules/next/dist/docs/01-app/03-api-reference/01-directives/use-client.md` and follow its conventions.
+- Client components must declare `"use client"` at the top of the file (before all imports).
+- Do not introduce external fonts (network access from mainland China is unreliable); use a system font stack plus weight/letter-spacing/glow for the title typography.
+- Deep-space palette: deep navy → indigo → faint purple radial gradient, brand indigo `#4f46e5`.
+- Frontend verification commands: `npm run lint` and `npm run build` must pass; the test command is `npm run test` (= `vitest run`).
+- Use Vitest for pure-logic tests; test files live in the same directory as the source and import via **relative paths** (do not depend on the `@/` alias, to avoid configuration overhead).
+- Keep the existing code style: Tailwind classes, `lucide-react` icons, React function components.
 
 ---
 
-### Task 1: 添加 Three.js 与 Vitest 依赖
+### Task 1: Add the Three.js and Vitest dependencies
 
 **Files:**
 - Modify: `frontend/package.json`
 
 **Interfaces:**
-- Produces: `npm run test` 可用；`import * as THREE from "three"` 可用。
+- Produces: `npm run test` is available; `import * as THREE from "three"` is available.
 
-- [ ] **Step 1: 安装依赖并加测试脚本**
+- [ ] **Step 1: Install the dependencies and add the test script**
 
 ```bash
 cd frontend
@@ -38,29 +38,29 @@ npm install three @types/three
 npm install -D vitest
 ```
 
-然后编辑 `package.json`，在 `scripts` 里加一行（与 `"lint"` 并列）：
+Then edit `package.json` and add one line inside `scripts` (alongside `"lint"`):
 
 ```json
 "test": "vitest run"
 ```
 
-- [ ] **Step 2: 验证依赖可用**
+- [ ] **Step 2: Verify the dependencies are available**
 
 ```bash
 npm ls three @types/three vitest
 ```
 
-Expected: 三个包都列出、无缺失依赖报错。
+Expected: all three packages are listed and there are no missing-dependency errors.
 
-- [ ] **Step 3: 验证 test 命令可运行**
+- [ ] **Step 3: Verify the test command runs**
 
 ```bash
 npm run test
 ```
 
-Expected: 退出码 0，输出 `No test files found` 之类的空跑结果（尚无测试文件）。
+Expected: exit code 0, with an empty-run result such as `No test files found` (there are no test files yet).
 
-- [ ] **Step 4: 提交**
+- [ ] **Step 4: Commit**
 
 ```bash
 git add package.json package-lock.json
@@ -69,20 +69,20 @@ git commit -m "chore: add three, @types/three and vitest for 3D homepage"
 
 ---
 
-### Task 2: `src/lib/starfield.ts` — 种子随机 + 星星图层生成（TDD）
+### Task 2: `src/lib/starfield.ts` — seeded randomness + star layer generation (TDD)
 
 **Files:**
 - Create: `frontend/src/lib/starfield.ts`
 - Test: `frontend/src/lib/starfield.test.ts`
 
 **Interfaces:**
-- Consumes: 无（纯逻辑）
+- Consumes: none (pure logic)
 - Produces:
-  - `createSeededRandom(seed: number): () => number` — 确定性 PRNG（mulberry32），返回值 ∈ [0,1)
-  - `randomDirection(rand: () => number): { x: number; y: number; z: number }` — 单位球面上均匀方向
-  - `buildStarLayer(opts: { count: number; minR: number; maxR: number; seed: number }): { positions: Float32Array; colors: Float32Array }` — `positions` 为 `count*3` 个 xyz，均匀分布在 `[minR, maxR]` 壳层；`colors` 为 `count*3` 个 RGB（0~1，白色/淡蓝/蓝白/暖白加权混用）
+  - `createSeededRandom(seed: number): () => number` — deterministic PRNG (mulberry32), return value ∈ [0,1)
+  - `randomDirection(rand: () => number): { x: number; y: number; z: number }` — a uniform direction on the unit sphere
+  - `buildStarLayer(opts: { count: number; minR: number; maxR: number; seed: number }): { positions: Float32Array; colors: Float32Array }` — `positions` holds `count*3` xyz values distributed uniformly through the `[minR, maxR]` shell; `colors` holds `count*3` RGB values (0~1, a weighted mix of white/pale blue/blue-white/warm white)
 
-- [ ] **Step 1: 写失败测试**
+- [ ] **Step 1: Write a failing test**
 
 Create `frontend/src/lib/starfield.test.ts`:
 
@@ -149,18 +149,18 @@ describe("buildStarLayer", () => {
 });
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [ ] **Step 2: Run the test and confirm it fails**
 
 Run: `cd frontend && npm run test`
 
-Expected: FAIL — `Cannot find module './starfield'`。
+Expected: FAIL — `Cannot find module './starfield'`.
 
-- [ ] **Step 3: 实现**
+- [ ] **Step 3: Implement**
 
 Create `frontend/src/lib/starfield.ts`:
 
 ```ts
-/** 确定性 PRNG（mulberry32），保证星图布局在多次渲染间稳定。 */
+/** Deterministic PRNG (mulberry32) that keeps the star layout stable across renders. */
 export function createSeededRandom(seed: number): () => number {
   let a = seed >>> 0;
   return () => {
@@ -171,7 +171,7 @@ export function createSeededRandom(seed: number): () => number {
   };
 }
 
-/** 单位球面上均匀分布的方向向量。 */
+/** A uniformly distributed direction vector on the unit sphere. */
 export function randomDirection(rand: () => number): { x: number; y: number; z: number } {
   const u = rand() * 2 - 1;
   const theta = rand() * Math.PI * 2;
@@ -180,13 +180,13 @@ export function randomDirection(rand: () => number): { x: number; y: number; z: 
 }
 
 const STAR_COLORS: Array<[number, number, number]> = [
-  [1.0, 1.0, 1.0], // 白
-  [0.65, 0.78, 1.0], // 淡蓝
-  [0.9, 0.92, 1.0], // 蓝白
-  [1.0, 0.9, 0.8], // 暖白
+  [1.0, 1.0, 1.0], // white
+  [0.65, 0.78, 1.0], // pale blue
+  [0.9, 0.92, 1.0], // blue-white
+  [1.0, 0.9, 0.8], // warm white
 ];
 
-/** 生成一层星星：3D 坐标 + RGB 顶点色，均匀分布在 [minR, maxR] 壳层体积内。 */
+/** Generate one star layer: 3D coordinates + RGB vertex colors, distributed uniformly through the [minR, maxR] shell volume. */
 export function buildStarLayer(opts: {
   count: number;
   minR: number;
@@ -199,7 +199,7 @@ export function buildStarLayer(opts: {
   const colors = new Float32Array(count * 3);
   for (let i = 0; i < count; i++) {
     const dir = randomDirection(rand);
-    const t = Math.cbrt(rand()); // 立方根插值：体积均匀
+    const t = Math.cbrt(rand()); // cube-root interpolation: uniform by volume
     const r = minR + (maxR - minR) * t;
     positions[i * 3] = dir.x * r;
     positions[i * 3 + 1] = dir.y * r;
@@ -213,13 +213,13 @@ export function buildStarLayer(opts: {
 }
 ```
 
-- [ ] **Step 4: 运行测试确认通过**
+- [ ] **Step 4: Run the test and confirm it passes**
 
 Run: `cd frontend && npm run test`
 
-Expected: PASS，`starfield.test.ts` 全部通过。
+Expected: PASS, all of `starfield.test.ts` passes.
 
-- [ ] **Step 5: 提交**
+- [ ] **Step 5: Commit**
 
 ```bash
 git add src/lib/starfield.ts src/lib/starfield.test.ts
@@ -228,22 +228,22 @@ git commit -m "feat: seeded starfield generation helpers with tests"
 
 ---
 
-### Task 3: `src/lib/ophiuchus.ts` — 蛇夫座星表 + RA/Dec→3D 换算（TDD）
+### Task 3: `src/lib/ophiuchus.ts` — Ophiuchus star catalog + RA/Dec→3D conversion (TDD)
 
 **Files:**
 - Create: `frontend/src/lib/ophiuchus.ts`
 - Test: `frontend/src/lib/ophiuchus.test.ts`
 
 **Interfaces:**
-- Consumes: `createSeededRandom`（来自 `./starfield`）
+- Consumes: `createSeededRandom` (from `./starfield`)
 - Produces:
   - `interface Vec3 { x: number; y: number; z: number }`
-  - `OPHIUCHUS_STARS: Array<{ id: string; name: string; ra: number; dec: number }>` — 约 12 颗蛇夫座主星（RA/Dec 度数，近似目录值，实现时以视觉校验为准）
-  - `OPHIUCHUS_LINES: Array<[number, number]>` — 成对索引指向 `OPHIUCHUS_STARS`
+  - `OPHIUCHUS_STARS: Array<{ id: string; name: string; ra: number; dec: number }>` — roughly 12 principal Ophiuchus stars (RA/Dec in degrees, approximate catalog values; during implementation, visual verification is authoritative)
+  - `OPHIUCHUS_LINES: Array<[number, number]>` — index pairs pointing into `OPHIUCHUS_STARS`
   - `raDecToVec3(ra: number, dec: number, radius: number): Vec3`
-  - `buildOphiuchus(scale: number, depthJitter?: number): { positions: Vec3[]; lines: Array<[number, number]> }` — 位置以质心居中于原点，带轻微 z 抖动
+  - `buildOphiuchus(scale: number, depthJitter?: number): { positions: Vec3[]; lines: Array<[number, number]> }` — positions are centered on the origin by their centroid, with slight z jitter
 
-- [ ] **Step 1: 写失败测试**
+- [ ] **Step 1: Write a failing test**
 
 Create `frontend/src/lib/ophiuchus.test.ts`:
 
@@ -332,13 +332,13 @@ describe("buildOphiuchus", () => {
 });
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [ ] **Step 2: Run the test and confirm it fails**
 
 Run: `cd frontend && npm run test`
 
-Expected: FAIL — `Cannot find module './ophiuchus'`。
+Expected: FAIL — `Cannot find module './ophiuchus'`.
 
-- [ ] **Step 3: 实现**
+- [ ] **Step 3: Implement**
 
 Create `frontend/src/lib/ophiuchus.ts`:
 
@@ -354,13 +354,13 @@ export interface Vec3 {
 export interface OphiuchusStar {
   id: string;
   name: string;
-  /** 赤经（度） */
+  /** Right ascension (degrees) */
   ra: number;
-  /** 赤纬（度） */
+  /** Declination (degrees) */
   dec: number;
 }
 
-/** 蛇夫座主星星表（RA/Dec 为近似目录值；实现时以视觉校验为准）。 */
+/** Principal-star catalog for Ophiuchus (RA/Dec are approximate catalog values; during implementation, visual verification is authoritative). */
 export const OPHIUCHUS_STARS: OphiuchusStar[] = [
   { id: "alpha", name: "Rasalhague α", ra: 263.73, dec: 12.56 },
   { id: "beta", name: "Cebalrai β", ra: 265.87, dec: 4.57 },
@@ -376,11 +376,11 @@ export const OPHIUCHUS_STARS: OphiuchusStar[] = [
   { id: "s58", name: "58 Oph", ra: 265.86, dec: -21.68 },
 ];
 
-/** 连线（IAU 风格持蛇者轮廓）：成对索引指向 OPHIUCHUS_STARS。 */
+/** Connecting lines (IAU-style serpent-bearer outline): index pairs pointing into OPHIUCHUS_STARS. */
 export const OPHIUCHUS_LINES: Array<[number, number]> = [
-  [8, 0], // κ–α 头部
-  [0, 3], // α–δ 左臂/蛇头
-  [3, 4], // δ–ε 蛇头
+  [8, 0], // κ–α head
+  [0, 3], // α–δ left arm / serpent head
+  [3, 4], // δ–ε serpent head
   [4, 5], // ε–ζ
   [5, 6], // ζ–η
   [6, 7], // η–θ
@@ -393,7 +393,7 @@ export const OPHIUCHUS_LINES: Array<[number, number]> = [
   [10, 9], // 42–36
 ];
 
-/** 赤经/赤纬 → 球面 3D 坐标（ra 沿 +X，dec 沿 +Y，符合相机正视方向）。 */
+/** Right ascension/declination → spherical 3D coordinates (ra along +X, dec along +Y, matching the camera's forward view direction). */
 export function raDecToVec3(ra: number, dec: number, radius: number): Vec3 {
   const raRad = (ra * Math.PI) / 180;
   const decRad = (dec * Math.PI) / 180;
@@ -404,7 +404,7 @@ export function raDecToVec3(ra: number, dec: number, radius: number): Vec3 {
   };
 }
 
-/* ---- 私有向量工具 ---- */
+/* ---- private vector helpers ---- */
 
 function dot(a: Vec3, b: Vec3): number {
   return a.x * b.x + a.y * b.y + a.z * b.z;
@@ -423,12 +423,12 @@ function norm(a: Vec3): number {
 }
 
 /**
- * 生成蛇夫座 3D 数据。
+ * Build the 3D data for Ophiuchus.
  *
- * 用**切平面投影**把星表方向向量投到以星座质心方向为法线的平面上，
- * 使图案正对相机（镜头在 +z）、上下直立（Rasalhague 在上、Sabik 在下），
- * 再缩放 scale 并居中于原点；z 带轻微抖动增加立体感。
- * depthJitter 相对 scale 应很小（默认 1.5 / scale≈30）。
+ * Project the catalog direction vectors with a **tangent-plane projection** onto the plane whose
+ * normal is the constellation centroid direction, so the pattern faces the camera (lens at +z)
+ * and stands upright (Rasalhague on top, Sabik at the bottom); then scale by scale, center it on
+ * the origin, and add slight z jitter for depth (the default depthJitter 1.5 assumes scale≈30).
  */
 export function buildOphiuchus(
   scale: number,
@@ -458,13 +458,13 @@ export function buildOphiuchus(
 }
 ```
 
-- [ ] **Step 4: 运行测试确认通过**
+- [ ] **Step 4: Run the test and confirm it passes**
 
 Run: `cd frontend && npm run test`
 
-Expected: PASS，`ophiuchus.test.ts` 全部通过。
+Expected: PASS, all of `ophiuchus.test.ts` passes.
 
-- [ ] **Step 5: 提交**
+- [ ] **Step 5: Commit**
 
 ```bash
 git add src/lib/ophiuchus.ts src/lib/ophiuchus.test.ts
@@ -473,26 +473,26 @@ git commit -m "feat: ophiuchus constellation data and RA/Dec projection with tes
 
 ---
 
-### Task 4: `src/components/StarfieldCanvas.tsx` — Three.js 场景组件
+### Task 4: `src/components/StarfieldCanvas.tsx` — Three.js scene component
 
 **Files:**
 - Create: `frontend/src/components/StarfieldCanvas.tsx`
 
 **Interfaces:**
 - Consumes:
-  - `buildStarLayer`（`@/lib/starfield`）
-  - `buildOphiuchus`（`@/lib/ophiuchus`）
-- Produces: `export default function StarfieldCanvas({ className }: { className?: string })` — 渲染一个 `<canvas aria-hidden="true">`，className 透传给 canvas；组件挂载后构建 Three.js 场景。
+  - `buildStarLayer` (`@/lib/starfield`)
+  - `buildOphiuchus` (`@/lib/ophiuchus`)
+- Produces: `export default function StarfieldCanvas({ className }: { className?: string })` — renders a `<canvas aria-hidden="true">`, passes className through to the canvas; builds the Three.js scene after the component mounts.
 
-- [ ] **Step 1: 先读定制版 Next.js 的客户端组件文档**
+- [ ] **Step 1: First read the customized Next.js client component docs**
 
 ```bash
 sed -n '1,80p' frontend/node_modules/next/dist/docs/01-app/03-api-reference/01-directives/use-client.md
 ```
 
-Confirm: `"use client"` 必须位于文件顶部、任何 import 之前。
+Confirm: `"use client"` must be at the top of the file, before any import.
 
-- [ ] **Step 2: 写组件**
+- [ ] **Step 2: Write the component**
 
 Create `frontend/src/components/StarfieldCanvas.tsx`:
 
@@ -554,7 +554,7 @@ export default function StarfieldCanvas({ className }: { className?: string }) {
 
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 
-    // ---- 远端星星：包围相机的大壳层，缓慢自转 ----
+    // ---- far stars: a large shell surrounding the camera, slowly self-rotating ----
     const far = buildStarLayer({ count: 2000, minR: 45, maxR: 140, seed: 101 });
     const farGeo = new THREE.BufferGeometry();
     farGeo.setAttribute("position", new THREE.BufferAttribute(far.positions, 3));
@@ -575,7 +575,7 @@ export default function StarfieldCanvas({ className }: { className?: string }) {
     farGroup.add(farPoints);
     scene.add(farGroup);
 
-    // ---- 近端星星：更靠前，视差更明显 ----
+    // ---- near stars: closer to the front, so parallax is more pronounced ----
     const near = buildStarLayer({ count: 320, minR: 12, maxR: 34, seed: 202 });
     const nearGeo = new THREE.BufferGeometry();
     nearGeo.setAttribute("position", new THREE.BufferAttribute(near.positions, 3));
@@ -592,7 +592,7 @@ export default function StarfieldCanvas({ className }: { className?: string }) {
     const nearPoints = new THREE.Points(nearGeo, nearMat);
     scene.add(nearPoints);
 
-    // ---- 蛇夫座星座：星点 + 辉光精灵 + 连线 ----
+    // ---- Ophiuchus constellation: star points + glow sprites + connecting lines ----
     const constellation = new THREE.Group();
     const oph = buildOphiuchus(30, 1.5);
     const starPos = new Float32Array(oph.positions.length * 3);
@@ -657,7 +657,7 @@ export default function StarfieldCanvas({ className }: { className?: string }) {
     constellation.add(lines);
     scene.add(constellation);
 
-    // ---- 背景星云辉光 ----
+    // ---- background nebula glow ----
     const nebulaTex = makeGlowTexture("rgba(79,70,229,0.28)");
     const nebula = new THREE.Sprite(
       new THREE.SpriteMaterial({
@@ -686,7 +686,7 @@ export default function StarfieldCanvas({ className }: { className?: string }) {
     nebula2.scale.setScalar(46);
     scene.add(nebula2);
 
-    // ---- 鼠标视差 ----
+    // ---- mouse parallax ----
     let targetX = 0;
     let targetY = 0;
     let curX = 0;
@@ -708,7 +708,7 @@ export default function StarfieldCanvas({ className }: { className?: string }) {
     resize();
     window.addEventListener("resize", resize);
 
-    // ---- 动画循环 ----
+    // ---- animation loop ----
     const clock = new THREE.Clock();
     let raf = 0;
     const tick = () => {
@@ -729,7 +729,7 @@ export default function StarfieldCanvas({ className }: { className?: string }) {
     };
 
     if (reduced) {
-      renderer.render(scene, camera); // 静态一帧
+      renderer.render(scene, camera); // a single static frame
     } else {
       raf = requestAnimationFrame(tick);
     }
@@ -747,17 +747,17 @@ export default function StarfieldCanvas({ className }: { className?: string }) {
 }
 ```
 
-- [ ] **Step 3: lint + 构建验证**
+- [ ] **Step 3: lint + build verification**
 
 Run: `cd frontend && npm run lint && npm run build`
 
-Expected: 两者通过，无类型错误（`three` 类型已由 `@types/three` 提供）。
+Expected: both pass, with no type errors (`three` types are provided by `@types/three`).
 
-- [ ] **Step 4: 手动验证（本任务内可暂不触发，因为页面还没接上）**
+- [ ] **Step 4: Manual verification (may be deferred within this task, since the page is not wired up yet)**
 
-说明：此任务交付物是独立组件；Task 5 接上后统一在浏览器验证。
+Note: this task's deliverable is a standalone component; once Task 5 wires it up, verify everything together in the browser.
 
-- [ ] **Step 5: 提交**
+- [ ] **Step 5: Commit**
 
 ```bash
 git add src/components/StarfieldCanvas.tsx
@@ -766,22 +766,22 @@ git commit -m "feat: Three.js starfield canvas with ophiuchus constellation"
 
 ---
 
-### Task 5: 重写 `page.tsx` + `globals.css` 深空样式
+### Task 5: Rewrite `page.tsx` + deep-space styles in `globals.css`
 
 **Files:**
 - Modify: `frontend/src/app/page.tsx`
 - Modify: `frontend/src/app/globals.css`
 
 **Interfaces:**
-- Consumes: `StarfieldCanvas`（`@/components/StarfieldCanvas`，默认导出）
-- Produces: 单屏无滚动首页 `/`
+- Consumes: `StarfieldCanvas` (`@/components/StarfieldCanvas`, default export)
+- Produces: a single-screen, scroll-free homepage `/`
 
-- [ ] **Step 1: globals.css 加深空背景类**
+- [ ] **Step 1: Add a deep-space background class to globals.css**
 
 Append to `frontend/src/app/globals.css`:
 
 ```css
-/* 首页深空背景：深 navy → 靛蓝 → 微紫径向渐变 */
+/* Homepage deep-space background: deep navy → indigo → faint purple radial gradient */
 .bg-deep-space {
   background:
     radial-gradient(90% 70% at 70% 20%, rgba(79, 70, 229, 0.16) 0%, transparent 60%),
@@ -789,7 +789,7 @@ Append to `frontend/src/app/globals.css`:
 }
 ```
 
-- [ ] **Step 2: 重写 page.tsx**
+- [ ] **Step 2: Rewrite page.tsx**
 
 Replace `frontend/src/app/page.tsx` entirely:
 
@@ -816,13 +816,13 @@ export default function HomePage() {
               href="/login"
               className="rounded-lg px-4 py-2 text-sm font-medium text-indigo-100 transition hover:bg-white/10 hover:text-white"
             >
-              登录
+              Log in
             </Link>
             <Link
               href="/register"
               className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-indigo-500"
             >
-              免费注册
+              Sign up free
             </Link>
           </div>
         </header>
@@ -832,7 +832,7 @@ export default function HomePage() {
             KADA
           </h1>
           <p className="mt-6 text-base font-medium tracking-[0.5em] text-indigo-200/90 sm:text-lg">
-            短链接平台
+            Short link platform
           </p>
         </div>
       </div>
@@ -841,31 +841,31 @@ export default function HomePage() {
 }
 ```
 
-- [ ] **Step 3: lint + 构建验证**
+- [ ] **Step 3: lint + build verification**
 
 Run: `cd frontend && npm run lint && npm run build`
 
-Expected: 两者通过。
+Expected: both pass.
 
-- [ ] **Step 4: 浏览器手动验证清单**
+- [ ] **Step 4: Browser manual verification checklist**
 
 ```bash
 cd frontend && npm run dev
 ```
 
-打开 `http://localhost:3000`，逐项确认：
+Open `http://localhost:3000` and confirm each item:
 
-- [ ] 页面单屏、无滚动条（滚动无效/被禁用）
-- [ ] 背景是深空蓝紫渐变 + 3D 星空，蛇夫座星座图案清晰可见且居中
-- [ ] 移动鼠标：星空/星座产生视差
-- [ ] 星星缓慢自转/闪烁，星座轻微浮动
-- [ ] 窗口缩放：画面随视口自适应（resize 正常）
-- [ ] 标题 `KADA` + `短链接平台` 渲染、有辉光；右上角「登录/注册」可点跳转 `/login` `/register`
-- [ ] 开发者工具设为 `prefers-reduced-motion: reduce`：无动画、仅静态一帧，页面仍正常显示
-- [ ] 控制台无报错；禁用 WebGL 时页面降级为纯渐变背景 + 文字
-- [ ] 手机模拟器（`h-dvh`）：占满可视高度、无地址栏留白
+- [ ] The page is a single screen with no scrollbar (scrolling has no effect / is disabled)
+- [ ] The background is a deep-space blue-purple gradient + 3D starfield, and the Ophiuchus constellation pattern is clearly visible and centered
+- [ ] Moving the mouse produces parallax in the starfield/constellation
+- [ ] The stars slowly rotate/twinkle and the constellation drifts slightly
+- [ ] Resizing the window adapts the rendering to the viewport (resize works correctly)
+- [ ] The title `KADA` + `Short link platform` render with a glow; the "Log in / Sign up" entries in the top-right navigate to `/login` and `/register`
+- [ ] With devtools set to `prefers-reduced-motion: reduce`: no animation, only a single static frame, and the page still displays correctly
+- [ ] No console errors; with WebGL disabled the page degrades to a plain gradient background + text
+- [ ] Mobile emulator (`h-dvh`): fills the visible height with no whitespace left for the address bar
 
-- [ ] **Step 5: 提交**
+- [ ] **Step 5: Commit**
 
 ```bash
 git add src/app/page.tsx src/app/globals.css
@@ -874,9 +874,9 @@ git commit -m "feat: 3D starfield homepage with ophiuchus background"
 
 ---
 
-## 自检记录
+## Self-check record
 
-- **Spec 覆盖**：单屏无滚动（Task 5 外壳 + `overflow-hidden`）；蛇夫座连线图案（Task 3/4）；散落星星两层（Task 2/4）；标题 + 登录/注册（Task 5）；鼠标视差 + 星星动画（Task 4）；深空蓝紫 + indigo（Task 4/5）；reduced-motion（Task 4）；WebGL 降级（Task 4 try/catch）；resize（Task 4）；无外部字体（Task 5）；lint/build/手动验证（各 Task）。
-- **占位符扫描**：无 TBD/TODO；代码步骤均含完整实现。
-- **类型一致性**：`buildStarLayer`、`buildOphiuchus`、`createSeededRandom`、`raDecToVec3`、`Vec3`、`OPHIUCHUS_STARS`、`OPHIUCHUS_LINES` 在 Task 2/3 定义、Task 4 消费，签名一致。
-- **投影方向（关键修正）**：`buildOphiuchus` 必须用**切平面投影**（以星座质心方向为法线），不能用原始 RA/Dec→XYZ 直映——后者会把蛇夫座压成水平横条（ySpan≈3.6）。已用脚本验证切平面投影：xSpan≈16.6、ySpan≈13.4，图案正对相机且 Rasalhague 在上（y≈+8.7）、Sabik 在下（y≈−3.6）。
+- **Spec coverage**: single screen without scrolling (Task 5 shell + `overflow-hidden`); Ophiuchus line pattern (Tasks 3/4); two layers of scattered stars (Tasks 2/4); title + login/sign-up (Task 5); mouse parallax + star animation (Task 4); deep-space blue-purple + indigo (Tasks 4/5); reduced-motion (Task 4); WebGL fallback (Task 4 try/catch); resize (Task 4); no external fonts (Task 5); lint/build/manual verification (each task).
+- **Placeholder scan**: no TBD/TODO; every code step contains a complete implementation.
+- **Type consistency**: `buildStarLayer`, `buildOphiuchus`, `createSeededRandom`, `raDecToVec3`, `Vec3`, `OPHIUCHUS_STARS`, `OPHIUCHUS_LINES` are defined in Tasks 2/3 and consumed in Task 4, with matching signatures.
+- **Projection direction (key correction)**: `buildOphiuchus` must use a **tangent-plane projection** (with the constellation centroid direction as the normal) and must not use the raw RA/Dec→XYZ direct mapping — the latter squashes Ophiuchus into a horizontal band (ySpan≈3.6). The tangent-plane projection has been verified with a script: xSpan≈16.6, ySpan≈13.4, the pattern faces the camera, with Rasalhague on top (y≈+8.7) and Sabik at the bottom (y≈−3.6).

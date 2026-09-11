@@ -5,13 +5,16 @@ import { useRouter, usePathname } from "next/navigation";
 import { LogOut, Menu, X } from "lucide-react";
 import { toast } from "sonner";
 import { Sidebar } from "./Sidebar";
+import { LanguageSwitcher } from "./LanguageSwitcher";
 import { getToken, getUser, removeToken } from "@/lib/auth";
+import { useT } from "@/lib/i18n";
 import type { User as UserType } from "@/lib/auth";
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
-  // 初始状态直接来自本地存储，避免在 effect 中同步 setState
+  const t = useT();
+  // Initial state comes straight from local storage, avoiding a setState in an effect
   const [ready] = useState(() => {
     const token = getToken();
     const u = getUser();
@@ -27,7 +30,8 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     }
   }, [ready, router]);
 
-  // 路由变化时关闭移动端侧栏（React 推荐的「随 prop 变化调整 state」模式）
+  // Close the mobile sidebar when the route changes (React's documented
+  // "adjust state when a prop changes" pattern).
   const [prevPath, setPrevPath] = useState(pathname);
   if (prevPath !== pathname) {
     setPrevPath(pathname);
@@ -45,7 +49,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
 
   const handleLogout = () => {
     removeToken();
-    toast.success("已退出");
+    toast.success(t("已退出"));
     router.push("/login");
   };
 
@@ -54,24 +58,24 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       <div className="flex h-screen items-center justify-center bg-gray-50">
         <div className="flex flex-col items-center gap-3">
           <div className="size-8 animate-spin rounded-full border-2 border-indigo-600 border-t-transparent" />
-          <p className="text-sm text-gray-400">加载中...</p>
+          <p className="text-sm text-gray-400">{t("加载中...")}</p>
         </div>
       </div>
     );
   }
 
   const pageTitle = (() => {
-    if (pathname === "/dashboard") return "链接";
-    if (pathname.startsWith("/dashboard/links/new")) return "创建链接";
-    if (pathname.match(/^\/dashboard\/links\/\d+$/)) return "链接详情";
-    if (pathname === "/dashboard/analytics") return "分析";
-    if (pathname === "/dashboard/domains") return "域名";
-    if (pathname === "/dashboard/events") return "事件";
-    if (pathname === "/dashboard/customers") return "客户";
-    if (pathname === "/dashboard/folders") return "文件夹";
-    if (pathname === "/dashboard/tags") return "标签";
-    if (pathname === "/dashboard/utm") return "UTM 模板";
-    if (pathname === "/dashboard/settings") return "设置";
+    if (pathname === "/dashboard") return t("链接");
+    if (pathname.startsWith("/dashboard/links/new")) return t("创建链接");
+    if (pathname.match(/^\/dashboard\/links\/\d+$/)) return t("链接详情");
+    if (pathname === "/dashboard/analytics") return t("分析");
+    if (pathname === "/dashboard/domains") return t("域名");
+    if (pathname === "/dashboard/events") return t("事件");
+    if (pathname === "/dashboard/customers") return t("客户");
+    if (pathname === "/dashboard/folders") return t("文件夹");
+    if (pathname === "/dashboard/tags") return t("标签");
+    if (pathname === "/dashboard/utm") return t("UTM 模板");
+    if (pathname === "/dashboard/settings") return t("设置");
     return "";
   })();
 
@@ -112,49 +116,52 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             <h2 className="text-sm font-medium text-gray-700">{pageTitle}</h2>
           </div>
 
-          {/* Right: User */}
-          <div className="relative">
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                setShowDropdown(!showDropdown);
-              }}
-              className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm transition-colors hover:bg-gray-100"
-            >
-              <div className="flex size-8 items-center justify-center rounded-full bg-indigo-100 text-sm font-medium text-indigo-600 shrink-0">
-                {(user?.name || user?.email || "U")[0].toUpperCase()}
-              </div>
-              <span className="hidden sm:block text-sm font-medium text-gray-700 max-w-[120px] truncate">
-                {user?.name || user?.email || "用户"}
-              </span>
-            </button>
-
-            {/* Dropdown */}
-            {showDropdown && (
-              <div
-                className="absolute right-0 top-full mt-1 w-48 rounded-lg border border-gray-200 bg-white py-1 shadow-lg z-50"
-                onClick={(e) => e.stopPropagation()}
+          {/* Right: language switcher + user */}
+          <div className="flex items-center gap-2">
+            <LanguageSwitcher />
+            <div className="relative">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowDropdown(!showDropdown);
+                }}
+                className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm transition-colors hover:bg-gray-100"
               >
-                <div className="px-3 py-2 border-b border-gray-100">
-                  <p className="text-sm font-medium text-gray-900 truncate">
-                    {user?.name || "用户"}
-                  </p>
-                  {user?.email && (
-                    <p className="text-xs text-gray-500 truncate">{user.email}</p>
-                  )}
-                  {user?.phone && (
-                    <p className="text-xs text-gray-500">{user.phone}</p>
-                  )}
+                <div className="flex size-8 items-center justify-center rounded-full bg-indigo-100 text-sm font-medium text-indigo-600 shrink-0">
+                  {(user?.name || user?.email || "U")[0].toUpperCase()}
                 </div>
-                <button
-                  onClick={handleLogout}
-                  className="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-600 hover:bg-gray-50 transition-colors"
+                <span className="hidden sm:block text-sm font-medium text-gray-700 max-w-[120px] truncate">
+                  {user?.name || user?.email || t("用户")}
+                </span>
+              </button>
+
+              {/* Dropdown */}
+              {showDropdown && (
+                <div
+                  className="absolute right-0 top-full mt-1 w-48 rounded-lg border border-gray-200 bg-white py-1 shadow-lg z-50"
+                  onClick={(e) => e.stopPropagation()}
                 >
-                  <LogOut className="size-4" />
-                  退出登录
-                </button>
-              </div>
-            )}
+                  <div className="px-3 py-2 border-b border-gray-100">
+                    <p className="text-sm font-medium text-gray-900 truncate">
+                      {user?.name || t("用户")}
+                    </p>
+                    {user?.email && (
+                      <p className="text-xs text-gray-500 truncate">{user.email}</p>
+                    )}
+                    {user?.phone && (
+                      <p className="text-xs text-gray-500">{user.phone}</p>
+                    )}
+                  </div>
+                  <button
+                    onClick={handleLogout}
+                    className="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-600 hover:bg-gray-50 transition-colors"
+                  >
+                    <LogOut className="size-4" />
+                    {t("退出登录")}
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </header>
 

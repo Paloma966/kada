@@ -1,88 +1,88 @@
 # Kada
 
-一个短链接管理与数据分析平台。支持多种登录方式、短链分组与标签、自定义域名、访问密码、过期时间、UTM 模板与点击数据看板。
+A short link management and analytics platform. Supports multiple sign-in methods, link folders and tags, custom domains, access passwords, expiry times, UTM templates, and a click analytics dashboard.
 
-后端使用 Go，前端使用 Next.js，点击事件通过 Kafka 异步处理。
+The backend is written in Go, the frontend in Next.js, and click events are processed asynchronously through Kafka.
 
-## 功能
+## Features
 
-- 手机号 / 邮箱 / 微信登录（JWT）
-- 短链接创建、编辑、删除、批量操作
-- 自定义短码与自定义域名
-- 访问密码、过期时间
-- 文件夹、标签、工作区管理
-- UTM 参数与模板
-- 链接预览、二维码、CSV 导出
-- 点击数据看板（总览、平台分布、每日趋势、访客明细）
-- 开放 API Token
+- Phone / email / WeChat sign-in (JWT)
+- Create, edit, delete, and bulk-manage short links
+- Custom short codes and custom domains
+- Access passwords and expiry times
+- Folders, tags, and workspace management
+- UTM parameters and templates
+- Link preview, QR codes, and CSV export
+- Click analytics dashboard (overview, platform breakdown, daily trend, visitor detail)
+- Open API tokens
 
-## 技术栈
+## Tech stack
 
-| 层 | 技术 |
-|----|------|
-| 后端 | Go 1.26、Gin、pgx |
-| 存储 | PostgreSQL 16、Redis 7 |
-| 消息 | Kafka 3.8 |
-| 前端 | Next.js 16、React 19、TypeScript、SWR、Tailwind |
-| 部署 | Docker Compose、Nginx、systemd |
+| Layer | Technology |
+|-------|------------|
+| Backend | Go 1.26, Gin, pgx |
+| Storage | PostgreSQL 16, Redis 7 |
+| Messaging | Kafka 3.8 |
+| Frontend | Next.js 16, React 19, TypeScript, SWR, Tailwind |
+| Deployment | Docker Compose, Nginx, systemd |
 
-## 架构
+## Architecture
 
-分层为 Handler -> Service -> Infra，采用模块化单体 + 独立 Kafka worker。
+Layered as Handler -> Service -> Infra, using a modular monolith plus a standalone Kafka worker.
 
-点击事件经 Kafka 异步落库并累加计数，Kafka 不可用时降级为直写数据库。
+Click events are persisted asynchronously through Kafka and increment counters; when Kafka is unavailable this degrades to writing directly to the database.
 
-## 快速开始
+## Getting started
 
-环境要求：Go 1.26+、Node 22+、Docker。
+Requirements: Go 1.26+, Node 22+, Docker.
 
 ```bash
-# 1. 准备环境变量，填入强随机 JWT_SECRET
+# 1. Prepare environment variables and set a strong random JWT_SECRET
 cp .env.example .env
 
-# 2. 启动全部服务
+# 2. Start all services
 make docker-up
 
-# 3. 运行数据库迁移
+# 3. Run database migrations
 make db-migrate
 ```
 
-本地开发：
+Local development:
 
 ```bash
-make dev        # 后端 :8080
-make dev-fe     # 前端 :3000
+make dev        # backend on :8080
+make dev-fe     # frontend on :3000
 ```
 
-## 环境变量
+## Environment variables
 
-| 变量 | 说明 |
-|------|------|
-| JWT_SECRET | 必填，强随机密钥 |
-| POSTGRES_PASSWORD | 必填，生产需修改 |
-| SMS_ACCESS_KEY_ID / SMS_ACCESS_KEY_SECRET | 阿里云短信 |
-| SMS_SIGN_NAME / SMS_TEMPLATE_CODE | 短信签名与模板 |
+| Variable | Description |
+|----------|-------------|
+| JWT_SECRET | Required, a strong random secret |
+| POSTGRES_PASSWORD | Required, must be changed in production |
+| SMS_ACCESS_KEY_ID / SMS_ACCESS_KEY_SECRET | Alibaba Cloud SMS |
+| SMS_SIGN_NAME / SMS_TEMPLATE_CODE | SMS signature and template |
 
-## 常用命令
+## Common commands
 
-`make test`、`make build`、`make lint`、`make db-migrate`、`make docker-up`、`make docker-logs`
+`make test`, `make build`, `make lint`, `make db-migrate`, `make docker-up`, `make docker-logs`
 
-## 部署
+## Deployment
 
-GitHub Actions 自动执行 lint、测试、构建与部署。手动部署：
+GitHub Actions runs lint, tests, build, and deployment automatically. To deploy manually:
 
 ```bash
 make deploy DEPLOY_HOST=root@your-server
 make deploy-fe DEPLOY_HOST=root@your-server
 ```
 
-## 目录
+## Layout
 
 ```text
-backend/   Go 后端（cmd + internal）
-frontend/  Next.js 前端
-nginx/     反向代理配置
-deploy/    部署脚本
+backend/   Go backend (cmd + internal)
+frontend/  Next.js frontend
+nginx/     Reverse proxy configuration
+deploy/    Deployment scripts
 docker-compose.yml
 Makefile
 ```

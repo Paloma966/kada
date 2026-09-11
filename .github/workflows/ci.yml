@@ -15,7 +15,7 @@ env:
   NODE_VERSION: "22"
 
 jobs:
-  # ========== Go 代码检查 ==========
+  # ========== Go lint ==========
   backend-lint:
     name: Go Lint
     runs-on: ubuntu-latest
@@ -34,7 +34,7 @@ jobs:
         working-directory: backend
         run: golangci-lint run --timeout=5m
 
-  # ========== Go 后端测试 ==========
+  # ========== Go backend tests ==========
   backend-test:
     name: Go Tests
     runs-on: ubuntu-latest
@@ -83,7 +83,7 @@ jobs:
           path: backend/coverage.out
           retention-days: 7
 
-  # ========== 前端代码检查 ==========
+  # ========== Frontend lint ==========
   frontend-lint:
     name: Frontend Lint
     runs-on: ubuntu-latest
@@ -109,7 +109,7 @@ jobs:
         working-directory: frontend
         run: npm run lint
 
-  # ========== 前端构建检查 ==========
+  # ========== Frontend build check ==========
   frontend-build:
     name: Frontend Build
     runs-on: ubuntu-latest
@@ -148,7 +148,7 @@ jobs:
         working-directory: frontend
         run: npm run build
 
-  # ========== 部署到生产服务器 ==========
+  # ========== Deploy to production server ==========
   deploy:
     name: Deploy to Production
     runs-on: ubuntu-latest
@@ -166,14 +166,14 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
 
-      # ---- 构建后端 ----
+      # ---- Build backend ----
       - name: Build Go binaries
         working-directory: backend
         run: |
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o bin/server ./cmd/server/
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o bin/migrate ./cmd/migrate/
 
-      # ---- 构建前端 ----
+      # ---- Build frontend ----
       - name: Install frontend deps
         working-directory: frontend
         run: npm ci
@@ -189,7 +189,7 @@ jobs:
           tar czf ../deploy-pkg/kada-fe-standalone.tar.gz -C .next/standalone .
           tar czf ../deploy-pkg/kada-fe-static.tar.gz -C .next static/
 
-      # ---- 部署 ----
+      # ---- Deploy ----
       - name: Create deploy marker
         run: |
           echo "${{ github.sha }}" > deploy-version.txt
@@ -220,26 +220,26 @@ jobs:
             set -e
             echo "📦 Starting deploy: $(cat /tmp/kada-deploy/deploy-version.txt | head -1)"
 
-            # ---- 1. 备份当前版本（便于回滚） ----
+            # ---- 1. Back up the current version (enables rollback) ----
             echo "💾 Backing up current version..."
             mkdir -p /opt/kada/backups
             cp /opt/kada/backend/bin/server /opt/kada/backups/server.$(date +%Y%m%d%H%M%S) 2>/dev/null || true
-            # 保留最近 5 个备份
+            # Keep the 5 most recent backups
             ls -t /opt/kada/backups/server.* 2>/dev/null | tail -n +6 | xargs rm -f 2>/dev/null || true
 
-            # ---- 2. 运行数据库迁移（golang-migrate，与本地 backend/cmd/migrate 同一套机制） ----
-            # 之前用 psql -f 逐个执行 up.sql：已应用迁移报错被吞掉，且不使用
-            # schema_migrations 状态表，迁移可能半应用/重复执行。现在统一走 golang-migrate。
+            # ---- 2. Run database migrations (golang-migrate — same mechanism as the local backend/cmd/migrate) ----
+            # Previously up.sql was executed one by one with psql -f: errors on already-applied migrations were swallowed
+            # and the schema_migrations state table was unused, so migrations could be half-applied or re-run. Now we use golang-migrate.
             echo "🗄️  Running database migrations..."
             mkdir -p /opt/kada/backend/db/migrations
             cp -f /tmp/kada-deploy/backend/db/migrations/*.up.sql /opt/kada/backend/db/migrations/ 2>/dev/null || true
             cp -f /tmp/kada-deploy/backend/db/migrations/*.down.sql /opt/kada/backend/db/migrations/ 2>/dev/null || true
             cp -f /tmp/kada-deploy/backend/bin/migrate /opt/kada/backend/bin/migrate
             chmod +x /opt/kada/backend/bin/migrate
-            # DATABASE_URL 建议通过 secrets 提供；为空时 migrate 使用内置本地默认值
+            # DATABASE_URL should be supplied via secrets; when empty, migrate falls back to its built-in local default
             cd /opt/kada/backend && DATABASE_URL="$DATABASE_URL" ./bin/migrate
 
-            # ---- 3. 替换后端 ----
+            # ---- 3. Replace backend ----
             echo "🔄 Replacing backend..."
             systemctl stop kada-api
             cp /tmp/kada-deploy/backend/bin/server /opt/kada/backend/bin/server
@@ -247,7 +247,7 @@ jobs:
             systemctl start kada-api
             sleep 2
 
-            # ---- 健康检查 ----
+            # ---- Health check ----
             if systemctl is-active --quiet kada-api; then
               echo "✅ Backend started successfully"
             else
@@ -257,7 +257,7 @@ jobs:
               exit 1
             fi
 
-            # ---- 4. 替换前端 ----
+            # ---- 4. Replace frontend ----
             echo "🔄 Replacing frontend..."
             cd /opt/kada/frontend
             rm -rf .next/static node_modules server.js package.json static 2>/dev/null || true
@@ -265,7 +265,7 @@ jobs:
             mkdir -p .next
             tar xzf /tmp/kada-deploy/deploy-pkg/kada-fe-static.tar.gz -C .next
 
-            # ---- 5. 重启前端 ----
+            # ---- 5. Restart frontend ----
             systemctl restart kada-frontend
             sleep 2
             if systemctl is-active --quiet kada-frontend; then
@@ -274,7 +274,7 @@ jobs:
               echo "⚠️  Frontend may have issues — check logs"
             fi
 
-            # ---- 6. 清理 ----
+            # ---- 6. Cleanup ----
             rm -rf /tmp/kada-deploy
             cp /opt/kada/backend/bin/server -v 2>/dev/null || true
             echo "🚀 Deploy complete: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -289,7 +289,7 @@ jobs:
           echo "=== QR Code ==="
           curl -sf -o /dev/null -w "QR API: HTTP %{http_code}\n" http://${{ secrets.SERVER_HOST }}/api/links || echo "⚠️  API check"
 
-  # ========== 总结 ==========
+  # ========== Summary ==========
   pipeline-summary:
     name: Pipeline Summary
     runs-on: ubuntu-latest

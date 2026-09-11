@@ -23,18 +23,19 @@ import (
 	"github.com/chun/kada-backend/internal/service"
 )
 
-// maxDeliveryAttempts 单条消息最大处理尝试次数。
-// 超过则提交 offset 丢弃该消息：否则毒消息会让单分区单消费组永久卡死。
+// maxDeliveryAttempts is the maximum number of processing attempts for a single message.
+// Beyond it the offset is committed and the message dropped: otherwise a poison message would
+// block a single-partition single-consumer-group forever.
 const maxDeliveryAttempts = 3
 
-// isPermanentError 判断不可重试的永久性错误（毒消息）。
+// isPermanentError reports non-retryable permanent errors (poison messages).
 func isPermanentError(err error) bool {
-	// 非法 JSON：重试永远失败
+	// Invalid JSON: retries always fail
 	var syntaxErr *json.SyntaxError
 	if errors.As(err, &syntaxErr) {
 		return true
 	}
-	// 外键违反（23503）：如链接已删除，重试永远失败
+	// Foreign key violation (23503): e.g. the link was deleted, retries always fail
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) && pgErr.Code == "23503" {
 		return true
@@ -42,7 +43,7 @@ func isPermanentError(err error) bool {
 	return false
 }
 
-// attemptTracker 在内存中跟踪每条消息的处理尝试次数（重启后重置，可接受）
+// attemptTracker tracks per-message processing attempts in memory (reset on restart, acceptable)
 type attemptTracker struct {
 	mu   sync.Mutex
 	seen map[string]int
@@ -66,9 +67,10 @@ func (t *attemptTracker) reset(topic string, partition int, offset int64) {
 	delete(t.seen, fmt.Sprintf("%s-%d-%d", topic, partition, offset))
 }
 
-// ensureTopic 幂等创建 topic（numPartitions=1 / replicationFactor=1）。
-// 必须在创建 reader 之前调用：若 reader 在 topic 自动创建期间加入消费组，
-// kafka-go 会拿到空分配并永久卡死（segmentio/kafka-go#585）。
+// ensureTopic idempotently creates the topic (numPartitions=1 / replicationFactor=1).
+// It must be called before creating the reader: if the reader joins the consumer group
+// while the topic is still being auto-created, kafka-go gets an empty assignment and
+// hangs forever (segmentio/kafka-go#585).
 func ensureTopic(ctx context.Context, brokerList []string, topic string) error {
 	conn, err := kafka.DialContext(ctx, "tcp", brokerList[0])
 	if err != nil {
@@ -94,7 +96,7 @@ func ensureTopic(ctx context.Context, brokerList []string, topic string) error {
 	})
 }
 
-// processClickMessage 反序列化并落库一条点击消息
+// processClickMessage deserializes a click message and persists it
 func processClickMessage(msg []byte, writer service.ClickWriter) error {
 	var e mq.ClickEvent
 	if err := json.Unmarshal(msg, &e); err != nil {
@@ -117,9 +119,9 @@ func main() {
 		log.Fatal("KAFKA_BROKERS is required for worker")
 	}
 
-	// 加入消费组前先确保 topic 存在，避免 #585 空分配卡死。
-	// 冷启动时 healthcheck 可能早于 controller 就绪，因此带退避重试；
-	// 若最终仍失败则退出（否则继续会拿到空分配永久卡死）。
+	// Ensure the topic exists before joining the consumer group, avoiding the #585 empty-assignment hang.
+	// On cold start the healthcheck may run before the controller is ready, so retry with backoff;
+	// if it still fails, exit (otherwise we would keep getting an empty assignment and hang forever).
 	var topicErr error
 	for attempt := 1; attempt <= 10; attempt++ {
 		topicCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -128,12 +130,12 @@ func main() {
 		if topicErr == nil {
 			break
 		}
-		// #nosec G706 -- topic 来自环境配置、topicErr 为内部连接错误，非用户输入
+		// #nosec G706 -- topic comes from environment config and topicErr is an internal connection error, not user input
 		log.Printf("⚠️ ensure kafka topic %q failed (attempt %d/10): %v", topic, attempt, topicErr)
 		time.Sleep(2 * time.Second)
 	}
 	if topicErr != nil {
-		// #nosec G706 -- topic 来自环境配置、topicErr 为内部连接错误，非用户输入
+		// #nosec G706 -- topic comes from environment config and topicErr is an internal connection error, not user input
 		log.Fatalf("cannot ensure kafka topic %q exists: %v", topic, topicErr)
 	}
 
@@ -148,7 +150,8 @@ func main() {
 		Brokers: brokerList,
 		Topic:   topic,
 		GroupID: "click-worker",
-		// MinBytes 保持 1：单条点击事件约 200B，设大值会攒批导致最多 MaxWait(10s) 的消费延迟
+		// Keep MinBytes at 1: a single click event is about 200B, and a larger value would batch
+		// and add up to MaxWait (10s) of consumer latency
 		MinBytes: 1,
 		MaxBytes: 10e6,
 	})
@@ -157,12 +160,13 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	// #nosec G706 -- topic/brokers 来自环境配置，非用户输入
+	// #nosec G706 -- topic/brokers come from environment config, not user input
 	log.Printf("🧵 click-worker consuming topic %q from %s", topic, brokers)
 	tracker := newAttemptTracker()
 	for {
-		// 用 FetchMessage 而非 ReadMessage：ReadMessage 会自动提交 offset，
-		// 处理失败也会被提交导致点击永久丢失。这里仅在落库成功后才提交。
+		// Use FetchMessage instead of ReadMessage: ReadMessage commits offsets automatically,
+		// so even a failed processing would be committed and the click lost forever. Here we
+		// commit only after the write succeeds.
 		m, err := reader.FetchMessage(ctx)
 		if err != nil {
 			if errors.Is(err, context.Canceled) {
@@ -184,8 +188,9 @@ func main() {
 
 		attempts := tracker.record(m.Topic, m.Partition, m.Offset)
 		if isPermanentError(procErr) || attempts >= maxDeliveryAttempts {
-			// 毒消息（非法 JSON / 外键违反）或重试超限：提交 offset 跳过，
-			// 防止单分区消费组被同一条消息永久卡死。
+			// Poison message (invalid JSON / foreign key violation) or retry limit exceeded:
+			// commit the offset and skip, so the single-partition consumer group is not
+			// blocked forever by the same message.
 			log.Printf("dropping click message after %d attempts (permanent error): %v", attempts, procErr)
 			if err := reader.CommitMessages(ctx, m); err != nil {
 				log.Printf("commit message failed: %v", err)
@@ -195,6 +200,6 @@ func main() {
 		}
 
 		log.Printf("process message failed (attempt %d/%d): %v", attempts, maxDeliveryAttempts, procErr)
-		time.Sleep(time.Second) // 短暂退避，避免空转
+		time.Sleep(time.Second) // brief backoff to avoid busy spinning
 	}
 }

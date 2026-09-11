@@ -10,12 +10,12 @@ func TestPhonePattern(t *testing.T) {
 		}
 	}
 	invalid := []string{
-		"", "123", "12345678901", // 长度错误
-		"11812345678", "12812345678", // 第二位非法
-		"1381234567a",    // 含字母
-		"138 1234 5678",  // 含空格
-		"aaaaaaaaaaa",    // 全字母
-		"+8613812345678", // 带国家码
+		"", "123", "12345678901", // wrong length
+		"11812345678", "12812345678", // invalid second digit
+		"1381234567a",    // contains a letter
+		"138 1234 5678",  // contains a space
+		"aaaaaaaaaaa",    // all letters
+		"+8613812345678", // with country code
 	}
 	for _, p := range invalid {
 		if phonePattern.MatchString(p) {

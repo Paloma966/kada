@@ -21,14 +21,14 @@ func NewAPITokenService(db *pgxpool.Pool) *APITokenService {
 	return &APITokenService{db: db}
 }
 
-// Create 创建 API Token，返回原始 token（仅此一次）
+// Create creates an API Token and returns the raw token (this is the only time it is returned)
 func (s *APITokenService) Create(ctx context.Context, userID int64, req domain.CreateAPITokenRequest) (*domain.CreateAPITokenResponse, error) {
-	// 生成随机 token
+	// generate a random token
 	b := make([]byte, 24)
 	rand.Read(b)
 	rawToken := "kada_" + hex.EncodeToString(b)
 
-	// 存储 SHA256 哈希
+	// store the SHA256 hash
 	tokenHash := sha256Hex(rawToken)
 
 	var info domain.APIToken
@@ -40,7 +40,7 @@ func (s *APITokenService) Create(ctx context.Context, userID int64, req domain.C
 		&info.ID, &info.UserID, &info.Name, &info.LastUsed, &info.CreatedAt,
 	)
 	if err != nil {
-		return nil, errors.New("创建 API Token 失败")
+		return nil, errors.New("failed to create API token")
 	}
 
 	return &domain.CreateAPITokenResponse{
@@ -49,7 +49,7 @@ func (s *APITokenService) Create(ctx context.Context, userID int64, req domain.C
 	}, nil
 }
 
-// List 列出用户的 API Tokens
+// List lists the user's API Tokens
 func (s *APITokenService) List(ctx context.Context, userID int64) ([]domain.APIToken, error) {
 	rows, err := s.db.Query(ctx, `
 		SELECT id, user_id, name, last_used, created_at
@@ -57,7 +57,7 @@ func (s *APITokenService) List(ctx context.Context, userID int64) ([]domain.APIT
 		ORDER BY created_at DESC
 	`, userID)
 	if err != nil {
-		return nil, errors.New("查询 API Token 列表失败")
+		return nil, errors.New("failed to list API tokens")
 	}
 	defer rows.Close()
 
@@ -65,7 +65,7 @@ func (s *APITokenService) List(ctx context.Context, userID int64) ([]domain.APIT
 	for rows.Next() {
 		var t domain.APIToken
 		if err := rows.Scan(&t.ID, &t.UserID, &t.Name, &t.LastUsed, &t.CreatedAt); err != nil {
-			return nil, errors.New("查询 API Token 列表失败")
+			return nil, errors.New("failed to list API tokens")
 		}
 		tokens = append(tokens, t)
 	}
@@ -75,19 +75,19 @@ func (s *APITokenService) List(ctx context.Context, userID int64) ([]domain.APIT
 	return tokens, nil
 }
 
-// Delete 删除 API Token
+// Delete deletes an API Token
 func (s *APITokenService) Delete(ctx context.Context, id, userID int64) error {
 	_, err := s.db.Exec(ctx, `DELETE FROM api_tokens WHERE id = $1 AND user_id = $2`, id, userID)
 	if err != nil {
-		return errors.New("删除 API Token 失败")
+		return errors.New("failed to delete API token")
 	}
 	return nil
 }
 
-// ValidateToken 验证 API Token，返回 userID
+// ValidateToken validates an API Token and returns the userID
 func (s *APITokenService) ValidateToken(ctx context.Context, rawToken string) (int64, error) {
 	if rawToken == "" || len(rawToken) < 6 || rawToken[:5] != "kada_" {
-		return 0, fmt.Errorf("无效的 API Token 格式")
+		return 0, fmt.Errorf("invalid API token format")
 	}
 
 	tokenHash := sha256Hex(rawToken)
@@ -99,7 +99,7 @@ func (s *APITokenService) ValidateToken(ctx context.Context, rawToken string) (i
 		RETURNING user_id
 	`, tokenHash).Scan(&userID)
 	if err != nil {
-		return 0, fmt.Errorf("无效的 API Token")
+		return 0, fmt.Errorf("invalid API token")
 	}
 
 	return userID, nil

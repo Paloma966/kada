@@ -14,17 +14,17 @@ type Config struct {
 	BaseURL     string
 	FrontendURL string
 
-	// 短信服务
+	// SMS service
 	SMSAccessKeyID     string
 	SMSAccessKeySecret string
 	SMSSignName        string
 	SMSTemplateCode    string
 
-	// 微信
+	// WeChat
 	WechatAppID     string
 	WechatAppSecret string
 
-	// Kafka（点击事件流；空 = 禁用）
+	// Kafka (click event stream; empty = disabled)
 	KafkaBrokers string
 	KafkaTopic   string
 }
@@ -49,12 +49,12 @@ func Load() *Config {
 	}
 }
 
-// Brokers 拆分逗号分隔的 broker 列表，去空白与空项
+// Brokers splits the comma-separated broker list, trimming whitespace and empty entries
 func (c *Config) Brokers() []string {
 	return SplitBrokers(c.KafkaBrokers)
 }
 
-// SplitBrokers 拆分逗号分隔的 broker 列表，去空白与空项（server 与 worker 共用）
+// SplitBrokers splits the comma-separated broker list, trimming whitespace and empty entries (shared by server and worker)
 func SplitBrokers(raw string) []string {
 	var out []string
 	for _, b := range strings.Split(raw, ",") {
@@ -72,7 +72,7 @@ func getEnv(key, fallback string) string {
 	return fallback
 }
 
-// weakJWTSecrets 已知弱默认密钥：release 模式下启动将直接失败
+// weakJWTSecrets lists known weak default secrets: startup fails outright in release mode
 var weakJWTSecrets = []string{
 	"",
 	"kada-dev-secret-change-in-production",
@@ -81,7 +81,7 @@ var weakJWTSecrets = []string{
 	"jwt-secret",
 }
 
-// IsWeakJWTSecret 判断是否为已知弱密钥
+// IsWeakJWTSecret reports whether the secret is a known weak one
 func IsWeakJWTSecret(s string) bool {
 	for _, w := range weakJWTSecrets {
 		if s == w {

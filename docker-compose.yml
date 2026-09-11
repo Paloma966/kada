@@ -3,7 +3,7 @@ services:
     image: postgres:16-alpine
     environment:
       POSTGRES_USER: kada
-      # 生产必须通过 .env 覆盖（见 .env.example）
+      # Must be overridden via .env in production (see .env.example)
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-kada123}
       POSTGRES_DB: kada
     volumes:
@@ -18,7 +18,7 @@ services:
 
   redis:
     image: redis:7-alpine
-    # 不发布宿主端口：宿主已有本地 redis 占用 6379，此 redis 仅供 docker 内网 backend 使用
+    # No host port published: the host already has a local redis on 6379, so this redis is for backend inside the docker network only
     volumes:
       - redisdata:/data
     healthcheck:
@@ -34,10 +34,10 @@ services:
       REDIS_URL: redis://redis:6379
       KAFKA_BROKERS: kafka:9092
       KAFKA_TOPIC: clicks
-      # 强制要求显式提供强随机密钥（可先复制 .env.example 为 .env 并填写），
-      # 后端 release 模式也会拒绝 changeme 等弱密钥
-      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET 必须设置，例如 openssl rand -hex 32，禁止使用 changeme}
-      # config.Load 读取的是 JWT_EXPIRES_IN / API_BASE_URL，须与此保持一致，否则配置被静默忽略
+      # Requires an explicitly provided strong random secret (copy .env.example to .env and fill it in first);
+      # the backend also rejects weak secrets such as changeme in release mode
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set, for example openssl rand -hex 32; do not use changeme}
+      # config.Load reads JWT_EXPIRES_IN / API_BASE_URL, so these must stay in sync or the config is silently ignored
       JWT_EXPIRES_IN: 72h
       API_BASE_URL: http://localhost
       PORT: 8080
@@ -68,8 +68,8 @@ services:
   kafka:
     image: apache/kafka:3.8.0
     ports:
-      # 9092 供 docker 内网（backend/worker 用 kafka:9092），不发布到宿主机
-      # 29092 供宿主机（本机跑 server/worker 用 localhost:29092）
+      # 9092 is for the docker network (backend/worker use kafka:9092) and is not published to the host
+      # 29092 is for the host (running server/worker locally uses localhost:29092)
       - "127.0.0.1:29092:29092"
     environment:
       KAFKA_NODE_ID: "1"

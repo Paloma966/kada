@@ -12,7 +12,7 @@ import (
 	"github.com/chun/kada-backend/internal/domain"
 )
 
-// mockLinkService 用于 redirect handler 测试
+// mockLinkService is used for redirect handler tests.
 type mockLinkService struct {
 	getByCode     func(ctx context.Context, code string) (*domain.LinkInfo, error)
 	hasPassword   func(ctx context.Context, code string) bool
@@ -146,7 +146,7 @@ func TestRedirect_QQReturnsGuidePage(t *testing.T) {
 	}
 }
 
-// ========== 不安全协议拦截 ==========
+// ========== Unsafe scheme blocking ==========
 
 func TestRedirect_UnsafeSchemeBlocked(t *testing.T) {
 	gin.SetMode(gin.TestMode)
@@ -167,7 +167,7 @@ func TestRedirect_UnsafeSchemeBlocked(t *testing.T) {
 	r := gin.New()
 	r.GET("/r/:code", h.Redirect)
 
-	// 微信 UA 会走引导页，攻击面最大
+	// The WeChat UA goes through the guide page, which has the largest attack surface.
 	req := httptest.NewRequest("GET", "/r/evil123", nil)
 	req.Header.Set("User-Agent", "Mozilla/5.0 MicroMessenger/8.0")
 	w := httptest.NewRecorder()
@@ -176,7 +176,7 @@ func TestRedirect_UnsafeSchemeBlocked(t *testing.T) {
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400 for javascript: target, got %d", w.Code)
 	}
-	if body := w.Body.String(); !strings.Contains(body, "协议不受支持") && !strings.Contains(body, "链接不可用") {
+	if body := w.Body.String(); !strings.Contains(body, "not supported") && !strings.Contains(body, "Link unavailable") {
 		t.Errorf("expected blocked page, got: %s", body)
 	}
 }
