@@ -14,12 +14,12 @@ RestartSec=3
 StandardOutput=journal
 StandardError=journal
 
-# 内存限制
+# Memory limit
 MemoryMax=512M
 
-# 安全加固（更彻底的做法是创建专用非 root 用户运行：
+# Hardening. The thorough version runs as a dedicated non-root user:
 #   adduser --system --no-create-home kada
-# 然后将 User= 改为 kada；此处先以 systemd 沙箱限制 root 进程能力）
+# and then sets User=kada; until then this confines the root process with the systemd sandbox.
 NoNewPrivileges=true
 ProtectSystem=full
 ProtectHome=true
