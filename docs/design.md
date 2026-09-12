@@ -408,11 +408,15 @@ previous version running.
 
 Verification happens in two places, which is deliberate:
 
-- **On the host**, during the deploy step: `curl http://127.0.0.1:8080/api/health`. It depends on
-  nothing but the API answering, so a TLS or DNS problem cannot be reported as a failed deployment.
-- **From the runner**, afterwards: the public origin over HTTPS, its `/api/health`, the frontend, and
-  the plain-HTTP entry point (which nginx redirects). This covers DNS, TLS, nginx and the API as a
-  visitor sees them.
+- **On the host**, during the deploy step: `curl http://127.0.0.1:8080/api/health`. This is the
+  authoritative check and the one that can fail the deploy. It depends on nothing but the API
+  answering, so a TLS, DNS or network problem cannot be reported as a failed deployment.
+- **From the runner**, afterwards: a smoke test of the public origin over HTTPS, its `/api/health`,
+  the frontend, and the plain-HTTP entry point (which nginx redirects). It covers DNS, TLS and nginx as
+  a visitor sees them, and it is **advisory**: a datacenter IP can be refused by the host's edge (this
+  deployment answered `Connection reset by peer` during a TLS handshake while the same URL returned 200
+  elsewhere), and gating a release on that would make green builds a matter of luck. Its result is
+  reported as a warning and in the run summary, never as a failed deploy.
 
 The public origin defaults to `https://kada.click`. Override it with the `SITE_URL` **repository
 variable** (Settings → Secrets and variables → Actions → Variables) when a deployment serves a
