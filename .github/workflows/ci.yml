@@ -295,49 +295,40 @@ jobs:
             rm -rf "$DEPLOY_DIR"
             echo "Deploy finished at $(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
-      # The certificate is issued for the site's public name, so https://<address> can never verify (curl
-      # error 60: "no alternative certificate subject name matches"). Resolve the name from the actual
-      # public redirect, which is the one piece of ground truth that exists regardless of how nginx is
-      # installed (this host runs it in Docker) and of where its configuration lives.
-      - name: Resolve the public site name
-        id: site
-        uses: appleboy/ssh-action@v1.2.2
-        env:
-          SERVER_HOST: ${{ secrets.SERVER_HOST }}
-        with:
-          host: ${{ secrets.SERVER_HOST }}
-          username: ${{ secrets.SERVER_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          port: 22
-          envs: SERVER_HOST
-          script: |
-            set -e
-            ADDRESS="${SERVER_HOST#*://}"
-            ADDRESS="${ADDRESS%%/*}"
-
-            # Ask plain HTTP where it sends visitors; ServerName comes back in the Location header.
-            NAME=$(curl -sI --max-time 10 "http://127.0.0.1/" \
-              | grep -i '^location:' | sed -E 's#.*https?://([^/]+).*#\1#' | tr -d '\r')
-
-            if [ -z "$NAME" ] || [ "$NAME" = "$ADDRESS" ]; then
-              echo "no public name found; reporting nginx configuration for diagnosis" >&2
-              docker exec kada-nginx nginx -T 2>&1 | grep -E 'server_name|ssl_certificate ' >&2 || true
-              echo "could not resolve the public site name (Location header was: '$NAME')" >&2
-              exit 1
-            fi
-
-            echo "site_name=$NAME"
-
       # Runs on the runner, so it proves the site is reachable the way a visitor reaches it: DNS, TLS,
       # nginx and the API together. The API itself is already checked on the host during the deploy step,
       # which is what keeps a TLS or DNS problem from looking like a broken deployment.
       - name: Verify deployment
         env:
-          SITE: ${{ steps.site.outputs.site_name }}
+          # Optional. Set the repository secret SITE_URL to the public origin, for example
+          # https://kada.click. When it is not set, the address is derived from SERVER_HOST; that works
+          # only while the certificate happens to be valid for that name, which is why this is a fallback
+          # and not the mechanism.
+          SITE_URL: ${{ secrets.SITE_URL }}
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
         run: |
           set -euo pipefail
-          BASE="https://$SITE"
 
+          if [ -n "${SITE_URL:-}" ]; then
+            BASE="${SITE_URL%/}"
+            # Accept a bare hostname as well as a full origin, so the obvious mistake does not turn into
+            # "Protocol \"kada.click\" not supported".
+            case "$BASE" in
+              http://* | https://*) ;;
+              *) BASE="https://$BASE" ;;
+            esac
+          else
+            echo "SITE_URL is not set; falling back to https://<address>, which may not match the certificate"
+            BASE="https://${SERVER_HOST#*://}"
+          fi
+
+          # An empty host produces "https:///api/health", which curl reports as an unresolvable host
+          # named "api" - a message that hides the real cause, so refuse it here instead.
+          case "$BASE" in
+            https:// | https:/// | http:// | http:///) echo "could not determine the site URL; set the SITE_URL secret" >&2; exit 1 ;;
+          esac
+
+          echo "Verifying $BASE"
           sleep 3
 
           echo "Checking $BASE/api/health"
@@ -351,8 +342,8 @@ jobs:
           echo "Frontend is reachable"
 
           # The plain-HTTP entry point redirects to HTTPS; follow it so a broken redirect is caught too.
-          echo "Checking that http://$SITE reaches the health endpoint as well"
-          curl -sS --location --fail --max-time 20 "http://$SITE/api/health" -o health-http.json
+          echo "Checking that the HTTP entry point reaches the health endpoint as well"
+          curl -sS --location --fail --max-time 20 "${BASE/https:/http:}/api/health" -o health-http.json
           grep -q '"status":"ok"' health-http.json
           echo "HTTP entry point is ok"
 
