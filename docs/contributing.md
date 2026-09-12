@@ -177,7 +177,9 @@ Rules:
 
 - **Imperative mood in the summary**: "add link expiry validation", not "added" or "adds".
 - **Lower case after the colon**, no trailing period, no emoji.
-- **A scope is welcome when it clarifies**: `fix(analytics): correct the daily bucket timezone`.
+- **No scope.** `fix: verify the deployment over HTTPS`, not `fix(ci): verify the deployment over
+  HTTPS`. The prefix already says what kind of change it is, and the summary names the area, so a scope
+  repeats one of them. Every commit in this repository follows that shape.
 - **Explain the cause in the body when the fix is not obvious.** A reviewer three months from now
   needs to know why, not just what.
 - **No attribution trailers.** Do not add `Co-Authored-By` for tooling, and do not credit an
@@ -187,7 +189,7 @@ Examples taken from the project's own history:
 
 ```text
 fix: hash SMS codes and fix broken attempt limit
-refactor(db): move the backend to GORM with AutoMigrate
+refactor: move the backend from pgx to GORM with AutoMigrate
 docs: add README and interview prep doc
 ci: make security gates effective (gosec + frontend lint/tsc)
 ```
