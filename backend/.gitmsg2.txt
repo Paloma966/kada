@@ -1,0 +1,17 @@
+fix: default the public origin instead of requiring a secret
+
+Told the reader to add a SITE_URL secret, did not, and the pipeline failed with the
+same certificate error it failed with before. A verification step that only works
+after a manual, out-of-band step is a failure mode of its own - especially when the
+value it needs is already in the repository (server_name in nginx/nginx-prod.conf)
+and in public DNS.
+
+- Default to https://kada.click, so the step works with no configuration.
+- Read the override from the SITE_URL *repository variable* rather than a secret:
+  the name is public in the certificate transparency logs, the DNS records and the
+  nginx config, and variables are visible, which makes a wrong value obvious.
+- Keep the guards: a bare hostname gets https:// prepended, a trailing slash is
+  removed, and an empty origin stops the step with a message naming the variable
+  instead of producing "Could not resolve host: api".
+
+docs/design.md now records the two verification layers and the variable.
