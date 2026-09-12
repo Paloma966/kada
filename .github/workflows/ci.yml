@@ -296,8 +296,9 @@ jobs:
             echo "Deploy finished at $(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
       # The certificate is issued for the site's public name, so https://<address> can never verify (curl
-      # error 60: "no alternative certificate subject name matches"). The name is already on the server in
-      # the nginx config, so ask for it instead of requiring another secret.
+      # error 60: "no alternative certificate subject name matches"). Resolve the name from the actual
+      # public redirect, which is the one piece of ground truth that exists regardless of how nginx is
+      # installed (this host runs it in Docker) and of where its configuration lives.
       - name: Resolve the public site name
         id: site
         uses: appleboy/ssh-action@v1.2.2
@@ -311,18 +312,20 @@ jobs:
           envs: SERVER_HOST
           script: |
             set -e
-            NAME=$(grep -hoE 'ssl_certificate[[:space:]]+[^;]+' /etc/nginx/nginx.conf 2>/dev/null \
-              | head -1 | sed -E 's#.*/live/([^/]+)/.*#\1#')
-            if [ -z "$NAME" ]; then
-              NAME=$(grep -hoE 'server_name[[:space:]]+[^;]+' /etc/nginx/nginx.conf 2>/dev/null \
-                | head -1 | awk '{print $2}')
-            fi
-            # Never let an empty name reach the verification step: "https://" would fail there with a
-            # message that says nothing about the real cause.
-            if [ -z "$NAME" ]; then
-              echo "could not find a site name in /etc/nginx/nginx.conf (neither ssl_certificate nor server_name)" >&2
+            ADDRESS="${SERVER_HOST#*://}"
+            ADDRESS="${ADDRESS%%/*}"
+
+            # Ask plain HTTP where it sends visitors; ServerName comes back in the Location header.
+            NAME=$(curl -sI --max-time 10 "http://127.0.0.1/" \
+              | grep -i '^location:' | sed -E 's#.*https?://([^/]+).*#\1#' | tr -d '\r')
+
+            if [ -z "$NAME" ] || [ "$NAME" = "$ADDRESS" ]; then
+              echo "no public name found; reporting nginx configuration for diagnosis" >&2
+              docker exec kada-nginx nginx -T 2>&1 | grep -E 'server_name|ssl_certificate ' >&2 || true
+              echo "could not resolve the public site name (Location header was: '$NAME')" >&2
               exit 1
             fi
+
             echo "site_name=$NAME"
 
       # Runs on the runner, so it proves the site is reachable the way a visitor reaches it: DNS, TLS,
