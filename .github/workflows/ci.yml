@@ -295,34 +295,63 @@ jobs:
             rm -rf "$DEPLOY_DIR"
             echo "Deploy finished at $(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
-      # Runs on the runner, so it proves the deployed service is reachable from the outside and not just
-      # that systemd reports the unit as active. A failure here fails the job.
+      # The certificate is issued for the site's public name, so https://<address> can never verify (curl
+      # error 60: "no alternative certificate subject name matches"). The name is already on the server in
+      # the nginx config, so ask for it instead of requiring another secret.
+      - name: Resolve the public site name
+        id: site
+        uses: appleboy/ssh-action@v1.2.2
+        env:
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: 22
+          envs: SERVER_HOST
+          script: |
+            set -e
+            NAME=$(grep -hoE 'ssl_certificate[[:space:]]+[^;]+' /etc/nginx/nginx.conf 2>/dev/null \
+              | head -1 | sed -E 's#.*/live/([^/]+)/.*#\1#')
+            if [ -z "$NAME" ]; then
+              NAME=$(grep -hoE 'server_name[[:space:]]+[^;]+' /etc/nginx/nginx.conf 2>/dev/null \
+                | head -1 | awk '{print $2}')
+            fi
+            # Never let an empty name reach the verification step: "https://" would fail there with a
+            # message that says nothing about the real cause.
+            if [ -z "$NAME" ]; then
+              echo "could not find a site name in /etc/nginx/nginx.conf (neither ssl_certificate nor server_name)" >&2
+              exit 1
+            fi
+            echo "site_name=$NAME"
+
+      # Runs on the runner, so it proves the site is reachable the way a visitor reaches it: DNS, TLS,
+      # nginx and the API together. The API itself is already checked on the host during the deploy step,
+      # which is what keeps a TLS or DNS problem from looking like a broken deployment.
       - name: Verify deployment
+        env:
+          SITE: ${{ steps.site.outputs.site_name }}
         run: |
           set -euo pipefail
-
-          # nginx-prod.conf answers plain HTTP with `return 301 https://$host$request_uri`, so a check
-          # over HTTP can only ever see the redirect: `--fail` treats 3xx as an error and does not follow
-          # it. Follow redirects, and talk to the plain-HTTP origin only if the redirect does not resolve.
-          HOST="${{ secrets.SERVER_HOST }}"
-          HTTPS_URL="https://${HOST#*://}"
+          BASE="https://$SITE"
 
           sleep 3
 
-          echo "Checking the API health endpoint over HTTPS"
-          if curl -sS --location --fail --max-time 20 "$HTTPS_URL/api/health" -o health.json; then
-            cat health.json; echo
-          else
-            echo "HTTPS did not answer, trying http://$HOST (which nginx redirects)"
-            curl -sS --location --fail --max-time 20 "http://$HOST/api/health" -o health.json
-            cat health.json; echo
-          fi
+          echo "Checking $BASE/api/health"
+          curl -sS --location --fail --max-time 20 "$BASE/api/health" -o health.json
+          cat health.json; echo
           grep -q '"status":"ok"' health.json
           echo "Health endpoint is ok"
 
-          echo "Checking the frontend"
-          curl -sS --location --fail --max-time 20 -o /dev/null "$HTTPS_URL/"
+          echo "Checking the frontend at $BASE/"
+          curl -sS --location --fail --max-time 20 -o /dev/null "$BASE/"
           echo "Frontend is reachable"
+
+          # The plain-HTTP entry point redirects to HTTPS; follow it so a broken redirect is caught too.
+          echo "Checking that http://$SITE reaches the health endpoint as well"
+          curl -sS --location --fail --max-time 20 "http://$SITE/api/health" -o health-http.json
+          grep -q '"status":"ok"' health-http.json
+          echo "HTTP entry point is ok"
 
   # ----- Summary -----
   pipeline-summary:
