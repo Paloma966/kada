@@ -300,38 +300,32 @@ jobs:
       # which is what keeps a TLS or DNS problem from looking like a broken deployment.
       - name: Verify deployment
         env:
-          # Optional. Set the repository secret SITE_URL to the public origin, for example
-          # https://kada.click. When it is not set, the address is derived from SERVER_HOST; that works
-          # only while the certificate happens to be valid for that name, which is why this is a fallback
-          # and not the mechanism.
-          SITE_URL: ${{ secrets.SITE_URL }}
-          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+          # The public origin is not a secret: it is in the certificate transparency logs, the DNS records
+          # and nginx/nginx-prod.conf, which is where this default comes from. Override the SITE_URL
+          # repository variable when a deployment serves a different name - that is the only reason this
+          # is configurable, and requiring configuration we already know would be a needless failure mode.
+          SITE_ORIGIN: ${{ vars.SITE_URL || 'https://kada.click' }}
         run: |
           set -euo pipefail
 
-          if [ -n "${SITE_URL:-}" ]; then
-            BASE="${SITE_URL%/}"
-            # Accept a bare hostname as well as a full origin, so the obvious mistake does not turn into
-            # "Protocol \"kada.click\" not supported".
-            case "$BASE" in
-              http://* | https://*) ;;
-              *) BASE="https://$BASE" ;;
-            esac
-          else
-            echo "SITE_URL is not set; falling back to https://<address>, which may not match the certificate"
-            BASE="https://${SERVER_HOST#*://}"
-          fi
+          # Accept a bare hostname too, so "kada.click" fails on the network instead of reporting
+          # `Protocol "kada.click" not supported`. Strip trailing slashes so "$BASE/api/health" stays sound.
+          case "$SITE_ORIGIN" in
+            http://* | https://*) BASE="$SITE_ORIGIN" ;;
+            *) BASE="https://$SITE_ORIGIN" ;;
+          esac
+          BASE="${BASE%/}"
 
-          # An empty host produces "https:///api/health", which curl reports as an unresolvable host
-          # named "api" - a message that hides the real cause, so refuse it here instead.
+          # An empty host makes "https:///api/health", which curl reports as an unresolvable host called
+          # "api" - a message that sends the reader looking in the wrong place.
           case "$BASE" in
-            https:// | https:/// | http:// | http:///) echo "could not determine the site URL; set the SITE_URL secret" >&2; exit 1 ;;
+            https:// | http://) echo "SITE_ORIGIN is empty; set the SITE_URL repository variable" >&2; exit 1 ;;
           esac
 
           echo "Verifying $BASE"
           sleep 3
 
-          echo "Checking $BASE/api/health"
+          echo "Checking $BASE/api/health over HTTPS"
           curl -sS --location --fail --max-time 20 "$BASE/api/health" -o health.json
           cat health.json; echo
           grep -q '"status":"ok"' health.json
@@ -341,8 +335,7 @@ jobs:
           curl -sS --location --fail --max-time 20 -o /dev/null "$BASE/"
           echo "Frontend is reachable"
 
-          # The plain-HTTP entry point redirects to HTTPS; follow it so a broken redirect is caught too.
-          echo "Checking that the HTTP entry point reaches the health endpoint as well"
+          echo "Checking the plain-HTTP entry point, which nginx redirects to HTTPS"
           curl -sS --location --fail --max-time 20 "${BASE/https:/http:}/api/health" -o health-http.json
           grep -q '"status":"ok"' health-http.json
           echo "HTTP entry point is ok"

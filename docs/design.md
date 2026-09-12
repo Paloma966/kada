@@ -406,6 +406,20 @@ Two supported shapes:
 The deploy job applies the schema **before** replacing the binary, so a failed migration leaves the
 previous version running.
 
+Verification happens in two places, which is deliberate:
+
+- **On the host**, during the deploy step: `curl http://127.0.0.1:8080/api/health`. It depends on
+  nothing but the API answering, so a TLS or DNS problem cannot be reported as a failed deployment.
+- **From the runner**, afterwards: the public origin over HTTPS, its `/api/health`, the frontend, and
+  the plain-HTTP entry point (which nginx redirects). This covers DNS, TLS, nginx and the API as a
+  visitor sees them.
+
+The public origin defaults to `https://kada.click`. Override it with the `SITE_URL` **repository
+variable** (Settings → Secrets and variables → Actions → Variables) when a deployment serves a
+different name. It is a variable rather than a secret because the name is already public in the
+certificate transparency logs, the DNS records and `nginx/nginx-prod.conf` - and because a deployment
+step that requires manual setup is a failure mode of its own.
+
 ## 11. Testing
 
 | Layer | Style |
