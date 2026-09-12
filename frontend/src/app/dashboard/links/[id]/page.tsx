@@ -1,6 +1,7 @@
 "use client";
 
 import { use, useCallback, useEffect, useState } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import {
   Copy, ExternalLink, Pencil, Save, X, Check, QrCode, Download,
@@ -609,7 +610,9 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
             </div>
             <div className="flex flex-col items-center gap-4">
               <div className="bg-white border border-gray-100 rounded-xl p-3">
-                {qrURL ? <img src={qrURL} alt="QR" className="size-56" />
+                {/* A data: URL built locally by qrcode's canvas: no remote host to allowlist and nothing
+                    for the optimizer to fetch, so next/image is used as a passthrough. */}
+                {qrURL ? <Image src={qrURL} alt="QR" width={224} height={224} unoptimized />
                   : <div className="size-56 flex items-center justify-center">
                     <div className="size-8 animate-spin rounded-full border-2 border-indigo-600 border-t-transparent" /></div>}
               </div>
