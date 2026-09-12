@@ -8,7 +8,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import useSWR from "swr";
-import { linksAPI, foldersAPI, tagsAPI, domainsAPI, workspacesAPI } from "@/lib/api";
+import { linksAPI, foldersAPI, tagsAPI, domainsAPI, workspacesAPI, analyticsAPI } from "@/lib/api";
 import { getToken } from "@/lib/auth";
 import { safeHref } from "@/lib/utils";
 import { useT, useI18n } from "@/lib/i18n";
@@ -137,18 +137,14 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
   useEffect(() => {
     if (showAnalytics && link && token) {
       Promise.all([
-        fetch(`${process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080"}/api/analytics/daily?link_id=${link.id}`, {
-          headers: { Authorization: `Bearer ${token}` },
-        }).then(r => r.json()),
-        fetch(`${process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080"}/api/analytics/platforms?link_id=${link.id}`, {
-          headers: { Authorization: `Bearer ${token}` },
-        }).then(r => r.json()),
+        analyticsAPI.dailyForLink(token, link.id),
+        analyticsAPI.platformsForLink(token, link.id),
       ]).then(([dailyData, platformsData]) => {
         setClickData({
           daily: dailyData.daily ?? [],
           platforms: platformsData.platforms ?? [],
         });
-      }).catch(() => toast.error(t("加载统计数据失败")));
+      }).catch((e: unknown) => toast.error(e instanceof Error ? e.message : t("加载统计数据失败")));
     }
   }, [showAnalytics, link, token, t]);
 

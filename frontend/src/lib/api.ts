@@ -1,7 +1,38 @@
+// The contract for the API base URL:
+//
+//   undefined -> development fallback (the Go API on :8080)
+//   ""        -> same origin, which is how production runs: nginx serves the frontend and proxies
+//                /api/ to the Go backend, so requests must stay relative
+//   anything  -> that explicit base URL
+//
+// `??` (not `||`) is what makes the empty string meaningful, so the production build has to set the
+// variable explicitly - see the NEXT_PUBLIC_API_URL env in .github/workflows/ci.yml.
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
 
 interface FetchOptions extends RequestInit {
   token?: string;
+}
+
+/**
+ * Reads a response that is expected to be JSON.
+ *
+ * Calling `res.json()` on an HTML body throws `Unexpected token '<', "<!DOCTYPE "... is not valid JSON`,
+ * which says nothing about what actually happened: the request probably never reached the Go API and was
+ * answered by Next.js or a proxy instead. Checking the content type first turns that into an error that
+ * names the URL, the status and the content type, so the cause is visible without opening DevTools.
+ */
+async function readJSON(res: Response, url: string) {
+  const contentType = res.headers.get("content-type") ?? "(none)";
+
+  if (!contentType.includes("application/json")) {
+    const body = (await res.text()).slice(0, 200).replace(/\s+/g, " ");
+    throw new Error(
+      `${url} returned ${res.status} ${res.statusText} with content-type ${contentType} instead of JSON. ` +
+        `Check that NEXT_PUBLIC_API_URL points at the API and that it is running. Body starts with: ${body}`
+    );
+  }
+
+  return res.json();
 }
 
 async function fetchAPI(path: string, options: FetchOptions = {}) {
@@ -15,18 +46,42 @@ async function fetchAPI(path: string, options: FetchOptions = {}) {
     headers["Authorization"] = `Bearer ${token}`;
   }
 
-  const res = await fetch(`${API_URL}${path}`, {
-    ...fetchOptions,
-    headers,
-  });
+  const url = `${API_URL}${path}`;
 
-  const data = await res.json();
+  let res: Response;
+  try {
+    res = await fetch(url, { ...fetchOptions, headers });
+  } catch (cause) {
+    // A network-level failure (API not running, wrong host, CORS preflight rejected) never produces a
+    // Response at all, so it needs its own message rather than surfacing as a bare "Failed to fetch".
+    throw new Error(`cannot reach the API at ${url}: ${cause instanceof Error ? cause.message : cause}`);
+  }
+
+  const data = await readJSON(res, url);
 
   if (!res.ok) {
-    throw new Error(data.error || "Request failed");
+    throw new Error(data.error || `request failed with status ${res.status}`);
   }
 
   return data;
+}
+
+/** Performs a request that returns CSV rather than JSON, used by the link export. */
+export async function fetchCSV(path: string, token: string): Promise<string> {
+  const url = `${API_URL}${path}`;
+
+  let res: Response;
+  try {
+    res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  } catch (cause) {
+    throw new Error(`cannot reach the API at ${url}: ${cause instanceof Error ? cause.message : cause}`);
+  }
+
+  if (!res.ok) {
+    throw new Error(`export failed with status ${res.status}`);
+  }
+
+  return res.text();
 }
 
 // ========== Auth API ==========
@@ -142,6 +197,9 @@ export const linksAPI = {
       token,
       body: JSON.stringify({ url }),
     }),
+
+  /** Downloads the user's links as CSV. */
+  export: (token: string) => fetchCSV("/api/links/export", token),
 };
 
 // ========== Analytics API ==========
@@ -153,8 +211,16 @@ export const analyticsAPI = {
   platforms: (token: string) =>
     fetchAPI("/api/analytics/platforms", { token }),
 
+  /** Platform breakdown for a single link, used by the link detail page. */
+  platformsForLink: (token: string, linkId: number): Promise<{ platforms: { platform: string; count: number }[] }> =>
+    fetchAPI(`/api/analytics/platforms?link_id=${linkId}`, { token }),
+
   daily: (token: string) =>
     fetchAPI("/api/analytics/daily", { token }),
+
+  /** Daily clicks for a single link, used by the link detail page. */
+  dailyForLink: (token: string, linkId: number): Promise<{ daily: { date: string; count: number }[] }> =>
+    fetchAPI(`/api/analytics/daily?link_id=${linkId}`, { token }),
 
   events: (token: string, page = 1, pageSize = 20) =>
     fetchAPI(`/api/analytics/events?page=${page}&page_size=${pageSize}`, { token }),
