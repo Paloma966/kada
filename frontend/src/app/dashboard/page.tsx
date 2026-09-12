@@ -113,18 +113,17 @@ export default function DashboardPage() {
   const handleExport = async () => {
     if (!token) return;
     try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
-      const res = await fetch(`${apiUrl}/api/links/export`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const blob = await res.blob();
+      // Goes through the API client so the base URL is resolved in exactly one place and a non-JSON or
+      // unreachable response is reported with its URL and status instead of a bare "failed".
+      const csv = await linksAPI.export(token);
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url; a.download = "kada-links.csv"; a.click();
       URL.revokeObjectURL(url);
       toast.success(t("导出成功"));
-    } catch {
-      toast.error(t("导出失败"));
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : t("导出失败"));
     }
   };
 
