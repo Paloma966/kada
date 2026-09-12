@@ -155,6 +155,9 @@ export default function CreateLinkPage() {
                       <div className="p-3">
                         <div className="flex items-start gap-3">
                           {preview.image_url && (
+                            // The image host comes from whatever page the user linked, so remotePatterns
+                            // cannot be pinned to it and next/image would add an unoptimized passthrough.
+                            // eslint-disable-next-line @next/next/no-img-element
                             <img src={preview.image_url} alt=""
                               className="size-16 rounded-lg object-cover border border-gray-200 shrink-0"
                               onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
@@ -162,6 +165,8 @@ export default function CreateLinkPage() {
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2">
                               {preview.favicon_url && (
+                                // Same as the preview image above: the favicon host is not knowable here.
+                                // eslint-disable-next-line @next/next/no-img-element
                                 <img src={preview.favicon_url} alt=""
                                   className="size-4 rounded shrink-0"
                                   onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
