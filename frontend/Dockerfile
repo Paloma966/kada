@@ -2,9 +2,11 @@ FROM node:22-alpine AS builder
 WORKDIR /app
 
 # The API base URL is inlined into the bundle at build time, so it must be a build argument.
-# The default is empty, which means "same origin": nginx serves this frontend and proxies /api/ to the
-# Go backend. Setting it to a real URL is what a deployment would do to talk to an API on another host.
-ARG NEXT_PUBLIC_API_URL=""
+# The default of "same-origin" keeps requests relative, which is what a container deployment wants:
+# nginx serves this frontend and proxies /api/ to the Go backend. A deployment that talks to an API on
+# another host overrides it with that URL. Leaving it unset would fall back to the development default
+# (http://localhost:8080) in the browser, so it is never left unset on purpose.
+ARG NEXT_PUBLIC_API_URL="same-origin"
 ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
 
 COPY package.json package-lock.json ./

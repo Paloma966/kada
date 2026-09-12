@@ -300,16 +300,29 @@ tests := []struct {
 because the difference is invisible until it breaks:
 
 ```ts
-// NEXT_PUBLIC_API_URL: undefined -> the development API, "" -> same origin, a value -> that URL
+// unset -> development default, "" -> the empty string, a value -> that value
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
 ```
 
-The rule in this repository: **an empty value is a deliberate setting** (empty base URL = same origin,
-because nginx creates it), so the code uses `??`, and whatever produces the empty value must do so
-explicitly. A hardcoded default in `next.config.ts` looked convenient but applied to local development
-too, where it silently beat the fallback and sent every request to the Next.js dev server - an HTML
-404 instead of JSON. `NEXT_PUBLIC_*` is inlined at build time, so deployments set it as a build
-argument (`.github/workflows/ci.yml`, `frontend/Dockerfile`), never as a container runtime variable.
+A hardcoded default in `next.config.ts` used to supply that empty string, which applied to local
+development too, where it silently beat the fallback and sent every request to the Next.js dev server -
+an HTML 404 instead of JSON.
+
+The follow-up is worse than the original bug: **the bundler only inlines a non-empty `NEXT_PUBLIC_*`
+value.** Built with the variable empty, the client bundle keeps a runtime lookup, and whether that
+lookup resolves to `""` or `undefined` decides between relative requests and the development fallback -
+two different behaviours from one build. An empty value therefore cannot carry meaning across a build.
+
+The rule in this repository: **use an explicit sentinel, not an empty string**, when a build-time
+setting needs to mean something:
+
+```ts
+const SAME_ORIGIN = "same-origin";   // inlined reliably, unlike ""
+```
+
+And remember that `NEXT_PUBLIC_*` is fixed at build time: set it as a build argument
+(`frontend/Dockerfile`, `docker-compose.yml`) or in the build step (`ci.yml`), never as a container
+runtime environment variable, where it does nothing at all.
 
 ## 11. Formatting quick reference
 

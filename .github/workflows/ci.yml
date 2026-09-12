@@ -147,10 +147,10 @@ jobs:
       - name: Build
         working-directory: frontend
         env:
-          # An empty value means "same origin": nginx serves the frontend and proxies /api/ to the Go
-          # backend, so the browser must send relative requests. This has to be set here because the
-          # build inlines NEXT_PUBLIC_* and the source deliberately has no hardcoded default for it.
-          NEXT_PUBLIC_API_URL: ""
+          # "same-origin" makes the bundle issue relative requests: nginx serves the frontend and proxies
+          # /api/ to the Go backend. The sentinel is used instead of an empty value because the bundler
+          # only inlines a non-empty NEXT_PUBLIC_* - see the note in src/lib/api.ts.
+          NEXT_PUBLIC_API_URL: "same-origin"
         run: npm run build
 
   # ----- Deploy to production -----
@@ -185,7 +185,7 @@ jobs:
         working-directory: frontend
         env:
           # Same-origin deployment, see the note on the frontend-build job above.
-          NEXT_PUBLIC_API_URL: ""
+          NEXT_PUBLIC_API_URL: "same-origin"
         run: npm run build
 
       - name: Package frontend

@@ -1,13 +1,26 @@
-// The contract for the API base URL:
+// Resolves the API base URL.
 //
-//   undefined -> development fallback (the Go API on :8080)
-//   ""        -> same origin, which is how production runs: nginx serves the frontend and proxies
-//                /api/ to the Go backend, so requests must stay relative
-//   anything  -> that explicit base URL
+// The three cases are deliberately distinct, because an empty value cannot express them:
 //
-// `??` (not `||`) is what makes the empty string meaningful, so the production build has to set the
-// variable explicitly - see the NEXT_PUBLIC_API_URL env in .github/workflows/ci.yml.
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
+//   unset        -> the local Go API. This is the development default.
+//   "same-origin" -> relative requests, served by whatever hosts the page: production runs nginx in front
+//                    of both the frontend and the API, so /api/ is proxied by the same origin.
+//   a URL        -> that URL, used whenever the API lives somewhere else.
+//
+// Why not an empty string for the same-origin case: the bundler only inlines a non-empty
+// NEXT_PUBLIC_* value. With the variable empty it leaves a runtime lookup in the client bundle instead
+// (verified against builds of this app), and whether that lookup finds "" or undefined decides between
+// relative requests and the development fallback. A sentinel inlines predictably, so the behaviour is
+// the same in every build.
+const SAME_ORIGIN = "same-origin";
+
+function resolveAPIURL(): string {
+  const configured = process.env.NEXT_PUBLIC_API_URL;
+  if (!configured) return "http://localhost:8080";
+  return configured === SAME_ORIGIN ? "" : configured;
+}
+
+const API_URL = resolveAPIURL();
 
 interface FetchOptions extends RequestInit {
   token?: string;
