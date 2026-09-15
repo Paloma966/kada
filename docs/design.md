@@ -418,6 +418,18 @@ Verification happens in two places, which is deliberate:
   elsewhere), and gating a release on that would make green builds a matter of luck. Its result is
   reported as a warning and in the run summary, never as a failed deploy.
 
+  The step absorbs a refusal rather than letting `curl` raise it. `continue-on-error` keeps it from
+  failing the run, but on its own it still lets a non-zero `curl` surface as an error annotation and a
+  red X next to a deployment that succeeded. The step therefore always exits 0, writes what happened to
+  `verify-status.txt` and `verify-body.txt`, and the step after it reports those. A refusal is a fact to
+  record, not an error to raise.
+
+  Two shell details are load-bearing there, and `scripts/verify-deploy-step.test.js` runs this step
+  against a stubbed `curl` to keep them honest: the exit status is read from a plain assignment, because
+  `if ! curl` reports the status of the negation (a refusal recorded as `curl 0`) and `local rc=$?` reads
+  the status of `local`; and only `/api/health` is asserted to carry a healthy payload, since the
+  frontend serves HTML and asserting the same payload on it fails a perfectly healthy site.
+
 The public origin defaults to `https://kada.click`. Override it with the `SITE_URL` **repository
 variable** (Settings → Secrets and variables → Actions → Variables) when a deployment serves a
 different name. It is a variable rather than a secret because the name is already public in the
