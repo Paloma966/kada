@@ -1,8 +1,7 @@
 from fastapi import FastAPI
 from pymilvus import settings
-from streamlit.elements import media
 
-from route.chat import  mock_stream
+from backend.ai.app.route.chat import  mock_stream
 from fastapi.responses import StreamingResponse
 app = FastAPI(title="Kada AI Service", version="0.1.0")
 
