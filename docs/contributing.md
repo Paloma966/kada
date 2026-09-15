@@ -225,6 +225,13 @@ showed.
 | The schema | An assertion in `internal/domain/entity/models_test.go` |
 | A dynamic or bulk SQL statement | A dry-run test in `internal/service/db_dryrun_test.go` |
 | A pure frontend helper | A Vitest test next to it |
+| A shell step in `.github/workflows/ci.yml` | A case in `scripts/verify-deploy-step.test.js` |
+
+The last one exists because a workflow step cannot be run locally, so its mistakes only surface in CI on
+a real deploy. `node scripts/verify-deploy-step.test.js` extracts the deploy job's verification steps
+straight out of the workflow, runs them against a stubbed `curl`, and checks each outcome - reachable,
+connection refused, DNS failure, unhealthy payload. It needs a real `bash`; on Windows that means Git
+Bash, which the default sandbox cannot start (it needs a signal pipe), so run it from a normal terminal.
 
 A bug fix without a test that fails before the fix is usually incomplete. Tests must not require a
 database: services take `*gorm.DB`, so a `DryRun` session is enough to assert on generated SQL, and

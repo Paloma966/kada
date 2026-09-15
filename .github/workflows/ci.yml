@@ -303,6 +303,11 @@ jobs:
       # connections from a datacenter - it answered `Connection reset by peer` (curl 35) during a TLS
       # handshake even while the same URL returned 200 from elsewhere - and gating a deployment on a third
       # party's tolerance for our IP range is not a check, it is a coin flip.
+      #
+      # This step absorbs that refusal instead of letting curl raise it: `continue-on-error` stops it from
+      # failing the run, but it does not stop a non-zero curl from being announced as an error annotation
+      # with a red X next to a deployment that in fact succeeded. A refusal is a fact to record, not an
+      # error to raise, so the result is written to files and reported by the step below either way.
       - name: Verify deployment
         id: verify
         continue-on-error: true
@@ -312,8 +317,6 @@ jobs:
           # repository variable when a deployment serves a different name.
           SITE_ORIGIN: ${{ vars.SITE_URL || 'https://kada.click' }}
         run: |
-          set -euo pipefail
-
           # Accept a bare hostname too, so "kada.click" fails on the network instead of reporting
           # `Protocol "kada.click" not supported`. Strip trailing slashes so "$BASE/api/health" stays sound.
           case "$SITE_ORIGIN" in
@@ -325,8 +328,14 @@ jobs:
           # An empty host makes "https:///api/health", which curl reports as an unresolvable host called
           # "api" - a message that sends the reader looking in the wrong place.
           case "$BASE" in
-            https:// | http://) echo "SITE_ORIGIN is empty; set the SITE_URL repository variable" >&2; exit 1 ;;
+            https:// | http://)
+              echo "failed" > verify-status.txt
+              echo "SITE_ORIGIN is empty; set the SITE_URL repository variable" > verify-body.txt
+              echo "SITE_ORIGIN is empty; set the SITE_URL repository variable" >&2
+              exit 0 ;;
           esac
+
+          echo "$BASE" > verify-origin.txt
 
           # Retry: a refusal here is often a dropped connection rather than an unreachable site.
           CURL=(curl -sS --location --fail --max-time 20 --retry 5 --retry-delay 5 --retry-all-errors)
@@ -334,43 +343,88 @@ jobs:
           echo "Verifying $BASE"
           sleep 3
 
+          # Any failure in here is captured, not raised: the reason is written to verify-body.txt and the
+          # status is decided by whether that file was ever written.
+          #
+          # Only the health endpoint is asserted to answer with a healthy payload; the frontend serves HTML
+          # and is only asserted to be reachable, so passing the payload assertion to it would fail a site
+          # that is perfectly fine.
+          check() {
+            local label="$1" url="$2" file="$3" expect="$4" rc
+            # Deliberately not `if ! curl ...`: inside the branch `$?` is the status of the negation, so a
+            # refusal would be recorded as "curl 0" instead of the code that explains it. `rc` is declared
+            # above rather than assigned with `local rc=$?`, because `local` is itself a command whose
+            # status would be the one read.
+            "${CURL[@]}" "$url" -o "$file"
+            rc=$?
+            if [ "$rc" != "0" ]; then
+              if [ "$rc" = "35" ]; then
+                echo "curl 35: a TLS handshake failure, which is how an edge refusing a datacenter IP looks" > verify-body.txt
+              else
+                echo "curl $rc: could not fetch $url" > verify-body.txt
+              fi
+              return 1
+            fi
+            if [ "$expect" = "payload" ] && ! grep -q '"status":"ok"' "$file"; then
+              echo "$url did not answer with a healthy payload" > verify-body.txt
+              return 1
+            fi
+            echo "$label"
+            return 0
+          }
+
           echo "Checking $BASE/api/health over HTTPS"
-          "${CURL[@]}" "$BASE/api/health" -o health.json
-          cat health.json; echo
-          grep -q '"status":"ok"' health.json
-          echo "Health endpoint is ok"
+          check "Health endpoint is ok" "$BASE/api/health" health.json payload || failed=1
 
           echo "Checking the frontend at $BASE/"
-          "${CURL[@]}" -o /dev/null "$BASE/"
-          echo "Frontend is reachable"
+          if [ -z "$failed" ]; then
+            check "Frontend is reachable" "$BASE/" /dev/null reachable || failed=1
+          fi
 
           echo "Checking the plain-HTTP entry point, which nginx redirects to HTTPS"
-          "${CURL[@]}" "${BASE/https:/http:}/api/health" -o health-http.json
-          grep -q '"status":"ok"' health-http.json
-          echo "HTTP entry point is ok"
+          if [ -z "$failed" ]; then
+            check "HTTP entry point is ok" "${BASE/https:/http:}/api/health" health-http.json payload || failed=1
+          fi
+
+          if [ -z "$failed" ]; then
+            echo "passed" > verify-status.txt
+          else
+            echo "failed" > verify-status.txt
+            cat verify-body.txt >&2
+          fi
+
+          # Always exit 0: whether the runner could reach the site is a result to report, not a failure.
+          exit 0
 
       # Says out loud what the smoke test found. It does not fail the job, but the result is recorded so
       # "the deploy is green" never quietly hides "the site could not be reached from here".
       - name: Report the smoke test result
         if: always()
         env:
-          OUTCOME: ${{ steps.verify.outcome }}
           SITE: ${{ vars.SITE_URL || 'https://kada.click' }}
         run: |
-          if [ "$OUTCOME" = "success" ]; then
-            echo "$SITE answered over HTTPS, and its API is healthy."
-          else
-            {
-              echo "### Public smoke test did not pass"
-              echo ""
-              echo "\`$SITE\` could not be reached from the runner, so DNS, TLS or the edge was not verified by this run."
-              echo "The deployment itself was checked on the host and is not affected."
-              echo ""
-              echo "A refusal here is usually the host's edge dropping a connection from a datacenter IP;"
-              echo "check it from a normal network before treating it as an outage."
-            } >> "$GITHUB_STEP_SUMMARY"
-            echo "::warning title=Public smoke test failed::$SITE was not reachable from the runner. The deployment itself succeeded (checked on the host)."
+          STATUS=$(cat verify-status.txt 2>/dev/null || echo "failed")
+          BODY=$(cat verify-body.txt 2>/dev/null || echo "the smoke test did not run")
+          ORIGIN=$(cat verify-origin.txt 2>/dev/null || echo "$SITE")
+
+          if [ "$STATUS" = "passed" ]; then
+            echo "$ORIGIN answered over HTTPS, and its API is healthy."
+            exit 0
           fi
+
+          {
+            echo "### Public smoke test did not pass"
+            echo ""
+            echo "\`$ORIGIN\` could not be reached from the runner, so DNS, TLS or the edge was not verified by this run."
+            echo ""
+            echo "Reason: $BODY"
+            echo ""
+            echo "The deployment itself was checked on the host and is not affected."
+            echo ""
+            echo "A refusal here is usually the host's edge dropping a connection from a datacenter IP;"
+            echo "check it from a normal network before treating it as an outage."
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "::warning title=Public smoke test did not pass::$ORIGIN was not reachable from the runner. The deployment itself succeeded (checked on the host)."
 
   # ----- Summary -----
   pipeline-summary:
