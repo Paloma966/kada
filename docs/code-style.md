@@ -242,7 +242,32 @@ if res.RowsAffected == 0 {
   helpers (`inputBase`, `fieldState`) over repeating long class strings.
 - Effects need a cleanup path when they hold a resource - dispose WebGL textures, clear intervals and
   cancel listeners.
+- Anything read from `localStorage` during render must be behind `useHydrated()`. A Client Component is
+  still prerendered on the server, where storage does not exist, so rendering it directly makes the two
+  renders disagree and React discards the tree.
 - Frontend tests use Vitest and cover pure logic (geometry, parsers, utilities), not rendered layout.
+
+### Colours
+
+Write the role, not the shade:
+
+| Use | Not |
+|---|---|
+| `bg-canvas`, `bg-subtle`, `bg-muted-surface` | `bg-white`, `bg-gray-50`, `bg-gray-100` |
+| `text-strong`, `text-body`, `text-muted`, `text-faint` | `text-gray-900`, `text-gray-700`, `text-gray-500`, `text-gray-400` |
+| `border-line`, `border-line-strong` | `border-gray-200`, `border-gray-300` |
+
+Both resolve to the same colour in the light theme, so the change is invisible - and in the dark theme
+the role is what makes it correct. Brand and status colours (`bg-indigo-600`, `text-red-600`) are left
+alone on purpose: they are fixed in both themes, so a pair like `bg-indigo-600 text-white` cannot break.
+
+Two traps this convention exists to avoid, both of which shipped once and were caught in review:
+
+- **A themed surface on a permanently dark screen.** The sign-in screens are dark in both themes, so the
+  selected segment must be literal `bg-white` with dark type. Given `bg-canvas` it turned black in dark
+  mode and the label - whose colour is fixed - went with it.
+- **A colour whose partner did not move.** Redefining a whole palette for dark mode breaks every
+  `bg-X text-white` pair whose `X` got brighter. Redefine roles, not ramps.
 
 ## 8. Frontend copy and i18n
 

@@ -69,17 +69,17 @@ export function Sidebar({ onCloseMobile }: { onCloseMobile?: () => void }) {
   };
 
   return (
-    <aside className="flex h-full w-[240px] shrink-0 flex-col border-r border-gray-200 bg-white">
+    <aside className="flex h-full w-[240px] shrink-0 flex-col border-r border-line bg-canvas">
       {/* Logo */}
-      <div className="flex h-14 items-center justify-between px-4 border-b border-gray-100">
+      <div className="flex h-14 items-center justify-between px-4 border-b border-line">
         <div className="flex items-center gap-2.5">
           <div className="flex size-8 items-center justify-center rounded-lg bg-indigo-600">
             <Link2 className="size-4 text-white" />
           </div>
-          <span className="font-bold text-lg text-gray-900">Kada</span>
+          <span className="font-bold text-lg text-strong">Kada</span>
         </div>
         {onCloseMobile && (
-          <button onClick={onCloseMobile} className="lg:hidden p-1.5 rounded-lg text-gray-400 hover:bg-gray-100 transition">
+          <button onClick={onCloseMobile} className="lg:hidden p-1.5 rounded-lg text-faint hover:bg-muted-surface transition">
             <X className="size-4" />
           </button>
         )}
@@ -90,7 +90,7 @@ export function Sidebar({ onCloseMobile }: { onCloseMobile?: () => void }) {
         {NAV_SECTIONS.map((section, secIdx) => (
           <div key={secIdx} className={cn(secIdx > 0 && "mt-6")}>
             {section.name && (
-              <p className="mb-1.5 px-3 text-xs font-medium text-gray-400 uppercase tracking-wider">
+              <p className="mb-1.5 px-3 text-xs font-medium text-faint uppercase tracking-wider">
                 {t(section.name)}
               </p>
             )}
@@ -110,7 +110,7 @@ export function Sidebar({ onCloseMobile }: { onCloseMobile?: () => void }) {
                       "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
                       isActive
                         ? "bg-indigo-50 text-indigo-700"
-                        : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"
+                        : "text-muted hover:bg-muted-surface hover:text-strong"
                     )}
                   >
                     <Icon className={cn("size-4 shrink-0", isActive && "text-indigo-600")} />
@@ -124,7 +124,7 @@ export function Sidebar({ onCloseMobile }: { onCloseMobile?: () => void }) {
       </nav>
 
       {/* Bottom: Settings + version */}
-      <div className="border-t border-gray-100 px-3 py-3 space-y-2">
+      <div className="border-t border-line px-3 py-3 space-y-2">
         <Link
           href="/dashboard/settings"
           onClick={handleClick}
@@ -132,13 +132,13 @@ export function Sidebar({ onCloseMobile }: { onCloseMobile?: () => void }) {
             "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
             pathname === "/dashboard/settings"
               ? "bg-indigo-50 text-indigo-700"
-              : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"
+              : "text-muted hover:bg-muted-surface hover:text-strong"
           )}
         >
           <Settings className={cn("size-4 shrink-0", pathname === "/dashboard/settings" && "text-indigo-600")} />
           <span>{t("设置")}</span>
         </Link>
-        <p className="px-3 text-xs text-gray-400">Kada v0.2</p>
+        <p className="px-3 text-xs text-faint">Kada v0.2</p>
       </div>
     </aside>
   );

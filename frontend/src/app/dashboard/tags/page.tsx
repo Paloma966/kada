@@ -73,12 +73,12 @@ export default function TagsPage() {
   return (
     <div className="space-y-5">
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">{t("标签")}</h1>
-        <p className="text-sm text-gray-500 mt-1">{t("用标签标记和筛选链接")}</p>
+        <h1 className="text-2xl font-bold text-strong">{t("标签")}</h1>
+        <p className="text-sm text-muted mt-1">{t("用标签标记和筛选链接")}</p>
       </div>
 
       {/* Create new tag */}
-      <div className="rounded-xl border border-gray-100 bg-white shadow-sm p-4">
+      <div className="rounded-xl border border-line bg-canvas shadow-sm p-4">
         <form
           onSubmit={(e) => {
             e.preventDefault();
@@ -97,7 +97,7 @@ export default function TagsPage() {
             value={newName}
             onChange={(e) => setNewName(e.target.value)}
             placeholder={t("新建标签...")}
-            className="flex-1 min-w-[140px] border-none bg-transparent text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none"
+            className="flex-1 min-w-[140px] border-none bg-transparent text-sm text-strong placeholder:text-faint focus:outline-none"
             maxLength={30}
           />
 
@@ -138,8 +138,8 @@ export default function TagsPage() {
       {error ? (
         <div className="flex flex-col items-center justify-center py-16 text-center">
           <div className="text-3xl mb-3">😞</div>
-          <h3 className="text-lg font-semibold text-gray-900">{t("加载失败")}</h3>
-          <p className="mt-1 text-sm text-gray-500">{t("请检查网络后重试")}</p>
+          <h3 className="text-lg font-semibold text-strong">{t("加载失败")}</h3>
+          <p className="mt-1 text-sm text-muted">{t("请检查网络后重试")}</p>
           <button
             onClick={() => mutate()}
             className="mt-3 text-sm font-medium text-indigo-600 hover:text-indigo-500"
@@ -153,18 +153,18 @@ export default function TagsPage() {
           {Array.from({ length: 6 }).map((_, i) => (
             <div
               key={i}
-              className="animate-pulse rounded-full h-8 w-20 bg-gray-100"
+              className="animate-pulse rounded-full h-8 w-20 bg-muted-surface"
             />
           ))}
         </div>
       ) : tags.length === 0 ? (
         /* Empty state */
         <div className="flex flex-col items-center justify-center py-16 text-center">
-          <div className="flex size-14 items-center justify-center rounded-2xl bg-gray-100 mb-4">
-            <Hash className="size-7 text-gray-400" />
+          <div className="flex size-14 items-center justify-center rounded-2xl bg-muted-surface mb-4">
+            <Hash className="size-7 text-faint" />
           </div>
-          <h3 className="text-lg font-semibold text-gray-900">{t("还没有标签")}</h3>
-          <p className="mt-1 text-sm text-gray-500">
+          <h3 className="text-lg font-semibold text-strong">{t("还没有标签")}</h3>
+          <p className="mt-1 text-sm text-muted">
             {t("在上方输入框创建标签，用于标记和筛选链接")}
           </p>
         </div>
