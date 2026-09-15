@@ -21,7 +21,7 @@ type AliyunSender struct {
 
 func NewAliyunSender(accessKeyID, accessKeySecret, signName, templateCode string) (*AliyunSender, error) {
 	if accessKeyID == "" || accessKeySecret == "" {
-		return nil, errors.New("Aliyun SMS credentials are empty; set SMS_ACCESS_KEY_ID and SMS_ACCESS_KEY_SECRET")
+		return nil, errors.New("missing Aliyun AccessKey pair: set SMS_ACCESS_KEY_ID and SMS_ACCESS_KEY_SECRET")
 	}
 
 	// The signature and the template are not defaulted. This service (dypnsapi, "SMS verification") ships
@@ -30,10 +30,10 @@ func NewAliyunSender(accessKeyID, accessKeySecret, signName, templateCode string
 	// to do with "恒创联众" / "100001", converts "nobody configured this" into a provider rejection that
 	// looks like a broken account, which is how it went undiagnosed.
 	if signName == "" {
-		return nil, errors.New("SMS_SIGN_NAME is empty; copy the system-granted signature name from the PNVS console")
+		return nil, errors.New("missing SMS signature: copy the system-granted sign name from the PNVS console into SMS_SIGN_NAME")
 	}
 	if templateCode == "" {
-		return nil, errors.New("SMS_TEMPLATE_CODE is empty; copy the system-granted template code from the PNVS console")
+		return nil, errors.New("missing SMS template: copy the system-granted template code from the PNVS console into SMS_TEMPLATE_CODE")
 	}
 
 	config := &openapi.Config{
