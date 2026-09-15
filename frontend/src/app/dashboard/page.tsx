@@ -166,8 +166,8 @@ export default function DashboardPage() {
           <div className="flex size-16 items-center justify-center rounded-2xl bg-red-50 mb-4">
             <div className="text-3xl">😞</div>
           </div>
-          <h3 className="text-lg font-semibold text-gray-900">{t("加载失败")}</h3>
-          <p className="mt-1 text-sm text-gray-500">{t("请检查网络后重试")}</p>
+          <h3 className="text-lg font-semibold text-strong">{t("加载失败")}</h3>
+          <p className="mt-1 text-sm text-muted">{t("请检查网络后重试")}</p>
           <button
             onClick={() => mutate()}
             className="mt-4 text-sm font-medium text-indigo-600 hover:text-indigo-500"
@@ -183,13 +183,13 @@ export default function DashboardPage() {
         </div>
       ) : links.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-20 text-center">
-          <div className="flex size-16 items-center justify-center rounded-2xl bg-gray-100 mb-4">
-            <Link2 className="size-8 text-gray-400" />
+          <div className="flex size-16 items-center justify-center rounded-2xl bg-muted-surface mb-4">
+            <Link2 className="size-8 text-faint" />
           </div>
-          <h3 className="text-lg font-semibold text-gray-900">
+          <h3 className="text-lg font-semibold text-strong">
             {search ? t("没有匹配的链接") : t("创建你的第一个短链接")}
           </h3>
-          <p className="mt-1 text-sm text-gray-500 max-w-sm">
+          <p className="mt-1 text-sm text-muted max-w-sm">
             {search
               ? t("换个关键词试试")
               : t("缩短、分享并追踪你的链接，兼容微信、QQ、小红书等平台")}
@@ -208,17 +208,17 @@ export default function DashboardPage() {
         <div className="space-y-2">
           {/* Select all bar */}
           <div className="flex items-center gap-2 px-1">
-            <label className="flex items-center gap-2 text-sm text-gray-500 cursor-pointer select-none">
+            <label className="flex items-center gap-2 text-sm text-muted cursor-pointer select-none">
               <input
                 type="checkbox"
                 checked={links.length > 0 && selectedIds.size === links.length}
                 onChange={handleSelectAll}
-                className="size-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                className="size-4 rounded border-line-strong text-indigo-600 focus:ring-indigo-500 cursor-pointer"
               />
               {t("全选")}
             </label>
             {selectedIds.size > 0 && (
-              <span className="text-xs text-gray-400">{t("已选 {n} 条", { n: selectedIds.size })}</span>
+              <span className="text-xs text-faint">{t("已选 {n} 条", { n: selectedIds.size })}</span>
             )}
           </div>
 
@@ -235,13 +235,13 @@ export default function DashboardPage() {
 
           {/* Batch action bar */}
           {selectedIds.size > 0 && (
-            <div className="sticky bottom-0 flex items-center justify-between gap-3 rounded-xl bg-white border border-gray-200 shadow-lg p-4 mt-4">
-              <span className="text-sm font-medium text-gray-700">{t("已选 {n} 条链接", { n: selectedIds.size })}</span>
+            <div className="sticky bottom-0 flex items-center justify-between gap-3 rounded-xl bg-canvas border border-line shadow-lg p-4 mt-4">
+              <span className="text-sm font-medium text-body">{t("已选 {n} 条链接", { n: selectedIds.size })}</span>
               <div className="flex items-center gap-2">
                 <select
                   value={batchTagId}
                   onChange={(e) => setBatchTagId(Number(e.target.value))}
-                  className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm text-gray-600 focus:border-indigo-300 focus:outline-none bg-white"
+                  className="rounded-lg border border-line px-3 py-1.5 text-sm text-muted focus:border-indigo-300 focus:outline-none bg-canvas"
                 >
                   <option value={0}>{t("添加标签...")}</option>
                   {tags.map((tag: { id: number; name: string }) => (
@@ -257,7 +257,7 @@ export default function DashboardPage() {
                   {t("批量删除")}
                 </button>
                 <button onClick={() => setSelectedIds(new Set())}
-                  className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm text-gray-500 hover:bg-gray-50 transition">
+                  className="rounded-lg border border-line px-3 py-1.5 text-sm text-muted hover:bg-gray-50 transition">
                   {t("取消选择")}
                 </button>
               </div>
@@ -269,14 +269,14 @@ export default function DashboardPage() {
               <button
                 onClick={() => setPage((p) => Math.max(1, p - 1))}
                 disabled={page === 1}
-                className="px-3 py-1.5 text-sm rounded-lg border border-gray-200 bg-white hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition"
+                className="px-3 py-1.5 text-sm rounded-lg border border-line bg-canvas hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition"
               >
                 {t("上一页")}
               </button>
 
               {generatePageNumbers(page, totalPages).map((p, i) =>
                 p === null ? (
-                  <span key={`dot-${i}`} className="px-1 text-gray-400 text-sm">...</span>
+                  <span key={`dot-${i}`} className="px-1 text-faint text-sm">...</span>
                 ) : (
                   <button
                     key={p}
@@ -284,7 +284,7 @@ export default function DashboardPage() {
                     className={`min-w-[2rem] h-8 text-sm rounded-lg transition ${
                       p === page
                         ? "bg-indigo-600 text-white font-medium shadow-sm"
-                        : "border border-gray-200 bg-white hover:bg-gray-50 text-gray-600"
+                        : "border border-line bg-canvas hover:bg-gray-50 text-muted"
                     }`}
                   >
                     {p}
@@ -295,7 +295,7 @@ export default function DashboardPage() {
               <button
                 onClick={() => setPage((p) => p + 1)}
                 disabled={page >= totalPages}
-                className="px-3 py-1.5 text-sm rounded-lg border border-gray-200 bg-white hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition"
+                className="px-3 py-1.5 text-sm rounded-lg border border-line bg-canvas hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition"
               >
                 {t("下一页")}
               </button>

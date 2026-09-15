@@ -115,18 +115,18 @@ export default function CreateLinkPage() {
 
   return (
     <div className="max-w-4xl mx-auto">
-      <h1 className="text-2xl font-bold text-gray-900 mb-6">{t("创建短链接")}</h1>
+      <h1 className="text-2xl font-bold text-strong mb-6">{t("创建短链接")}</h1>
 
       <form onSubmit={handleSubmit}>
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+        <div className="bg-canvas rounded-2xl border border-line shadow-sm overflow-hidden">
           <div className="grid lg:grid-cols-5 divide-y lg:divide-y-0 lg:divide-x divide-gray-100">
 
             {/* ===== Left: Main ===== */}
             <div className="lg:col-span-3 p-6 sm:p-8 space-y-5">
-              <h2 className="text-sm font-semibold text-gray-900 uppercase tracking-wider">{t("基本信息")}</h2>
+              <h2 className="text-sm font-semibold text-strong uppercase tracking-wider">{t("基本信息")}</h2>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                <label className="block text-sm font-medium text-body mb-1.5">
                   {t("目标 URL")} <span className="text-red-500">*</span>
                 </label>
                 <input
@@ -136,19 +136,19 @@ export default function CreateLinkPage() {
                     setOriginalUrl(e.target.value);
                     setPreview(null);
                   }}
-                  className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition"
+                  className="w-full rounded-xl border border-line px-4 py-3 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition"
                   placeholder="https://example.com/your-long-url"
                   required
                 />
                 {/* Preview card */}
                 {(previewing || preview) && (
-                  <div className="mt-3 rounded-xl border border-gray-100 bg-gray-50/50 overflow-hidden">
+                  <div className="mt-3 rounded-xl border border-line bg-gray-50/50 overflow-hidden">
                     {previewing ? (
                       <div className="flex items-center gap-3 p-3">
-                        <div className="size-10 rounded-lg bg-gray-200 animate-pulse shrink-0" />
+                        <div className="size-10 rounded-lg bg-raised animate-pulse shrink-0" />
                         <div className="flex-1 space-y-2">
-                          <div className="h-4 w-48 bg-gray-200 rounded animate-pulse" />
-                          <div className="h-3 w-64 bg-gray-100 rounded animate-pulse" />
+                          <div className="h-4 w-48 bg-raised rounded animate-pulse" />
+                          <div className="h-3 w-64 bg-muted-surface rounded animate-pulse" />
                         </div>
                       </div>
                     ) : preview ? (
@@ -159,7 +159,7 @@ export default function CreateLinkPage() {
                             // cannot be pinned to it and next/image would add an unoptimized passthrough.
                             // eslint-disable-next-line @next/next/no-img-element
                             <img src={preview.image_url} alt=""
-                              className="size-16 rounded-lg object-cover border border-gray-200 shrink-0"
+                              className="size-16 rounded-lg object-cover border border-line shrink-0"
                               onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
                           )}
                           <div className="flex-1 min-w-0">
@@ -171,12 +171,12 @@ export default function CreateLinkPage() {
                                   className="size-4 rounded shrink-0"
                                   onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
                               )}
-                              <p className="text-sm font-medium text-gray-900 truncate">
+                              <p className="text-sm font-medium text-strong truncate">
                                 {preview.title || originalUrl}
                               </p>
                             </div>
                             {preview.description && (
-                              <p className="text-xs text-gray-500 mt-0.5 line-clamp-2">{preview.description}</p>
+                              <p className="text-xs text-muted mt-0.5 line-clamp-2">{preview.description}</p>
                             )}
                             <a href={safeHref(originalUrl)} target="_blank" rel="noopener noreferrer"
                               className="inline-flex items-center gap-1 text-xs text-indigo-500 hover:text-indigo-600 mt-1">
@@ -192,22 +192,22 @@ export default function CreateLinkPage() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">{t("标题")}</label>
+                <label className="block text-sm font-medium text-body mb-1.5">{t("标题")}</label>
                 <input
                   type="text"
                   value={title}
                   onChange={(e) => { titleRef.current = e.target.value; setTitle(e.target.value); }}
-                  className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition"
+                  className="w-full rounded-xl border border-line px-4 py-3 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition"
                   placeholder={t("我的推广链接")}
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">{t("描述")}</label>
+                <label className="block text-sm font-medium text-body mb-1.5">{t("描述")}</label>
                 <textarea
                   value={description}
                   onChange={(e) => { descriptionRef.current = e.target.value; setDescription(e.target.value); }}
-                  className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition resize-none"
+                  className="w-full rounded-xl border border-line px-4 py-3 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition resize-none"
                   placeholder={t("简短描述（可选）")}
                   rows={3}
                 />
@@ -216,16 +216,16 @@ export default function CreateLinkPage() {
               {/* Folder, Workspace & Tags */}
               <div className="grid grid-cols-3 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                  <label className="block text-sm font-medium text-body mb-1.5">
                     <span className="inline-flex items-center gap-1.5">
-                      <Folder className="size-3.5 text-gray-400" />
+                      <Folder className="size-3.5 text-faint" />
                       {t("文件夹")}
                     </span>
                   </label>
                   <select
                     value={folderId ?? ""}
                     onChange={(e) => setFolderId(e.target.value ? Number(e.target.value) : null)}
-                    className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition bg-white"
+                    className="w-full rounded-xl border border-line px-4 py-3 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition bg-canvas"
                   >
                     <option value="">{t("不分类")}</option>
                     {folders.map((f: { id: number; name: string }) => (
@@ -235,16 +235,16 @@ export default function CreateLinkPage() {
                 </div>
                 {workspaces.length > 0 && (
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                    <label className="block text-sm font-medium text-body mb-1.5">
                       <span className="inline-flex items-center gap-1.5">
-                        <Building2 className="size-3.5 text-gray-400" />
+                        <Building2 className="size-3.5 text-faint" />
                         {t("工作区")}
                       </span>
                     </label>
                     <select
                       value={workspaceId ?? ""}
                       onChange={(e) => setWorkspaceId(e.target.value ? Number(e.target.value) : null)}
-                      className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition bg-white"
+                      className="w-full rounded-xl border border-line px-4 py-3 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition bg-canvas"
                     >
                       <option value="">{t("默认")}</option>
                       {workspaces.map((w: { id: number; name: string }) => (
@@ -254,9 +254,9 @@ export default function CreateLinkPage() {
                   </div>
                 )}
                 <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                    <label className="block text-sm font-medium text-body mb-1.5">
                       <span className="inline-flex items-center gap-1.5">
-                        <Tags className="size-3.5 text-gray-400" />
+                        <Tags className="size-3.5 text-faint" />
                         {t("标签")}
                       </span>
                     </label>
@@ -268,7 +268,7 @@ export default function CreateLinkPage() {
                           setSelectedTagIds(prev => [...prev, id]);
                         }
                       }}
-                      className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition bg-white"
+                      className="w-full rounded-xl border border-line px-4 py-3 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition bg-canvas"
                     >
                       <option value="">{t("添加标签...")}</option>
                       {allTags.filter((t: { id: number }) => !selectedTagIds.includes(t.id)).map((t: { id: number; name: string; color: string }) => (
@@ -292,7 +292,7 @@ export default function CreateLinkPage() {
                       </div>
                     )}
                     {allTags.length === 0 && (
-                      <p className="text-xs text-gray-400 py-1">
+                      <p className="text-xs text-faint py-1">
                         {t("还没有标签，去")}<a href="/dashboard/tags" className="text-indigo-600 hover:underline ml-1">{t("标签管理")}</a>{t("创建")}
                       </p>
                     )}
@@ -300,18 +300,18 @@ export default function CreateLinkPage() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                <label className="block text-sm font-medium text-body mb-1.5">
                   <span className="inline-flex items-center gap-1.5">
-                    <Smartphone className="size-3.5 text-gray-400" />
+                    <Smartphone className="size-3.5 text-faint" />
                     {t("App 深度链接")}
                   </span>
                 </label>
                 <div className="grid grid-cols-2 gap-3">
                   <input type="text" value={iosUrl} onChange={(e) => setIosUrl(e.target.value)}
-                    className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm font-mono focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition"
+                    className="w-full rounded-xl border border-line px-4 py-3 text-sm font-mono focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition"
                     placeholder="iOS URL" />
                   <input type="text" value={androidUrl} onChange={(e) => setAndroidUrl(e.target.value)}
-                    className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm font-mono focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition"
+                    className="w-full rounded-xl border border-line px-4 py-3 text-sm font-mono focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition"
                     placeholder="Android URL" />
                 </div>
               </div>
@@ -319,20 +319,20 @@ export default function CreateLinkPage() {
 
             {/* ===== Right: Advanced ===== */}
             <div className="lg:col-span-2 p-6 sm:p-8 space-y-6 bg-gray-50/50">
-              <h2 className="text-sm font-semibold text-gray-900 uppercase tracking-wider">{t("高级选项")}</h2>
+              <h2 className="text-sm font-semibold text-strong uppercase tracking-wider">{t("高级选项")}</h2>
 
               {/* Domain */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                <label className="block text-sm font-medium text-body mb-1.5">
                   <span className="inline-flex items-center gap-1.5">
-                    <Globe className="size-3.5 text-gray-400" />
+                    <Globe className="size-3.5 text-faint" />
                     {t("域名")}
                   </span>
                 </label>
                 <select
                   value={domain}
                   onChange={(e) => setDomain(e.target.value)}
-                  className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition bg-white"
+                  className="w-full rounded-xl border border-line px-4 py-3 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition bg-canvas"
                 >
                   <option value="">{t("kada.click（默认）")}</option>
                   {verifiedDomains.map((d: { id: number; name: string }) => (
@@ -343,14 +343,14 @@ export default function CreateLinkPage() {
 
               {/* Short Code */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                <label className="block text-sm font-medium text-body mb-1.5">
                   <span className="inline-flex items-center gap-1.5">
-                    <Link2 className="size-3.5 text-gray-400" />
+                    <Link2 className="size-3.5 text-faint" />
                     {t("自定义短码")}
                   </span>
                 </label>
-                <div className="flex items-center rounded-xl border border-gray-200 bg-white overflow-hidden focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-500/20 transition">
-                  <span className="pl-4 pr-1 py-3 text-sm text-gray-400 font-mono select-none">
+                <div className="flex items-center rounded-xl border border-line bg-canvas overflow-hidden focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-500/20 transition">
+                  <span className="pl-4 pr-1 py-3 text-sm text-faint font-mono select-none">
                     {activeDomain}/r/
                   </span>
                   <input
@@ -368,7 +368,7 @@ export default function CreateLinkPage() {
                   </p>
                 )}
                 {!shortCode && (
-                  <p className="mt-1.5 text-xs text-gray-400">
+                  <p className="mt-1.5 text-xs text-faint">
                     {t("留空则自动生成 8 位随机短码")}
                   </p>
                 )}
@@ -376,9 +376,9 @@ export default function CreateLinkPage() {
 
               {/* Password */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                <label className="block text-sm font-medium text-body mb-1.5">
                   <span className="inline-flex items-center gap-1.5">
-                    <Shield className="size-3.5 text-gray-400" />
+                    <Shield className="size-3.5 text-faint" />
                     {t("密码保护")}
                   </span>
                 </label>
@@ -386,16 +386,16 @@ export default function CreateLinkPage() {
                   type="text"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition"
+                  className="w-full rounded-xl border border-line px-4 py-3 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition"
                   placeholder={t("留空则不加密")}
                 />
               </div>
 
               {/* Expiration */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                <label className="block text-sm font-medium text-body mb-1.5">
                   <span className="inline-flex items-center gap-1.5">
-                    <Clock className="size-3.5 text-gray-400" />
+                    <Clock className="size-3.5 text-faint" />
                     {t("过期时间")}
                   </span>
                 </label>
@@ -403,15 +403,15 @@ export default function CreateLinkPage() {
                   type="datetime-local"
                   value={expiresAt}
                   onChange={(e) => setExpiresAt(e.target.value)}
-                  className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition"
+                  className="w-full rounded-xl border border-line px-4 py-3 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition"
                 />
               </div>
 
               {/* UTM Template */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                <label className="block text-sm font-medium text-body mb-1.5">
                   <span className="inline-flex items-center gap-1.5">
-                    <Tags className="size-3.5 text-gray-400" />
+                    <Tags className="size-3.5 text-faint" />
                     {t("UTM 模板")}
                   </span>
                 </label>
@@ -420,7 +420,7 @@ export default function CreateLinkPage() {
                     <select
                       value={utmTemplateId ?? ""}
                       onChange={(e) => setUtmTemplateId(e.target.value ? Number(e.target.value) : null)}
-                      className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition bg-white"
+                      className="w-full rounded-xl border border-line px-4 py-3 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition bg-canvas"
                     >
                       <option value="">{t("不使用模板")}</option>
                       {utmTemplates.map((t: { id: number; name: string }) => (
@@ -444,7 +444,7 @@ export default function CreateLinkPage() {
                     )}
                   </div>
                 ) : (
-                  <p className="text-xs text-gray-400 py-2">
+                  <p className="text-xs text-faint py-2">
                     {t("还没有 UTM 模板，去")}<a href="/dashboard/utm" className="text-indigo-600 hover:underline ml-1">{t("UTM 模板")}</a>{t("创建")}
                   </p>
                 )}
@@ -453,11 +453,11 @@ export default function CreateLinkPage() {
           </div>
 
           {/* Footer */}
-          <div className="border-t border-gray-100 px-6 py-4 flex items-center justify-between bg-white">
+          <div className="border-t border-line px-6 py-4 flex items-center justify-between bg-canvas">
             <button
               type="button"
               onClick={() => router.back()}
-              className="text-sm text-gray-500 hover:text-gray-700 transition"
+              className="text-sm text-muted hover:text-body transition"
             >
               {t("取消")}
             </button>

@@ -72,34 +72,34 @@ export default function AnalyticsPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">{t("数据统计")}</h1>
-        <p className="text-sm text-gray-500 mt-1">{t("链接点击数据和概览")}</p>
+        <h1 className="text-2xl font-bold text-strong">{t("数据统计")}</h1>
+        <p className="text-sm text-muted mt-1">{t("链接点击数据和概览")}</p>
       </div>
 
       {/* Stat Cards */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         {statCards.map(({ label, value, icon: Icon, color }) => (
-          <div key={label} className="rounded-xl border border-gray-100 bg-white p-5 shadow-sm">
+          <div key={label} className="rounded-xl border border-line bg-canvas p-5 shadow-sm">
             <div className={`inline-flex size-10 items-center justify-center rounded-lg ${color}`}>
               <Icon className="size-5" />
             </div>
-            <p className="mt-3 text-2xl font-bold text-gray-900 tabular-nums">{value}</p>
-            <p className="mt-0.5 text-sm text-gray-500">{label}</p>
+            <p className="mt-3 text-2xl font-bold text-strong tabular-nums">{value}</p>
+            <p className="mt-0.5 text-sm text-muted">{label}</p>
           </div>
         ))}
       </div>
 
       <div className="grid gap-6 lg:grid-cols-5">
         {/* Platform Distribution */}
-        <div className="lg:col-span-2 rounded-xl border border-gray-100 bg-white shadow-sm">
-          <div className="border-b border-gray-100 px-5 py-4">
-            <h2 className="font-semibold text-gray-900">{t("平台来源分布")}</h2>
+        <div className="lg:col-span-2 rounded-xl border border-line bg-canvas shadow-sm">
+          <div className="border-b border-line px-5 py-4">
+            <h2 className="font-semibold text-strong">{t("平台来源分布")}</h2>
           </div>
           <div className="p-5">
             {platforms.length === 0 ? (
               <div className="flex flex-col items-center py-8 text-center">
                 <BarChart3 className="size-8 text-gray-300 mb-2" />
-                <p className="text-sm text-gray-500">{t("暂无点击数据")}</p>
+                <p className="text-sm text-muted">{t("暂无点击数据")}</p>
               </div>
             ) : (
               <div className="space-y-3">
@@ -108,10 +108,10 @@ export default function AnalyticsPage() {
                   return (
                     <div key={p.platform}>
                       <div className="flex justify-between text-sm mb-1">
-                        <span className="text-gray-600">{platformLabels[p.platform] || p.platform}</span>
-                        <span className="text-gray-900 font-medium">{p.count.toLocaleString()} <span className="text-xs text-gray-400">({pct}%)</span></span>
+                        <span className="text-muted">{platformLabels[p.platform] || p.platform}</span>
+                        <span className="text-strong font-medium">{p.count.toLocaleString()} <span className="text-xs text-faint">({pct}%)</span></span>
                       </div>
-                      <div className="h-2 rounded-full bg-gray-100 overflow-hidden">
+                      <div className="h-2 rounded-full bg-muted-surface overflow-hidden">
                         <div
                           className="h-full rounded-full bg-indigo-500 transition-all duration-500"
                           style={{ width: `${pct}%` }}
@@ -126,15 +126,15 @@ export default function AnalyticsPage() {
         </div>
 
         {/* Daily Clicks Chart */}
-        <div className="lg:col-span-3 rounded-xl border border-gray-100 bg-white shadow-sm">
-          <div className="border-b border-gray-100 px-5 py-4">
-            <h2 className="font-semibold text-gray-900">{t("每日点击量（近30天）")}</h2>
+        <div className="lg:col-span-3 rounded-xl border border-line bg-canvas shadow-sm">
+          <div className="border-b border-line px-5 py-4">
+            <h2 className="font-semibold text-strong">{t("每日点击量（近30天）")}</h2>
           </div>
           <div className="p-5">
             {daily.length === 0 ? (
               <div className="flex flex-col items-center py-12 text-center">
                 <BarChart3 className="size-8 text-gray-300 mb-2" />
-                <p className="text-sm text-gray-500">{t("暂无点击数据")}</p>
+                <p className="text-sm text-muted">{t("暂无点击数据")}</p>
               </div>
             ) : (
               <div className="flex items-end gap-1 h-40">
@@ -151,7 +151,7 @@ export default function AnalyticsPage() {
                             .replace("${d.count}", String(d.count))}
                         />
                       </div>
-                      <span className="text-[10px] text-gray-400 truncate w-full text-center">
+                      <span className="text-[10px] text-faint truncate w-full text-center">
                         {d.date.slice(5)}
                       </span>
                     </div>

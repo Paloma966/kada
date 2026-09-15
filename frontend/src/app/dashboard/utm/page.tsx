@@ -98,8 +98,8 @@ export default function UTMPage() {
     <div className="space-y-5">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">{t("UTM 模板")}</h1>
-          <p className="text-sm text-gray-500 mt-1">{t("管理 UTM 参数模板，创建链接时快速复用")}</p>
+          <h1 className="text-2xl font-bold text-strong">{t("UTM 模板")}</h1>
+          <p className="text-sm text-muted mt-1">{t("管理 UTM 参数模板，创建链接时快速复用")}</p>
         </div>
         <button
           onClick={() => setShowForm(true)}
@@ -112,12 +112,12 @@ export default function UTMPage() {
 
       {/* Create form modal-ish */}
       {showForm && (
-        <div className="rounded-xl border border-gray-100 bg-white shadow-sm p-6">
+        <div className="rounded-xl border border-line bg-canvas shadow-sm p-6">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="font-semibold text-gray-900">{t("新建 UTM 模板")}</h2>
+            <h2 className="font-semibold text-strong">{t("新建 UTM 模板")}</h2>
             <button
               onClick={resetForm}
-              className="p-1 rounded text-gray-400 hover:text-gray-600 transition"
+              className="p-1 rounded text-faint hover:text-muted transition"
             >
               <X className="size-5" />
             </button>
@@ -125,7 +125,7 @@ export default function UTMPage() {
 
           <div className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-body mb-1">
                 {t("模板名称 *")}
               </label>
               <input
@@ -133,14 +133,14 @@ export default function UTMPage() {
                 value={formName}
                 onChange={(e) => setFormName(e.target.value)}
                 placeholder={t("春季推广活动")}
-                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                className="w-full rounded-lg border border-line px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
               />
             </div>
 
             <div className="grid gap-4 sm:grid-cols-2">
               {UTM_FIELDS.map(({ key, label, placeholder }) => (
                 <div key={key}>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-body mb-1">
                     {label}
                   </label>
                   <input
@@ -150,7 +150,7 @@ export default function UTMPage() {
                       setFormValues((prev) => ({ ...prev, [key]: e.target.value }))
                     }
                     placeholder={placeholder}
-                    className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent font-mono"
+                    className="w-full rounded-lg border border-line px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent font-mono"
                   />
                 </div>
               ))}
@@ -166,7 +166,7 @@ export default function UTMPage() {
               </button>
               <button
                 onClick={resetForm}
-                className="text-sm text-gray-500 hover:text-gray-700 transition"
+                className="text-sm text-muted hover:text-body transition"
               >
                 {t("取消")}
               </button>
@@ -179,8 +179,8 @@ export default function UTMPage() {
       {error ? (
         <div className="flex flex-col items-center justify-center py-16 text-center">
           <div className="text-3xl mb-3">😞</div>
-          <h3 className="text-lg font-semibold text-gray-900">{t("加载失败")}</h3>
-          <p className="mt-1 text-sm text-gray-500">{t("请检查网络后重试")}</p>
+          <h3 className="text-lg font-semibold text-strong">{t("加载失败")}</h3>
+          <p className="mt-1 text-sm text-muted">{t("请检查网络后重试")}</p>
           <button
             onClick={() => mutate()}
             className="mt-3 text-sm font-medium text-indigo-600 hover:text-indigo-500"
@@ -193,20 +193,20 @@ export default function UTMPage() {
           {Array.from({ length: 3 }).map((_, i) => (
             <div
               key={i}
-              className="animate-pulse rounded-xl border border-gray-100 bg-white p-5 space-y-3"
+              className="animate-pulse rounded-xl border border-line bg-canvas p-5 space-y-3"
             >
-              <div className="h-5 w-32 rounded bg-gray-100" />
+              <div className="h-5 w-32 rounded bg-muted-surface" />
               <div className="h-4 w-64 rounded bg-gray-50" />
             </div>
           ))}
         </div>
       ) : templates.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-16 text-center">
-          <div className="flex size-14 items-center justify-center rounded-2xl bg-gray-100 mb-4">
-            <ArrowRightLeft className="size-7 text-gray-400" />
+          <div className="flex size-14 items-center justify-center rounded-2xl bg-muted-surface mb-4">
+            <ArrowRightLeft className="size-7 text-faint" />
           </div>
-          <h3 className="text-lg font-semibold text-gray-900">{t("还没有 UTM 模板")}</h3>
-          <p className="mt-1 text-sm text-gray-500 max-w-sm">
+          <h3 className="text-lg font-semibold text-strong">{t("还没有 UTM 模板")}</h3>
+          <p className="mt-1 text-sm text-muted max-w-sm">
             {t("保存常用的 UTM 参数组合，创建链接时一键应用，轻松追踪营销效果")}
           </p>
           <button
@@ -231,7 +231,7 @@ export default function UTMPage() {
             return (
               <div
                 key={tpl.id}
-                className="rounded-xl border border-gray-100 bg-white hover:border-gray-200 hover:shadow-sm transition"
+                className="rounded-xl border border-line bg-canvas hover:border-line hover:shadow-sm transition"
               >
                 <div
                   className="p-4 flex items-center gap-4 cursor-pointer"
@@ -243,12 +243,12 @@ export default function UTMPage() {
 
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
-                      <p className="text-sm font-medium text-gray-900">{tpl.name}</p>
-                      <span className="text-xs text-gray-400">
+                      <p className="text-sm font-medium text-strong">{tpl.name}</p>
+                      <span className="text-xs text-faint">
                         {t("{fieldsFilled} 个参数", { fieldsFilled })}
                       </span>
                     </div>
-                    <p className="text-xs text-gray-400 font-mono truncate mt-0.5">
+                    <p className="text-xs text-faint font-mono truncate mt-0.5">
                       {buildPreviewURL(tpl)}
                     </p>
                   </div>
@@ -261,7 +261,7 @@ export default function UTMPage() {
                         navigator.clipboard.writeText(buildPreviewURL(tpl));
                         toast.success(t("已复制参数到剪贴板"));
                       }}
-                      className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition"
+                      className="p-1.5 rounded-lg text-faint hover:text-muted hover:bg-muted-surface transition"
                       title={t("复制参数")}
                     >
                       <Copy className="size-3.5" />
@@ -285,7 +285,7 @@ export default function UTMPage() {
                             e.stopPropagation();
                             setDeletingId(null);
                           }}
-                          className="p-1 rounded text-gray-400 hover:bg-gray-200 transition"
+                          className="p-1 rounded text-faint hover:bg-raised transition"
                         >
                           <X className="size-3" />
                         </button>
@@ -296,7 +296,7 @@ export default function UTMPage() {
                           e.stopPropagation();
                           setDeletingId(tpl.id);
                         }}
-                        className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition"
+                        className="p-1.5 rounded-lg text-faint hover:text-red-500 hover:bg-red-50 transition"
                         title={t("删除")}
                       >
                         <Trash2 className="size-3.5" />
@@ -307,7 +307,7 @@ export default function UTMPage() {
 
                 {/* Expanded detail */}
                 {expandedId === tpl.id && (
-                  <div className="border-t border-gray-100 px-4 py-3">
+                  <div className="border-t border-line px-4 py-3">
                     <div className="grid gap-2 sm:grid-cols-2">
                       {[
                         { label: t("来源"), value: tpl.utm_source },
@@ -322,8 +322,8 @@ export default function UTMPage() {
                             key={label}
                             className="flex items-center gap-2 text-sm"
                           >
-                            <span className="text-gray-400 shrink-0">{label}</span>
-                            <code className="text-xs bg-gray-50 px-1.5 py-0.5 rounded text-gray-700 font-mono">
+                            <span className="text-faint shrink-0">{label}</span>
+                            <code className="text-xs bg-gray-50 px-1.5 py-0.5 rounded text-body font-mono">
                               {value}
                             </code>
                           </div>
