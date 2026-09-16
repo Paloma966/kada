@@ -1,14 +1,13 @@
 import asyncio
 import json
 import time
-from pydoc import text
 from fastapi import APIRouter,Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from app.config import settings
 from app.service import  llm,session
 
-route=APIRouter()
+router=APIRouter()
 #定义请求
 class ChatRequest(BaseModel):
     conversation_id: str | None=None
@@ -17,7 +16,7 @@ class ChatRequest(BaseModel):
 
 #SSE工具函数
 def _see(event:str,data:dict)->str:
-    return f"event:{event}\n data:{json.dumps(data,ensure_ascii=False)}"
+    return f"event:{event}\ndata:{json.dumps(data,ensure_ascii=False)}\n\n"
 #假流式输出
 async def mock_stream(message:str):
     text=(
@@ -30,22 +29,23 @@ async def mock_stream(message:str):
 #真模型
 async def real_stream(user_id: str,conv_id: str,messages:list):
     full_text=""
+    await  session.append_message(user_id,conv_id,"user",messages[-1]["content"])
     async for delta in llm.stream_chat(messages):
         full_text+=delta
         yield _see("token",{"delta":delta})
-        #会话记忆
-        await  session.append_message(user_id,conv_id,"user",messages[-1]["content"])
-        await  session.append_message(user_id,conv_id,"asssistant",full_text)
-        #结束事件
+    #会话记忆
+    if full_text:
+        await  session.append_message(user_id,conv_id,"assistant",full_text)
+    #结束事件
 
-        yield _see("done",{"conversation_id":conv_id,"usage":{"tokens":len(full_text)}})
+    yield _see("done",{"conversation_id":conv_id,"usage":{"tokens":len(full_text)}})
 #错误事件生成器
 async def _error_event(mes:str):
     yield _see("error",{"message":mes})
 
 
 #主接口
-@route.post("/v1/chat")
+@router.post("/v1/chat")
 async def chat(req:ChatRequest,request:Request):
     user_id=request.headers.get("X-Kada-User-ID","demo-user")
 #会话

@@ -1,13 +1,9 @@
 import json
 import uuid
-from unittest import result
-
-from nltk import data
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
-
 from app.config import settings
-from app.service.db import Conversation,Message,enging
+from app.service.db import Conversation,Message,engine
 from app.service.redis_client import get_redis
 
 #把用户的id放进key
@@ -23,8 +19,8 @@ async  def load_messages(user_id:str,conversation_id:str) ->list:
         data=await  r.get(key)
         if data:
             return json.loads(data)
-    #没找到取PostgreSQL找
-    async with AsyncSession(enging) as session:
+    #没找到去PostgreSQL找
+    async with AsyncSession(engine) as session:
         conv=(
             await  session.exec(
                 select(Conversation).where(
@@ -50,7 +46,7 @@ async  def load_messages(user_id:str,conversation_id:str) ->list:
 
 #写入会话记录
 async def new_conversation(user_id:str)->str:
-    async with AsyncSession(enging) as session:
+    async with AsyncSession(engine) as session:
         conv=Conversation(user_id=user_id)
         session.add(conv)
         await session.commit()
@@ -62,7 +58,7 @@ async def new_conversation(user_id:str)->str:
 async def append_message(user_id:str,conversation_id:str,role:str,content:str):
     cid=uuid.UUID(conversation_id)
     #写PostgreSQL
-    async  with AsyncSession(enging) as session:
+    async  with AsyncSession(engine) as session:
         conv=(
             await session.exec(
                 select(Conversation).where(

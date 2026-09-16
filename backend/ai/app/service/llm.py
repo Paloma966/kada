@@ -1,4 +1,4 @@
-from openai import AsyncOpenAI, base_url
+from openai import AsyncOpenAI
 
 from app.config import settings
 
@@ -19,10 +19,11 @@ async def stream_chat(messages:list):
     stream=await client.chat.completions.create(
         model=settings.CHAT_MODEL,
         messages=messages,
-        max_tokens=settings.AI_MAX_TOKENS
+        max_tokens=settings.AI_MAX_TOKENS,
+        stream=True
     )
     #取每次新生成的值
     async for chunk in stream:
-        delta=chunk.choices[0].delta.content if chunk.choice else None
+        delta=chunk.choices[0].delta.content if chunk.choices else None
         if delta:
             yield delta
