@@ -1,4 +1,5 @@
 // Resolves the API base URL.
+import { getUser } from "./auth";
 //
 // The three cases are deliberately distinct, because an empty value cannot express them:
 //
@@ -400,4 +401,57 @@ export const utmAPI = {
       method: "DELETE",
       token,
     }),
+};
+
+// ========== AI Chat API ==========
+// 开发期直连 Python AI 服务（http://localhost:8000），先看效果。
+// 注意：这里不能用 fetchAPI —— 它是 JSON 专用的，SSE 流会被它当 JSON 解析抛错。
+// 等 Go 网关做好后，把 URL 改成 "/api/ai/chat"、改用 Bearer token 即可。
+export const aiAPI = {
+  // 对话：SSE 流式，返回 Response 让页面自己读流（不能用 readJSON）
+  streamChat: (body: { conversation_id?: string; message: string }) => {
+    // Python 不认识 Kada 的 JWT，开发期直接传用户 id（拿不到就用 demo-user）
+    const uid = getUser()?.id ?? "demo-user";
+    return fetch("http://localhost:8000/v1/chat", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Kada-User-ID": String(uid),
+      },
+      body: JSON.stringify(body),
+    });
+  },
+
+  // 会话列表（JSON 接口，复用 readJSON 的错误处理）
+  listConversations: async () => {
+    const uid = getUser()?.id ?? "demo-user";
+    const url = "http://localhost:8000/v1/conversations";
+    const res = await fetch(url, { headers: { "X-Kada-User-ID": String(uid) } });
+    const data = await readJSON(res, url);
+    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+    return data;
+  },
+
+  // 单个会话的历史消息
+  getMessages: async (conversationId: string) => {
+    const uid = getUser()?.id ?? "demo-user";
+    const url = `http://localhost:8000/v1/conversations/${conversationId}/messages`;
+    const res = await fetch(url, { headers: { "X-Kada-User-ID": String(uid) } });
+    const data = await readJSON(res, url);
+    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+    return data;
+  },
+
+  // 删除会话
+  deleteConversation: async (conversationId: string) => {
+    const uid = getUser()?.id ?? "demo-user";
+    const url = `http://localhost:8000/v1/conversations/${conversationId}`;
+    const res = await fetch(url, {
+      method: "DELETE",
+      headers: { "X-Kada-User-ID": String(uid) },
+    });
+    const data = await readJSON(res, url);
+    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+    return data;
+  },
 };

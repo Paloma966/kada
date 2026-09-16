@@ -4,6 +4,8 @@ import time
 from fastapi import APIRouter,Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
+from starlette.responses import JSONResponse
+
 from app.config import settings
 from app.service import  llm,session
 
@@ -54,4 +56,25 @@ async def chat(req:ChatRequest,request:Request):
     messages=history+[{"role":"user","content":req.message}]
     gen=real_stream(user_id,conv_id,messages)
     return StreamingResponse(gen,media_type="text/event-stream")
+
+#会话列表
+@router.get("/v1/conversations")
+async def list_convs(request:Request):
+    user_id=request.headers.get("X-Kada-User-ID", "demo-user")
+    convs=await session.list_conversations(user_id)
+    return {"conversations":convs}
+#单会话历史
+@router.get("/v1/conversations/{conversation_id}/messages")
+async def get_conv(conversation_id:str ,request:Request):
+    user_id=request.headers.get("X-Kada-User-ID", "demo-user")
+    msgs=await session.load_messages(user_id,conversation_id)
+    return {"messages":msgs}
+
+@router.delete("/v1/conversations/{conversation_id}")
+async def delete_conv(conversation_id:str ,requset:Request):
+    user_id=requset.headers.get("X-Kada-User-ID", "demo-user")
+    ok=await session.delete_conversation(user_id,conversation_id)
+    if not ok:
+        return JSONResponse(status_code=404,content={"error":"会话不存在"})
+    return {"ok":True}
 
