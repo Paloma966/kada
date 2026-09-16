@@ -1,15 +1,17 @@
-from openai import AsyncOpenAI
 
 from app.config import settings
 from langchain_openai import ChatOpenAI
 #取大模型客户端
 _client=None
-def get_client()-> AsyncOpenAI:
+def get_client()-> ChatOpenAI:
     global _client
     if _client is None:
-        _client=AsyncOpenAI(
+        _client=ChatOpenAI(
+            model=settings.CHAT_MODEL,
             api_key=settings.DEEPSEEK_API_KEY,
             base_url=settings.DEEPSEEK_BASE_URL,
+            temperature=1.0,
+            streaming=True
         )
     return _client
 #流式输出
