@@ -12,6 +12,7 @@ import {
   Tag,
   ArrowRightLeft,
   Settings,
+  Sparkles,
   X,
   type LucideIcon,
 } from "lucide-react";
@@ -39,6 +40,7 @@ const NAV_SECTIONS: NavSection[] = [
         isActive: (pathname: string) =>
           pathname === "/dashboard" || pathname.startsWith("/dashboard/links"), },
       { name: "域名", href: "/dashboard/domains", icon: Globe },
+      { name: "AI 助手", href: "/dashboard/ai", icon: Sparkles },
     ],
   },
   {

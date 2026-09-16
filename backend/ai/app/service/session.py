@@ -82,3 +82,38 @@ async def append_message(user_id:str,conversation_id:str,role:str,content:str):
             messages.append({"role":role,"content":content})
             messages=messages[-settings.MAX_MESSAGES:]
             await r.set(key,json.dumps(messages,ensure_ascii=False),ex=settings.CACHE_TTL_SECONDS)
+#会话列表
+async def list_conversations(user_id:str)->list:
+    async with AsyncSession(engine)as session:
+        result=await session.exec(
+            select(Conversation)
+            .where(Conversation.user_id==user_id)
+            .order_by(Conversation.created_at.desc())
+        )
+        convs=result.all()
+    return[
+        {"conversation_id":str(c.id),"created_at":c.created_at.isoformat()}
+        for c in convs
+    ]
+#删除会话
+async def delete_conversation(user_id:str,conversation_id:str)->bool:
+    cid=uuid.UUID(conversation_id)
+    async with AsyncSession(engine) as session:
+        conv=(
+            await  session.exec(
+                select(Conversation).where(
+                    Conversation.id==cid,
+                    Conversation.user_id==user_id,
+                )
+            )
+        ).first()
+        if conv is None:
+            return False
+        await session.delete(conv)
+        await session.commit()
+    r=await get_redis()
+    if r is not   None:
+        await  r.delete(cache_key(user_id,conversation_id))
+    return True
+
+

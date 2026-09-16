@@ -8,6 +8,7 @@ import { Sidebar } from "./Sidebar";
 import { LanguageSwitcher } from "./LanguageSwitcher";
 import { getToken, getUser, removeToken } from "@/lib/auth";
 import { useT } from "@/lib/i18n";
+import { cn } from "@/lib/utils";
 import type { User as UserType } from "@/lib/auth";
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
@@ -70,6 +71,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     if (pathname.match(/^\/dashboard\/links\/\d+$/)) return t("链接详情");
     if (pathname === "/dashboard/analytics") return t("分析");
     if (pathname === "/dashboard/domains") return t("域名");
+    if (pathname === "/dashboard/ai") return t("AI 助手");
     if (pathname === "/dashboard/events") return t("事件");
     if (pathname === "/dashboard/customers") return t("客户");
     if (pathname === "/dashboard/folders") return t("文件夹");
@@ -167,7 +169,15 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
 
         {/* Content */}
         <main className="flex-1 overflow-y-auto">
-          <div className="mx-auto max-w-5xl px-4 sm:px-6 py-4 sm:py-6">
+          {/* AI 页面特殊处理：去掉居中限制和内边距，让页面贴边、占满剩余空间；
+              其他页面保持原来的 max-w-5xl 居中布局 */}
+          <div
+            className={cn(
+              pathname === "/dashboard/ai"
+                ? "h-full"
+                : "mx-auto max-w-5xl px-4 sm:px-6 py-4 sm:py-6"
+            )}
+          >
             {children}
           </div>
         </main>

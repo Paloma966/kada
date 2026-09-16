@@ -1,7 +1,7 @@
 from openai import AsyncOpenAI
 
 from app.config import settings
-
+from langchain_openai import ChatOpenAI
 #取大模型客户端
 _client=None
 def get_client()-> AsyncOpenAI:
@@ -10,9 +10,8 @@ def get_client()-> AsyncOpenAI:
         _client=AsyncOpenAI(
             api_key=settings.DEEPSEEK_API_KEY,
             base_url=settings.DEEPSEEK_BASE_URL,
-
         )
-        return _client
+    return _client
 #流式输出
 async def stream_chat(messages:list):
     client=get_client()
