@@ -10,7 +10,7 @@ async  def get_redis():
         try:
             _redis=aioredis.from_url(
                 settings.REDIS_URL,
-                decode_respose=True
+                decode_responses=True
             )
             await _redis.ping()
         except Exception:
