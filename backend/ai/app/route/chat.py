@@ -68,6 +68,7 @@ async def list_convs(request:Request):
     user_id=request.headers.get("X-Kada-User-ID", "demo-user")
     convs=await session.list_conversations(user_id)
     return {"conversations":convs}
+
 #单会话历史
 @router.get("/v1/conversations/{conversation_id}/messages")
 async def get_conv(conversation_id:str ,request:Request):
