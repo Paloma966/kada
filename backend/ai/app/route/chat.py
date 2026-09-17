@@ -1,6 +1,4 @@
-import asyncio
 import json
-import time
 
 from fastapi import APIRouter,Request
 from fastapi.responses import StreamingResponse
@@ -20,7 +18,7 @@ class ChatRequest(BaseModel):
     model:str |None=None
 #提示词
 prompt=ChatPromptTemplate.from_messages([
-    ("system","你是kada平台的ai助手，帮助用户分析和管理短链接数据。请用简体中文来回答要求简介准确"),
+    ("system","你是kada平台的ai助手，帮助用户分析和管理短链接数据。请用简体中文来回答要求简洁准确"),
     MessagesPlaceholder("history"),
     ("human","{input}"),
 ])
@@ -37,19 +35,10 @@ def to_langchain(history:list)->list:
 #SSE工具函数
 def _see(event:str,data:dict)->str:
     return f"event:{event}\ndata:{json.dumps(data,ensure_ascii=False)}\n\n"
-#假流式输出
-async def mock_stream(message:str):
-    text=(
-        f"你刚刚说了{message}"
-        "我主要是来验证一下SSE链路的后续我会改为真正的大模型来输出"
-    )
-    for ch in text:
-        yield _see("token",{"delta":ch})
-        await  asyncio.sleep(0.3)
 #真模型
 async def real_stream(user_id: str,conv_id: str,history,user_message:str):
     history_message=to_langchain(history)
-    chain=prompt|llm.get_client()
+    chain=prompt|llm.get_model()
     full_text=""
     async for chunk in chain.astream({"history":history_message,"input":user_message}):
         text=chunk.content if isinstance(chunk.content,str)else str(chunk.content)
@@ -93,4 +82,3 @@ async def delete_conv(conversation_id:str ,requset:Request):
     if not ok:
         return JSONResponse(status_code=404,content={"error":"会话不存在"})
     return {"ok":True}
-

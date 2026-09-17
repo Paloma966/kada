@@ -1,0 +1,10 @@
+# Kada AI 服务依赖
+# 安装：pip install -r requirements.txt
+fastapi>=0.115
+uvicorn[standard]>=0.30
+sqlmodel>=0.0.22
+asyncpg>=0.30
+redis>=5.0
+langchain>=0.3
+langchain-openai>=0.2
+langchain-core>=0.3
