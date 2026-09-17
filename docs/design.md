@@ -11,7 +11,7 @@ watch how they are clicked. This document explains how the system is put togethe
 - [6. Frontend](#6-frontend)
 - [7. Key flows](#7-key-flows)
 - [8. Cross-cutting decisions](#8-cross-cutting-decisions)
-- [9. Configuration](#9-configuration)
+- [9. Configuration](#9-configuration) 
 - [10. Deployment](#10-deployment)
 - [11. Testing](#11-testing)
 - [12. Known limitations](#12-known-limitations)
