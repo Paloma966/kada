@@ -35,6 +35,9 @@ frontend/.next/
 frontend/dist/
 frontend/out/
 
+# Screenshots and reports from frontend/scripts/capture-theme.mjs
+frontend/.theme-shots/
+
 # Logs
 *.log
 

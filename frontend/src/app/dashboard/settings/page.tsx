@@ -1,12 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import { User, Mail, Phone, Pencil, Check, X, Shield, Calendar, Key, Copy, Trash2, Plus, Building2, Globe } from "lucide-react";
+import { User, Mail, Phone, Pencil, Check, X, Shield, Calendar, Key, Copy, Trash2, Plus, Building2, Globe, Monitor, Moon, Sun } from "lucide-react";
 import { toast } from "sonner";
 import useSWR from "swr";
 import { authAPI, tokensAPI, workspacesAPI } from "@/lib/api";
 import { getToken, getUser, setUser } from "@/lib/auth";
 import { useT, useI18n } from "@/lib/i18n";
+import { useTheme } from "@/lib/theme";
 
 export default function SettingsPage() {
   const token = getToken();
@@ -14,6 +15,7 @@ export default function SettingsPage() {
   const t = useT();
   const { locale } = useI18n();
   const localeTag = locale === "en" ? "en-US" : "zh-CN";
+  const { theme, followsSystem, setTheme, useSystemTheme } = useTheme();
 
   const [editingName, setEditingName] = useState(false);
   // The initial value comes straight from the locally stored user profile, so no effect is needed to sync it
@@ -114,16 +116,16 @@ export default function SettingsPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">{t("设置")}</h1>
-        <p className="text-sm text-gray-500 mt-1">{t("管理你的个人信息")}</p>
+        <h1 className="text-2xl font-bold text-strong">{t("设置")}</h1>
+        <p className="text-sm text-muted mt-1">{t("管理你的个人信息")}</p>
       </div>
 
       {/* Profile Card */}
-      <div className="rounded-xl border border-gray-100 bg-white shadow-sm overflow-hidden">
-        <div className="border-b border-gray-100 px-6 py-4">
+      <div className="rounded-xl border border-line bg-canvas shadow-sm overflow-hidden">
+        <div className="border-b border-line px-6 py-4">
           <div className="flex items-center gap-2">
-            <User className="size-4 text-gray-500" />
-            <h2 className="font-semibold text-gray-900">{t("个人信息")}</h2>
+            <User className="size-4 text-muted" />
+            <h2 className="font-semibold text-strong">{t("个人信息")}</h2>
           </div>
         </div>
 
@@ -133,25 +135,25 @@ export default function SettingsPage() {
               {(savedUser?.name || savedUser?.email || "U")[0].toUpperCase()}
             </div>
             <div>
-              <p className="text-sm font-medium text-gray-900">
+              <p className="text-sm font-medium text-strong">
                 {savedUser?.name || savedUser?.email || t("用户")}
               </p>
-              <p className="text-xs text-gray-500">ID: {savedUser?.id}</p>
+              <p className="text-xs text-muted">ID: {savedUser?.id}</p>
             </div>
           </div>
 
           {/* Name */}
           <div className="flex items-center justify-between py-2">
             <div className="flex items-center gap-3 min-w-0">
-              <User className="size-4 text-gray-400 shrink-0" />
+              <User className="size-4 text-faint shrink-0" />
               <div className="min-w-0">
-                <p className="text-xs text-gray-500">{t("姓名")}</p>
+                <p className="text-xs text-muted">{t("姓名")}</p>
                 {editingName ? (
                   <div className="flex items-center gap-2 mt-1">
                     <input
                       type="text" value={name}
                       onChange={(e) => setName(e.target.value)}
-                      className="border border-gray-200 rounded-lg px-2 py-1 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent w-48"
+                      className="border border-line rounded-lg px-2 py-1 text-sm text-strong focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent w-48"
                       autoFocus
                       onKeyDown={(e) => {
                         if (e.key === "Enter") handleSaveName();
@@ -162,17 +164,17 @@ export default function SettingsPage() {
                       <Check className="size-3.5" />
                     </button>
                     <button onClick={() => { setEditingName(false); setName(savedUser?.name || ""); }}
-                      className="p-1 rounded text-gray-400 hover:bg-gray-100 transition">
+                      className="p-1 rounded text-faint hover:bg-muted-surface transition">
                       <X className="size-3.5" />
                     </button>
                   </div>
                 ) : (
                   <div className="flex items-center gap-2 mt-1">
-                    <p className="text-sm text-gray-900">
-                      {savedUser?.name || <span className="text-gray-400 italic">{t("未设置")}</span>}
+                    <p className="text-sm text-strong">
+                      {savedUser?.name || <span className="text-faint italic">{t("未设置")}</span>}
                     </p>
                     <button onClick={() => { setEditingName(true); setName(savedUser?.name || ""); }}
-                      className="p-1 rounded text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition">
+                      className="p-1 rounded text-faint hover:text-muted hover:bg-muted-surface transition">
                       <Pencil className="size-3" />
                     </button>
                   </div>
@@ -182,22 +184,62 @@ export default function SettingsPage() {
           </div>
 
           <div className="flex items-center gap-3 py-2">
-            <Mail className="size-4 text-gray-400 shrink-0" />
-            <div><p className="text-xs text-gray-500">{t("邮箱")}</p><p className="text-sm text-gray-900">{savedUser?.email || <span className="text-gray-400 italic">{t("未绑定")}</span>}</p></div>
+            <Mail className="size-4 text-faint shrink-0" />
+            <div><p className="text-xs text-muted">{t("邮箱")}</p><p className="text-sm text-strong">{savedUser?.email || <span className="text-faint italic">{t("未绑定")}</span>}</p></div>
           </div>
           <div className="flex items-center gap-3 py-2">
-            <Phone className="size-4 text-gray-400 shrink-0" />
-            <div><p className="text-xs text-gray-500">{t("手机号")}</p><p className="text-sm text-gray-900">{savedUser?.phone || <span className="text-gray-400 italic">{t("未绑定")}</span>}</p></div>
+            <Phone className="size-4 text-faint shrink-0" />
+            <div><p className="text-xs text-muted">{t("手机号")}</p><p className="text-sm text-strong">{savedUser?.phone || <span className="text-faint italic">{t("未绑定")}</span>}</p></div>
+          </div>
+        </div>
+      </div>
+
+      {/* Appearance Card. The default follows the browser's preference; choosing a theme pins it and
+          "Follow system" hands control back. */}
+      <div className="rounded-xl border border-line bg-canvas shadow-sm overflow-hidden">
+        <div className="border-b border-line px-6 py-4">
+          <div className="flex items-center gap-2">
+            <Sun className="size-4 text-muted" />
+            <h2 className="font-semibold text-strong">{t("外观")}</h2>
+          </div>
+        </div>
+
+        <div className="px-6 py-5 space-y-4">
+          <p className="text-sm text-muted">
+            {followsSystem
+              ? t("当前跟随浏览器的深浅色设置。")
+              : t("已手动选择，不再跟随浏览器设置。")}
+          </p>
+
+          <div className="flex flex-wrap gap-2">
+            <ThemeOption
+              active={followsSystem}
+              icon={<Monitor className="size-4" />}
+              label={t("跟随系统")}
+              onClick={useSystemTheme}
+            />
+            <ThemeOption
+              active={!followsSystem && theme === "light"}
+              icon={<Sun className="size-4" />}
+              label={t("浅色")}
+              onClick={() => setTheme("light")}
+            />
+            <ThemeOption
+              active={!followsSystem && theme === "dark"}
+              icon={<Moon className="size-4" />}
+              label={t("深色")}
+              onClick={() => setTheme("dark")}
+            />
           </div>
         </div>
       </div>
 
       {/* API Tokens Card */}
-      <div className="rounded-xl border border-gray-100 bg-white shadow-sm overflow-hidden">
-        <div className="border-b border-gray-100 px-6 py-4">
+      <div className="rounded-xl border border-line bg-canvas shadow-sm overflow-hidden">
+        <div className="border-b border-line px-6 py-4">
           <div className="flex items-center gap-2">
-            <Key className="size-4 text-gray-500" />
-            <h2 className="font-semibold text-gray-900">API Tokens</h2>
+            <Key className="size-4 text-muted" />
+            <h2 className="font-semibold text-strong">API Tokens</h2>
           </div>
         </div>
 
@@ -207,7 +249,7 @@ export default function SettingsPage() {
             <div className="rounded-xl bg-amber-50 border border-amber-200 p-4">
               <p className="text-sm font-medium text-amber-800 mb-2">{t("新 Token 已创建，仅显示一次，请立即复制保存：")}</p>
               <div className="flex items-center gap-2">
-                <code className="flex-1 bg-white rounded-lg px-3 py-2 text-sm font-mono text-gray-800 border border-amber-200 break-all">
+                <code className="flex-1 bg-canvas rounded-lg px-3 py-2 text-sm font-mono text-strong border border-amber-200 break-all">
                   {newToken}
                 </code>
                 <button
@@ -229,7 +271,7 @@ export default function SettingsPage() {
             <input
               type="text" value={newTokenName}
               onChange={(e) => setNewTokenName(e.target.value)}
-              className="flex-1 rounded-lg border border-gray-200 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition"
+              className="flex-1 rounded-lg border border-line px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition"
               placeholder={t("Token 名称，如：生产环境、本地开发")}
               onKeyDown={(e) => { if (e.key === "Enter") handleCreateToken(); }}
             />
@@ -248,15 +290,15 @@ export default function SettingsPage() {
               {tokens.map((tok: { id: number; name: string; last_used?: string; created_at: string }) => (
                 <div key={tok.id} className="flex items-center justify-between py-2 px-3 rounded-lg hover:bg-gray-50 transition">
                   <div>
-                    <p className="text-sm font-medium text-gray-900">{tok.name}</p>
-                    <p className="text-xs text-gray-400">
+                    <p className="text-sm font-medium text-strong">{tok.name}</p>
+                    <p className="text-xs text-faint">
                       {t("创建于 {date}", { date: new Date(tok.created_at).toLocaleDateString(localeTag) })}
                       {tok.last_used ? t(" · 最近使用 {date}", { date: new Date(tok.last_used).toLocaleDateString(localeTag) }) : t(" · 从未使用")}
                     </p>
                   </div>
                   <button
                     onClick={() => handleDeleteToken(tok.id)}
-                    className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition"
+                    className="p-1.5 rounded-lg text-faint hover:text-red-500 hover:bg-red-50 transition"
                   >
                     <Trash2 className="size-3.5" />
                   </button>
@@ -264,17 +306,17 @@ export default function SettingsPage() {
               ))}
             </div>
           ) : (
-            <p className="text-sm text-gray-400 py-2">{t("暂无 API Token，创建一个用于外部程序调用 API")}</p>
+            <p className="text-sm text-faint py-2">{t("暂无 API Token，创建一个用于外部程序调用 API")}</p>
           )}
         </div>
       </div>
 
       {/* Workspaces Card */}
-      <div className="rounded-xl border border-gray-100 bg-white shadow-sm overflow-hidden">
-        <div className="border-b border-gray-100 px-6 py-4">
+      <div className="rounded-xl border border-line bg-canvas shadow-sm overflow-hidden">
+        <div className="border-b border-line px-6 py-4">
           <div className="flex items-center gap-2">
-            <Building2 className="size-4 text-gray-500" />
-            <h2 className="font-semibold text-gray-900">{t("工作区")}</h2>
+            <Building2 className="size-4 text-muted" />
+            <h2 className="font-semibold text-strong">{t("工作区")}</h2>
           </div>
         </div>
 
@@ -284,14 +326,14 @@ export default function SettingsPage() {
             <input
               type="text" value={newWorkspaceName}
               onChange={(e) => setNewWorkspaceName(e.target.value)}
-              className="flex-1 rounded-lg border border-gray-200 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition"
+              className="flex-1 rounded-lg border border-line px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition"
               placeholder={t("工作区名称，如：个人项目")}
               onKeyDown={(e) => { if (e.key === "Enter") handleCreateWorkspace(); }}
             />
             <input
               type="text" value={newWorkspaceSlug}
               onChange={(e) => setNewWorkspaceSlug(e.target.value.replace(/[^a-z0-9-]/g, ""))}
-              className="w-36 rounded-lg border border-gray-200 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition font-mono"
+              className="w-36 rounded-lg border border-line px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition font-mono"
               placeholder="slug"
               onKeyDown={(e) => { if (e.key === "Enter") handleCreateWorkspace(); }}
             />
@@ -310,17 +352,17 @@ export default function SettingsPage() {
               {workspaces.map((w: { id: number; name: string; slug: string; link_count: number; created_at: string }) => (
                 <div key={w.id} className="flex items-center justify-between py-2 px-3 rounded-lg hover:bg-gray-50 transition">
                   <div className="flex items-center gap-2">
-                    <Globe className="size-4 text-gray-400" />
+                    <Globe className="size-4 text-faint" />
                     <div>
-                      <p className="text-sm font-medium text-gray-900">{w.name}</p>
-                      <p className="text-xs text-gray-400">
+                      <p className="text-sm font-medium text-strong">{w.name}</p>
+                      <p className="text-xs text-faint">
                         {t("{slug} · {count} 条链接 · {date}", { slug: w.slug, count: w.link_count ?? 0, date: new Date(w.created_at).toLocaleDateString(localeTag) })}
                       </p>
                     </div>
                   </div>
                   <button
                     onClick={() => handleDeleteWorkspace(w.id)}
-                    className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition"
+                    className="p-1.5 rounded-lg text-faint hover:text-red-500 hover:bg-red-50 transition"
                   >
                     <Trash2 className="size-3.5" />
                   </button>
@@ -328,30 +370,59 @@ export default function SettingsPage() {
               ))}
             </div>
           ) : (
-            <p className="text-sm text-gray-400 py-2">{t("暂无工作区，创建一个来组织你的链接")}</p>
+            <p className="text-sm text-faint py-2">{t("暂无工作区，创建一个来组织你的链接")}</p>
           )}
         </div>
       </div>
 
       {/* Account Info Card */}
-      <div className="rounded-xl border border-gray-100 bg-white shadow-sm overflow-hidden">
-        <div className="border-b border-gray-100 px-6 py-4">
+      <div className="rounded-xl border border-line bg-canvas shadow-sm overflow-hidden">
+        <div className="border-b border-line px-6 py-4">
           <div className="flex items-center gap-2">
-            <Shield className="size-4 text-gray-500" />
-            <h2 className="font-semibold text-gray-900">{t("账号信息")}</h2>
+            <Shield className="size-4 text-muted" />
+            <h2 className="font-semibold text-strong">{t("账号信息")}</h2>
           </div>
         </div>
         <div className="px-6 py-5 space-y-4">
           <div className="flex items-center gap-3 py-2">
-            <Calendar className="size-4 text-gray-400 shrink-0" />
-            <div><p className="text-xs text-gray-500">{t("注册时间")}</p><p className="text-sm text-gray-900">{savedUser?.created_at ? new Date(savedUser.created_at).toLocaleDateString(localeTag, { year: "numeric", month: "long", day: "numeric" }) : "—"}</p></div>
+            <Calendar className="size-4 text-faint shrink-0" />
+            <div><p className="text-xs text-muted">{t("注册时间")}</p><p className="text-sm text-strong">{savedUser?.created_at ? new Date(savedUser.created_at).toLocaleDateString(localeTag, { year: "numeric", month: "long", day: "numeric" }) : "—"}</p></div>
           </div>
           <div className="flex items-center gap-3 py-2">
-            <Shield className="size-4 text-gray-400 shrink-0" />
-            <div><p className="text-xs text-gray-500">{t("登录方式")}</p><p className="text-sm text-gray-900">{savedUser?.phone ? t("手机号验证码") : t("邮箱密码")}</p></div>
+            <Shield className="size-4 text-faint shrink-0" />
+            <div><p className="text-xs text-muted">{t("登录方式")}</p><p className="text-sm text-strong">{savedUser?.phone ? t("手机号验证码") : t("邮箱密码")}</p></div>
           </div>
         </div>
       </div>
     </div>
+  );
+}
+
+/** One of the three appearance choices. */
+function ThemeOption({
+  active,
+  icon,
+  label,
+  onClick,
+}: {
+  active: boolean;
+  icon: React.ReactNode;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-medium transition ${
+        active
+          ? "border-brand bg-brand-soft text-brand"
+          : "border-line text-muted hover:bg-muted-surface hover:text-strong"
+      }`}
+    >
+      {icon}
+      {label}
+    </button>
   );
 }

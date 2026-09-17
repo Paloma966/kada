@@ -220,8 +220,8 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
     return (
       <div className="max-w-2xl mx-auto">
         <div className="animate-pulse space-y-4">
-          <div className="h-6 w-24 bg-gray-200 rounded" />
-          <div className="h-64 bg-gray-100 rounded-xl" />
+          <div className="h-6 w-24 bg-raised rounded" />
+          <div className="h-64 bg-muted-surface rounded-xl" />
         </div>
       </div>
     );
@@ -231,7 +231,7 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
     return (
       <div className="max-w-2xl mx-auto text-center py-16">
         <div className="text-4xl mb-4">🔍</div>
-        <h2 className="text-lg font-medium text-gray-900">{t("链接不存在")}</h2>
+        <h2 className="text-lg font-medium text-strong">{t("链接不存在")}</h2>
         <Link href="/dashboard" className="inline-block mt-4 text-indigo-600 text-sm">{t("返回列表")}</Link>
       </div>
     );
@@ -239,27 +239,27 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
 
   return (
     <div className="max-w-2xl mx-auto space-y-6">
-      <Link href="/dashboard" className="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 transition">
+      <Link href="/dashboard" className="inline-flex items-center gap-1.5 text-sm text-muted hover:text-body transition">
         <ArrowLeft className="size-4" /> {t("返回链接列表")}
       </Link>
 
-      <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+      <div className="bg-canvas rounded-xl border border-line shadow-sm overflow-hidden">
         {/* Header */}
-        <div className="p-6 border-b border-gray-100">
+        <div className="p-6 border-b border-line">
           <div className="flex items-center justify-between gap-4">
             {editing ? (
               <input
                 type="text" value={editTitle}
                 onChange={(e) => setEditTitle(e.target.value)}
-                className="flex-1 text-xl font-bold text-gray-900 border-b-2 border-indigo-300 focus:border-indigo-500 focus:outline-none px-2 py-1"
+                className="flex-1 text-xl font-bold text-strong border-b-2 border-indigo-300 focus:border-indigo-500 focus:outline-none px-2 py-1"
                 placeholder={t("链接标题")} autoFocus
               />
             ) : (
               <div className="flex items-center gap-3 flex-1 min-w-0">
-                <h1 className="text-xl font-bold text-gray-900 truncate">{link.title || t("未命名链接")}</h1>
+                <h1 className="text-xl font-bold text-strong truncate">{link.title || t("未命名链接")}</h1>
                 <button onClick={handleToggleActive}
                   className={`shrink-0 inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium transition ${
-                    link.is_active ? "bg-emerald-50 text-emerald-700" : "bg-gray-100 text-gray-500"
+                    link.is_active ? "bg-emerald-50 text-emerald-700" : "bg-muted-surface text-muted"
                   }`}
                 >
                   {link.is_active ? t("启用中") : t("已停用")}
@@ -269,7 +269,7 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
             {editing ? (
               <div className="flex items-center gap-2 shrink-0">
                 <button onClick={() => setEditing(false)} disabled={saving}
-                  className="p-2 text-gray-400 hover:text-gray-600 transition"><X className="size-4" /></button>
+                  className="p-2 text-faint hover:text-muted transition"><X className="size-4" /></button>
                 <button onClick={handleSave} disabled={saving}
                   className="inline-flex items-center gap-1 px-4 py-2 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition disabled:opacity-50">
                   <Save className="size-3.5" /> {saving ? t("保存中...") : t("保存")}
@@ -277,7 +277,7 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
               </div>
             ) : (
               <button onClick={() => setEditing(true)}
-                className="p-2 text-gray-400 hover:text-indigo-600 transition shrink-0"><Pencil className="size-4" /></button>
+                className="p-2 text-faint hover:text-indigo-600 transition shrink-0"><Pencil className="size-4" /></button>
             )}
           </div>
 
@@ -311,37 +311,37 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
         </div>
 
         {/* Stats row */}
-        <div className="grid grid-cols-3 divide-x border-b border-gray-100">
+        <div className="grid grid-cols-3 divide-x border-b border-line">
           <div className="p-4 text-center">
-            <p className="text-2xl font-bold text-gray-900 tabular-nums">{link.click_count.toLocaleString()}</p>
-            <p className="text-xs text-gray-500 mt-0.5">{t("总点击")}</p>
+            <p className="text-2xl font-bold text-strong tabular-nums">{link.click_count.toLocaleString()}</p>
+            <p className="text-xs text-muted mt-0.5">{t("总点击")}</p>
           </div>
           <div className="p-4 text-center">
-            <p className="text-sm font-bold text-gray-900">{new Date(link.created_at).toLocaleDateString(dateLocale)}</p>
-            <p className="text-xs text-gray-500 mt-0.5">{t("创建日期")}</p>
+            <p className="text-sm font-bold text-strong">{new Date(link.created_at).toLocaleDateString(dateLocale)}</p>
+            <p className="text-xs text-muted mt-0.5">{t("创建日期")}</p>
           </div>
           <div className="p-4 text-center">
             <button
               onClick={() => setShowAnalytics(!showAnalytics)}
-              className={`text-sm font-bold transition ${showAnalytics ? "text-indigo-600" : "text-gray-900"}`}
+              className={`text-sm font-bold transition ${showAnalytics ? "text-indigo-600" : "text-strong"}`}
             >
               <BarChart3 className="size-4 inline mr-1" />
               {t("统计")}
             </button>
-            <p className="text-xs text-gray-500 mt-0.5">{t("点击详情")}</p>
+            <p className="text-xs text-muted mt-0.5">{t("点击详情")}</p>
           </div>
         </div>
 
         {/* Per-link analytics */}
         {showAnalytics && (
-          <div className="p-6 border-b border-gray-100 bg-gray-50/50 space-y-4">
-            <h3 className="text-sm font-semibold text-gray-900">{t("点击统计")}</h3>
+          <div className="p-6 border-b border-line bg-gray-50/50 space-y-4">
+            <h3 className="text-sm font-semibold text-strong">{t("点击统计")}</h3>
             {clickData ? (
               <>
                 {/* Daily chart */}
                 {clickData.daily.length > 0 && (
                   <div>
-                    <p className="text-xs text-gray-500 mb-2">{t("每日点击量（近30天）")}</p>
+                    <p className="text-xs text-muted mb-2">{t("每日点击量（近30天）")}</p>
                     <div className="flex items-end gap-1 h-24">
                       {clickData.daily.map((d) => {
                         const max = Math.max(...clickData.daily.map(dd => dd.count), 1);
@@ -352,7 +352,7 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
                               <div className="w-full rounded-t bg-indigo-500 min-h-[2px]" style={{ height: `${Math.max(h, 1)}%` }}
                                 title={`${d.date}: ${d.count} ${t("点击")}`} />
                             </div>
-                            <span className="text-[9px] text-gray-400 truncate w-full text-center">{d.date.slice(5)}</span>
+                            <span className="text-[9px] text-faint truncate w-full text-center">{d.date.slice(5)}</span>
                           </div>
                         );
                       })}
@@ -362,18 +362,18 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
                 {/* Platforms */}
                 {clickData.platforms.length > 0 && (
                   <div>
-                    <p className="text-xs text-gray-500 mb-2">{t("平台分布")}</p>
+                    <p className="text-xs text-muted mb-2">{t("平台分布")}</p>
                     <div className="space-y-1.5">
                       {clickData.platforms.map((p) => {
                         const total = clickData.platforms.reduce((s, pp) => s + pp.count, 0);
                         const pct = total > 0 ? Math.round((p.count / total) * 100) : 0;
                         return (
                           <div key={p.platform} className="flex items-center gap-2 text-xs">
-                            <span className="w-14 text-gray-500">{platformLabels[p.platform] || p.platform}</span>
-                            <div className="flex-1 h-1.5 rounded-full bg-gray-200 overflow-hidden">
+                            <span className="w-14 text-muted">{platformLabels[p.platform] || p.platform}</span>
+                            <div className="flex-1 h-1.5 rounded-full bg-raised overflow-hidden">
                               <div className="h-full rounded-full bg-indigo-500" style={{ width: `${pct}%` }} />
                             </div>
-                            <span className="w-10 text-right text-gray-500 tabular-nums">{p.count}</span>
+                            <span className="w-10 text-right text-muted tabular-nums">{p.count}</span>
                           </div>
                         );
                       })}
@@ -381,7 +381,7 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
                   </div>
                 )}
                 {clickData.daily.length === 0 && clickData.platforms.length === 0 && (
-                  <p className="text-xs text-gray-400 py-2">{t("暂无点击数据")}</p>
+                  <p className="text-xs text-faint py-2">{t("暂无点击数据")}</p>
                 )}
               </>
             ) : (
@@ -394,26 +394,26 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
 
         {/* Edit form */}
         {editing && (
-          <div className="p-6 border-b border-gray-100 bg-gray-50/50 space-y-4">
+          <div className="p-6 border-b border-line bg-gray-50/50 space-y-4">
             <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">{t("目标 URL")}</label>
+              <label className="block text-xs font-medium text-muted mb-1">{t("目标 URL")}</label>
               <input type="url" value={editOriginalUrl} onChange={(e) => setEditOriginalUrl(e.target.value)}
-                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition" />
+                className="w-full rounded-lg border border-line px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition" />
             </div>
             <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">{t("描述")}</label>
+              <label className="block text-xs font-medium text-muted mb-1">{t("描述")}</label>
               <textarea value={editDescription} onChange={(e) => setEditDescription(e.target.value)}
-                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition" rows={2} />
+                className="w-full rounded-lg border border-line px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition" rows={2} />
             </div>
 
             {/* Folder + Workspace + Tags edit */}
             <div className="grid gap-4 sm:grid-cols-3">
               <div>
-                <label className="block text-xs font-medium text-gray-500 mb-1">{t("文件夹")}</label>
+                <label className="block text-xs font-medium text-muted mb-1">{t("文件夹")}</label>
                 <select
                   value={editFolderId ?? ""}
                   onChange={(e) => setEditFolderId(e.target.value ? Number(e.target.value) : null)}
-                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition bg-white"
+                  className="w-full rounded-lg border border-line px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition bg-canvas"
                 >
                   <option value="">{t("不分类")}</option>
                   {folders.map((f: { id: number; name: string }) => (
@@ -423,11 +423,11 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
               </div>
               {workspaces.length > 0 && (
                 <div>
-                  <label className="block text-xs font-medium text-gray-500 mb-1">{t("工作区")}</label>
+                  <label className="block text-xs font-medium text-muted mb-1">{t("工作区")}</label>
                   <select
                     value={editWorkspaceId ?? ""}
                     onChange={(e) => setEditWorkspaceId(e.target.value ? Number(e.target.value) : null)}
-                    className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition bg-white"
+                    className="w-full rounded-lg border border-line px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition bg-canvas"
                   >
                     <option value="">{t("默认")}</option>
                     {workspaces.map((w: { id: number; name: string }) => (
@@ -437,7 +437,7 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
                 </div>
               )}
               <div>
-                <label className="block text-xs font-medium text-gray-500 mb-1">{t("标签")}</label>
+                <label className="block text-xs font-medium text-muted mb-1">{t("标签")}</label>
                 <select
                   value=""
                   onChange={(e) => {
@@ -446,7 +446,7 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
                       setEditTagIds(prev => [...prev, id]);
                     }
                   }}
-                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition bg-white"
+                  className="w-full rounded-lg border border-line px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition bg-canvas"
                 >
                   <option value="">{t("添加标签...")}</option>
                   {allTags.filter((tag: { id: number }) => !editTagIds.includes(tag.id)).map((tag: { id: number; name: string }) => (
@@ -474,15 +474,15 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
 
             <div className="grid gap-4 sm:grid-cols-2">
               <div>
-                <label className="block text-xs font-medium text-gray-500 mb-1">{t("密码保护")}</label>
+                <label className="block text-xs font-medium text-muted mb-1">{t("密码保护")}</label>
                 <input type="text" value={editPassword} onChange={(e) => setEditPassword(e.target.value)}
-                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition"
+                  className="w-full rounded-lg border border-line px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition"
                   placeholder={t("留空则不加密")} />
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-500 mb-1">{t("过期时间")}</label>
+                <label className="block text-xs font-medium text-muted mb-1">{t("过期时间")}</label>
                 <input type="datetime-local" value={editExpiresAt} onChange={(e) => setEditExpiresAt(e.target.value)}
-                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition" />
+                  className="w-full rounded-lg border border-line px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition" />
               </div>
             </div>
 
@@ -495,15 +495,15 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
             {editShowAdvanced && (
               <div className="space-y-4 pt-2">
                 <div>
-                  <label className="block text-xs font-medium text-gray-500 mb-1">{t("短码")}</label>
+                  <label className="block text-xs font-medium text-muted mb-1">{t("短码")}</label>
                   <input type="text" value={editShortCode} onChange={(e) => setEditShortCode(e.target.value.replace(/[^a-zA-Z0-9_-]/g, ""))}
-                    className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-mono focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition"
+                    className="w-full rounded-lg border border-line px-3 py-2 text-sm font-mono focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition"
                     placeholder={t("修改短码")} />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-500 mb-1">{t("域名")}</label>
+                  <label className="block text-xs font-medium text-muted mb-1">{t("域名")}</label>
                   <select value={editDomain} onChange={(e) => setEditDomain(e.target.value)}
-                    className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition bg-white">
+                    className="w-full rounded-lg border border-line px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition bg-canvas">
                     <option value="">{t("kada.click（默认）")}</option>
                     {verifiedDomains.map((d: { id: number; name: string }) => (
                       <option key={d.id} value={d.name}>{d.name}</option>
@@ -518,22 +518,22 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
                     ["utm_content", t("内容"), editUtmContent, setEditUtmContent],
                   ].map(([key, label, value, setter]) => (
                     <div key={key as string}>
-                      <label className="block text-xs font-medium text-gray-500 mb-1">UTM {label as string}</label>
+                      <label className="block text-xs font-medium text-muted mb-1">UTM {label as string}</label>
                       <input type="text" value={value as string} onChange={(e) => (setter as (v: string) => void)(e.target.value)}
-                        className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-mono focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition" />
+                        className="w-full rounded-lg border border-line px-3 py-2 text-sm font-mono focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition" />
                     </div>
                   ))}
                 </div>
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div>
-                    <label className="block text-xs font-medium text-gray-500 mb-1">{t("iOS 深度链接")}</label>
+                    <label className="block text-xs font-medium text-muted mb-1">{t("iOS 深度链接")}</label>
                     <input type="text" value={editIosUrl} onChange={(e) => setEditIosUrl(e.target.value)}
-                      className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-mono focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition" />
+                      className="w-full rounded-lg border border-line px-3 py-2 text-sm font-mono focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition" />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-gray-500 mb-1">{t("Android 深度链接")}</label>
+                    <label className="block text-xs font-medium text-muted mb-1">{t("Android 深度链接")}</label>
                     <input type="text" value={editAndroidUrl} onChange={(e) => setEditAndroidUrl(e.target.value)}
-                      className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-mono focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition" />
+                      className="w-full rounded-lg border border-line px-3 py-2 text-sm font-mono focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition" />
                   </div>
                 </div>
               </div>
@@ -553,17 +553,17 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
             { label: t("密码保护"), value: link.password_hash ? t("已设置") : t("未设置"), icon: Shield },
           ].filter(({ value }) => value).map(({ label, value, icon: Icon, mono }) => (
             <div key={label} className="flex items-center justify-between py-1.5 text-sm">
-              <span className="text-gray-500 flex items-center gap-1.5">
+              <span className="text-muted flex items-center gap-1.5">
                 {Icon && <Icon className="size-3.5" />}{label}
               </span>
-              <span className={`text-gray-900 ${mono ? "font-mono" : ""}`}>{value}</span>
+              <span className={`text-strong ${mono ? "font-mono" : ""}`}>{value}</span>
             </div>
           ))}
 
           {/* UTM */}
           {[link.utm_source, link.utm_medium, link.utm_campaign, link.utm_term, link.utm_content].some(Boolean) && (
             <div className="mt-3 pt-3 border-t">
-              <p className="text-xs font-medium text-gray-500 mb-2 flex items-center gap-1.5">
+              <p className="text-xs font-medium text-muted mb-2 flex items-center gap-1.5">
                 <Tags className="size-3.5" />{t("UTM 参数")}
               </p>
               {[
@@ -571,8 +571,8 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
                 [t("关键词"), link.utm_term], [t("内容"), link.utm_content],
               ].filter(([, v]) => v).map(([k, v]) => (
                 <div key={k} className="flex items-center justify-between py-1 text-sm">
-                  <span className="text-gray-400 text-xs">{k}</span>
-                  <code className="text-xs text-gray-700 font-mono">{v}</code>
+                  <span className="text-faint text-xs">{k}</span>
+                  <code className="text-xs text-body font-mono">{v}</code>
                 </div>
               ))}
             </div>
@@ -581,17 +581,17 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
           {/* Deep links */}
           {(link.ios_url || link.android_url) && (
             <div className="mt-3 pt-3 border-t">
-              <p className="text-xs font-medium text-gray-500 mb-2 flex items-center gap-1.5">
+              <p className="text-xs font-medium text-muted mb-2 flex items-center gap-1.5">
                 <Smartphone className="size-3.5" />{t("深度链接")}
               </p>
-              {link.ios_url && <div className="flex justify-between py-1 text-sm"><span className="text-gray-400 text-xs">iOS</span><code className="text-xs text-gray-700">{link.ios_url}</code></div>}
-              {link.android_url && <div className="flex justify-between py-1 text-sm"><span className="text-gray-400 text-xs">Android</span><code className="text-xs text-gray-700">{link.android_url}</code></div>}
+              {link.ios_url && <div className="flex justify-between py-1 text-sm"><span className="text-faint text-xs">iOS</span><code className="text-xs text-body">{link.ios_url}</code></div>}
+              {link.android_url && <div className="flex justify-between py-1 text-sm"><span className="text-faint text-xs">Android</span><code className="text-xs text-body">{link.android_url}</code></div>}
             </div>
           )}
 
           {/* Target URL */}
           <div className="mt-3 pt-3 border-t">
-            <p className="text-xs font-medium text-gray-500 mb-1">{t("目标 URL")}</p>
+            <p className="text-xs font-medium text-muted mb-1">{t("目标 URL")}</p>
             <a href={safeHref(link.original_url)} target="_blank" rel="noopener noreferrer" className="text-indigo-600 text-sm break-all hover:underline">
               {link.original_url}
             </a>
@@ -603,20 +603,20 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
       {showQR && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
           onClick={() => { setShowQR(false); setQrURL(null); }}>
-          <div className="bg-white rounded-2xl shadow-xl p-6 max-w-sm w-full mx-4" onClick={(e) => e.stopPropagation()}>
+          <div className="bg-canvas rounded-2xl shadow-xl p-6 max-w-sm w-full mx-4" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
-              <h3 className="font-semibold text-gray-900">{t("二维码")}</h3>
-              <button onClick={() => { setShowQR(false); setQrURL(null); }} className="p-1.5 rounded-lg text-gray-400 hover:bg-gray-100 transition"><X className="size-4" /></button>
+              <h3 className="font-semibold text-strong">{t("二维码")}</h3>
+              <button onClick={() => { setShowQR(false); setQrURL(null); }} className="p-1.5 rounded-lg text-faint hover:bg-muted-surface transition"><X className="size-4" /></button>
             </div>
             <div className="flex flex-col items-center gap-4">
-              <div className="bg-white border border-gray-100 rounded-xl p-3">
+              <div className="bg-canvas border border-line rounded-xl p-3">
                 {/* A data: URL built locally by qrcode's canvas: no remote host to allowlist and nothing
                     for the optimizer to fetch, so next/image is used as a passthrough. */}
                 {qrURL ? <Image src={qrURL} alt="QR" width={224} height={224} unoptimized />
                   : <div className="size-56 flex items-center justify-center">
                     <div className="size-8 animate-spin rounded-full border-2 border-indigo-600 border-t-transparent" /></div>}
               </div>
-              <p className="text-sm font-mono text-gray-600 break-all text-center">{link.short_url}</p>
+              <p className="text-sm font-mono text-muted break-all text-center">{link.short_url}</p>
               {qrURL && (
                 <a href={qrURL} download={`kada-${link.short_code}.png`}
                   className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 transition">

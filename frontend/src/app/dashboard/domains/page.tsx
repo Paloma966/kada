@@ -81,8 +81,8 @@ export default function DomainsPage() {
     <div className="space-y-5">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">{t("域名")}</h1>
-          <p className="text-sm text-gray-500 mt-1">{t("管理你的自定义域名")}</p>
+          <h1 className="text-2xl font-bold text-strong">{t("域名")}</h1>
+          <p className="text-sm text-muted mt-1">{t("管理你的自定义域名")}</p>
         </div>
         <button
           onClick={() => setShowGuide(!showGuide)}
@@ -119,7 +119,7 @@ export default function DomainsPage() {
       )}
 
       {/* Add domain */}
-      <div className="rounded-xl border border-gray-100 bg-white shadow-sm p-4">
+      <div className="rounded-xl border border-line bg-canvas shadow-sm p-4">
         <form
           onSubmit={(e) => {
             e.preventDefault();
@@ -135,7 +135,7 @@ export default function DomainsPage() {
             value={newDomain}
             onChange={(e) => setNewDomain(e.target.value)}
             placeholder="s.example.com"
-            className="flex-1 border-none bg-transparent text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none font-mono"
+            className="flex-1 border-none bg-transparent text-sm text-strong placeholder:text-faint focus:outline-none font-mono"
           />
           <button
             type="submit"
@@ -152,8 +152,8 @@ export default function DomainsPage() {
       {error ? (
         <div className="flex flex-col items-center justify-center py-16 text-center">
           <div className="text-3xl mb-3">😞</div>
-          <h3 className="text-lg font-semibold text-gray-900">{t("加载失败")}</h3>
-          <p className="mt-1 text-sm text-gray-500">{t("请检查网络后重试")}</p>
+          <h3 className="text-lg font-semibold text-strong">{t("加载失败")}</h3>
+          <p className="mt-1 text-sm text-muted">{t("请检查网络后重试")}</p>
           <button
             onClick={() => mutate()}
             className="mt-3 text-sm font-medium text-indigo-600 hover:text-indigo-500"
@@ -166,11 +166,11 @@ export default function DomainsPage() {
           {Array.from({ length: 3 }).map((_, i) => (
             <div
               key={i}
-              className="animate-pulse rounded-xl border border-gray-100 bg-white p-4 flex items-center gap-4"
+              className="animate-pulse rounded-xl border border-line bg-canvas p-4 flex items-center gap-4"
             >
-              <div className="size-9 rounded-lg bg-gray-100" />
+              <div className="size-9 rounded-lg bg-muted-surface" />
               <div className="flex-1 space-y-2">
-                <div className="h-4 w-40 rounded bg-gray-100" />
+                <div className="h-4 w-40 rounded bg-muted-surface" />
                 <div className="h-3 w-24 rounded bg-gray-50" />
               </div>
             </div>
@@ -178,11 +178,11 @@ export default function DomainsPage() {
         </div>
       ) : domains.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-16 text-center">
-          <div className="flex size-14 items-center justify-center rounded-2xl bg-gray-100 mb-4">
-            <Globe className="size-7 text-gray-400" />
+          <div className="flex size-14 items-center justify-center rounded-2xl bg-muted-surface mb-4">
+            <Globe className="size-7 text-faint" />
           </div>
-          <h3 className="text-lg font-semibold text-gray-900">{t("还没有自定义域名")}</h3>
-          <p className="mt-1 text-sm text-gray-500 max-w-sm">
+          <h3 className="text-lg font-semibold text-strong">{t("还没有自定义域名")}</h3>
+          <p className="mt-1 text-sm text-muted max-w-sm">
             {t("绑定你自己的域名来创建品牌短链接，在上方输入框添加")}
           </p>
         </div>
@@ -191,7 +191,7 @@ export default function DomainsPage() {
           {domains.map((d) => (
             <div
               key={d.id}
-              className="group rounded-xl border border-gray-100 bg-white p-4 flex items-center gap-4 hover:border-gray-200 hover:shadow-sm transition"
+              className="group rounded-xl border border-line bg-canvas p-4 flex items-center gap-4 hover:border-line hover:shadow-sm transition"
             >
               <div className="flex size-9 items-center justify-center rounded-lg bg-sky-50 shrink-0">
                 <Globe className="size-4 text-sky-600" />
@@ -199,7 +199,7 @@ export default function DomainsPage() {
 
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
-                  <p className="text-sm font-mono font-medium text-gray-900 truncate">
+                  <p className="text-sm font-mono font-medium text-strong truncate">
                     {d.name}
                   </p>
                   {d.verified ? (
@@ -214,7 +214,7 @@ export default function DomainsPage() {
                     </span>
                   )}
                 </div>
-                <p className="text-xs text-gray-400 mt-0.5">
+                <p className="text-xs text-faint mt-0.5">
                   {d.verified
                     ? `${t("验证于 ")}${new Date(d.verified_at!).toLocaleDateString(localeTag)}`
                     : t("请将域名 CNAME 解析到服务器并点击验证")}
@@ -243,7 +243,7 @@ export default function DomainsPage() {
                     </button>
                     <button
                       onClick={() => setDeletingId(null)}
-                      className="p-1 rounded text-gray-400 hover:bg-gray-200 transition"
+                      className="p-1 rounded text-faint hover:bg-raised transition"
                     >
                       <X className="size-3" />
                     </button>
@@ -251,7 +251,7 @@ export default function DomainsPage() {
                 ) : (
                   <button
                     onClick={() => setDeletingId(d.id)}
-                    className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition"
+                    className="p-1.5 rounded-lg text-faint hover:text-red-500 hover:bg-red-50 transition"
                   >
                     <Trash2 className="size-3.5" />
                   </button>

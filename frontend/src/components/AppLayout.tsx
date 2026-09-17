@@ -9,27 +9,29 @@ import { LanguageSwitcher } from "./LanguageSwitcher";
 import { getToken, getUser, removeToken } from "@/lib/auth";
 import { useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
+import { useHydrated } from "@/lib/useHydrated";
 import type { User as UserType } from "@/lib/auth";
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   const t = useT();
-  // Initial state comes straight from local storage, avoiding a setState in an effect
-  const [ready] = useState(() => {
-    const token = getToken();
-    const u = getUser();
-    return !!token && !!u;
-  });
-  const [user] = useState<UserType | null>(() => getUser());
+  // The token lives in localStorage, which does not exist while the server renders. Reading it directly
+  // would make the server's output (the spinner) disagree with the client's first render (the shell), and
+  // React would throw the tree away as a hydration mismatch. Gating on `hydrated` keeps the two in step;
+  // `user` is read through the same gate, since it comes from localStorage too.
+  const hydrated = useHydrated();
+  const user: UserType | null = hydrated ? getUser() : null;
   const [showDropdown, setShowDropdown] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
+  const ready = hydrated && !!getToken() && !!user;
+
   useEffect(() => {
-    if (!ready) {
+    if (hydrated && !ready) {
       router.push("/login");
     }
-  }, [ready, router]);
+  }, [hydrated, ready, router]);
 
   // Close the mobile sidebar when the route changes (React's documented
   // "adjust state when a prop changes" pattern).
@@ -59,7 +61,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       <div className="flex h-screen items-center justify-center bg-gray-50">
         <div className="flex flex-col items-center gap-3">
           <div className="size-8 animate-spin rounded-full border-2 border-indigo-600 border-t-transparent" />
-          <p className="text-sm text-gray-400">{t("加载中...")}</p>
+          <p className="text-sm text-faint">{t("加载中...")}</p>
         </div>
       </div>
     );
@@ -106,16 +108,16 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       {/* Right: Top bar + Content */}
       <div className="flex flex-1 flex-col min-w-0">
         {/* Top Bar */}
-        <header className="flex h-14 items-center justify-between border-b border-gray-200 bg-white px-4 sm:px-6 shrink-0">
+        <header className="flex h-14 items-center justify-between border-b border-line bg-canvas px-4 sm:px-6 shrink-0">
           <div className="flex items-center gap-3">
             {/* Mobile menu button */}
             <button
               onClick={() => setSidebarOpen(true)}
-              className="lg:hidden p-1.5 -ml-1 rounded-lg text-gray-500 hover:bg-gray-100 transition"
+              className="lg:hidden p-1.5 -ml-1 rounded-lg text-muted hover:bg-muted-surface transition"
             >
               <Menu className="size-5" />
             </button>
-            <h2 className="text-sm font-medium text-gray-700">{pageTitle}</h2>
+            <h2 className="text-sm font-medium text-body">{pageTitle}</h2>
           </div>
 
           {/* Right: language switcher + user */}
@@ -127,12 +129,12 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                   e.stopPropagation();
                   setShowDropdown(!showDropdown);
                 }}
-                className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm transition-colors hover:bg-gray-100"
+                className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm transition-colors hover:bg-muted-surface"
               >
                 <div className="flex size-8 items-center justify-center rounded-full bg-indigo-100 text-sm font-medium text-indigo-600 shrink-0">
                   {(user?.name || user?.email || "U")[0].toUpperCase()}
                 </div>
-                <span className="hidden sm:block text-sm font-medium text-gray-700 max-w-[120px] truncate">
+                <span className="hidden sm:block text-sm font-medium text-body max-w-[120px] truncate">
                   {user?.name || user?.email || t("用户")}
                 </span>
               </button>
@@ -140,23 +142,23 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
               {/* Dropdown */}
               {showDropdown && (
                 <div
-                  className="absolute right-0 top-full mt-1 w-48 rounded-lg border border-gray-200 bg-white py-1 shadow-lg z-50"
+                  className="absolute right-0 top-full mt-1 w-48 rounded-lg border border-line bg-canvas py-1 shadow-lg z-50"
                   onClick={(e) => e.stopPropagation()}
                 >
-                  <div className="px-3 py-2 border-b border-gray-100">
-                    <p className="text-sm font-medium text-gray-900 truncate">
+                  <div className="px-3 py-2 border-b border-line">
+                    <p className="text-sm font-medium text-strong truncate">
                       {user?.name || t("用户")}
                     </p>
                     {user?.email && (
-                      <p className="text-xs text-gray-500 truncate">{user.email}</p>
+                      <p className="text-xs text-muted truncate">{user.email}</p>
                     )}
                     {user?.phone && (
-                      <p className="text-xs text-gray-500">{user.phone}</p>
+                      <p className="text-xs text-muted">{user.phone}</p>
                     )}
                   </div>
                   <button
                     onClick={handleLogout}
-                    className="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-600 hover:bg-gray-50 transition-colors"
+                    className="flex w-full items-center gap-2 px-3 py-2 text-sm text-muted hover:bg-gray-50 transition-colors"
                   >
                     <LogOut className="size-4" />
                     {t("退出登录")}

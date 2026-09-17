@@ -237,6 +237,23 @@ A bug fix without a test that fails before the fix is usually incomplete. Tests 
 database: services take `*gorm.DB`, so a `DryRun` session is enough to assert on generated SQL, and
 handlers take interfaces so they can be tested with fakes.
 
+### Frontend scripts
+
+A few checks cannot be expressed as a unit test, so they live in `frontend/scripts/`:
+
+| Command | Checks |
+|---|---|
+| `node scripts/check-theme-css.mjs` | The theme tokens compile, and brand/status colours are still fixed |
+| `node scripts/check-theme-timing.mjs` | The theme is applied before the first frame, so there is no flash |
+| `node scripts/capture-theme.mjs` | Screenshots every route in both themes into `frontend/.theme-shots/` |
+| `node scripts/report-color-usage.mjs` | Inventories colour utilities and flags ones that need a role |
+| `node scripts/migrate-color-tokens.mjs --dry-run` | Shows the shade-to-role rewrite without applying it |
+
+The first two need the dev server running; the ones that drive a browser also need Edge installed, and on
+Windows they must run outside the default sandbox. Run `check-theme-timing.mjs` after touching anything
+that injects the theme script: a theme applied after the first frame is a visible flash, and it is not
+obvious from reading the code.
+
 ## 9. Changing the database schema
 
 The schema is the GORM models in `backend/internal/domain/entity`. There are no SQL migration files.

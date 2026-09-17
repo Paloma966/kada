@@ -285,6 +285,29 @@ return <button>{t("创建链接")}</button>;
 When adding UI text: write the Chinese string, wrap it in `t()`, and add the English entry to
 `dictionary.ts`. The dictionary is the only place English copy lives.
 
+### 6.2 Theme
+
+The app follows the browser's `prefers-color-scheme` by default and lets the user override it from
+Settings → 外观, with a third option that hands control back to the system.
+
+- `data-theme="light|dark"` on `<html>` is the single source of truth. Tailwind's `dark:` variant is
+  redefined as an attribute selector, so it works on any browser and the OS setting and an explicit
+  choice take the same path.
+- **Colours are roles, not shades.** `text-body` and `bg-canvas` resolve per theme; `text-gray-700`
+  cannot, because a shade that reads correctly on white is usually wrong on near-black. The scales are
+  not inverted wholesale: brand and status colours are fixed, because `bg-indigo-600 text-white` is a
+  pair and brightening the indigo for a dark canvas would leave white text on a light blue.
+- The sign-in and landing screens are dark in **both** themes. Anything on them that must stay light -
+  the selected segment, the language chip - uses literal white rather than a themed surface.
+- An inline `<script>` in the document head sets the attribute while the HTML is parsed. It is
+  deliberately **not** `next/script`'s `beforeInteractive`: that queues the body through Next's loader,
+  which measured 62ms *after* the first frame and produced a visible light flash. `scripts/check-theme-timing.mjs`
+  measures this and fails if the theme lands after the first frame.
+
+Client components that read `localStorage` gate on `useHydrated()` (`src/lib/useHydrated.ts`). Reading a
+token or a stored preference straight into render output makes the server's HTML and the client's first
+render disagree, and React discards the tree as a hydration mismatch.
+
 ## 7. Key flows
 
 ### 7.1 Sign-up by email
@@ -387,10 +410,27 @@ configuration impossible to diagnose. Internal details are suppressed in release
 | `API_BASE_URL` | `https://kada.click` | Base for generated short URLs |
 | `FRONTEND_URL` | `http://localhost:3000` | CORS and redirects |
 | `SMS_ACCESS_KEY_ID`, `SMS_ACCESS_KEY_SECRET` | empty | Alibaba Cloud credentials; empty disables real sending |
-| `SMS_SIGN_NAME`, `SMS_TEMPLATE_CODE` | empty | Must be approved by the provider |
+| `SMS_SIGN_NAME`, `SMS_TEMPLATE_CODE` | empty | The system-granted signature and template from the PNVS console; both are required, see below |
 | `KAFKA_BROKERS` | empty | Comma-separated brokers; empty disables Kafka (clicks are written directly) |
 | `KAFKA_TOPIC` | `clicks` | Click event topic |
 | `NEXT_PUBLIC_API_URL` | `""` (same origin) | API base for the browser |
+
+### 9.1 SMS verification
+
+Sign-up by phone uses Alibaba Cloud **PNVS "SMS verification"** (`dypnsapi.aliyuncs.com`), not the
+separate SMS product (`dysmsapi`). That distinction decides the configuration:
+
+- It is the one SMS route open to **individually verified** accounts. The SMS product stopped accepting
+  personal self-use qualifications, so personal signatures and templates can no longer be approved there.
+- The account gets **one** system-granted signature and **one** system-granted template, to be taken from
+  the PNVS console. They cannot be created or edited, and they must be used as a pair - a granted
+  signature with a custom template is rejected, and so is the reverse.
+- `SMS_SIGN_NAME` and `SMS_TEMPLATE_CODE` have **no defaults**. They used to fall back to a hardcoded
+  signature and a made-up template code, which turned "nobody configured this" into a provider rejection
+  that read like a broken account. Startup now names the missing setting instead, and phone sign-up stays
+  disabled until it is set.
+- The PNVS console, its data, and its package are all separate from the SMS product: sending is billed
+  against a PNVS "SMS verification" package, which the SMS product's free trial does not cover.
 
 ## 10. Deployment
 
