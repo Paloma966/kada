@@ -74,12 +74,12 @@ export default function FoldersPage() {
   return (
     <div className="space-y-5">
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">{t("文件夹")}</h1>
-        <p className="text-sm text-gray-500 mt-1">{t("用文件夹组织你的短链接")}</p>
+        <h1 className="text-2xl font-bold text-strong">{t("文件夹")}</h1>
+        <p className="text-sm text-muted mt-1">{t("用文件夹组织你的短链接")}</p>
       </div>
 
       {/* Create new */}
-      <div className="rounded-xl border border-gray-100 bg-white shadow-sm p-4">
+      <div className="rounded-xl border border-line bg-canvas shadow-sm p-4">
         <form
           onSubmit={(e) => {
             e.preventDefault();
@@ -87,15 +87,15 @@ export default function FoldersPage() {
           }}
           className="flex items-center gap-3"
         >
-          <div className="flex size-9 items-center justify-center rounded-lg bg-gray-100 shrink-0">
-            <Folder className="size-4 text-gray-500" />
+          <div className="flex size-9 items-center justify-center rounded-lg bg-muted-surface shrink-0">
+            <Folder className="size-4 text-muted" />
           </div>
           <input
             type="text"
             value={newName}
             onChange={(e) => setNewName(e.target.value)}
             placeholder={t("新建文件夹...")}
-            className="flex-1 border-none bg-transparent text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none"
+            className="flex-1 border-none bg-transparent text-sm text-strong placeholder:text-faint focus:outline-none"
             maxLength={50}
           />
           <button
@@ -113,8 +113,8 @@ export default function FoldersPage() {
       {error ? (
         <div className="flex flex-col items-center justify-center py-16 text-center">
           <div className="text-3xl mb-3">😞</div>
-          <h3 className="text-lg font-semibold text-gray-900">{t("加载失败")}</h3>
-          <p className="mt-1 text-sm text-gray-500">{t("请检查网络后重试")}</p>
+          <h3 className="text-lg font-semibold text-strong">{t("加载失败")}</h3>
+          <p className="mt-1 text-sm text-muted">{t("请检查网络后重试")}</p>
           <button
             onClick={() => mutate()}
             className="mt-3 text-sm font-medium text-indigo-600 hover:text-indigo-500"
@@ -128,11 +128,11 @@ export default function FoldersPage() {
           {Array.from({ length: 5 }).map((_, i) => (
             <div
               key={i}
-              className="animate-pulse rounded-xl border border-gray-100 bg-white p-4 flex items-center gap-4"
+              className="animate-pulse rounded-xl border border-line bg-canvas p-4 flex items-center gap-4"
             >
-              <div className="size-9 rounded-lg bg-gray-100" />
+              <div className="size-9 rounded-lg bg-muted-surface" />
               <div className="flex-1 space-y-2">
-                <div className="h-4 w-32 rounded bg-gray-100" />
+                <div className="h-4 w-32 rounded bg-muted-surface" />
                 <div className="h-3 w-16 rounded bg-gray-50" />
               </div>
             </div>
@@ -141,11 +141,11 @@ export default function FoldersPage() {
       ) : folders.length === 0 ? (
         /* Empty state */
         <div className="flex flex-col items-center justify-center py-16 text-center">
-          <div className="flex size-14 items-center justify-center rounded-2xl bg-gray-100 mb-4">
-            <FolderOpen className="size-7 text-gray-400" />
+          <div className="flex size-14 items-center justify-center rounded-2xl bg-muted-surface mb-4">
+            <FolderOpen className="size-7 text-faint" />
           </div>
-          <h3 className="text-lg font-semibold text-gray-900">{t("还没有文件夹")}</h3>
-          <p className="mt-1 text-sm text-gray-500">
+          <h3 className="text-lg font-semibold text-strong">{t("还没有文件夹")}</h3>
+          <p className="mt-1 text-sm text-muted">
             {t("在上方输入框输入名称来创建第一个文件夹")}
           </p>
         </div>
@@ -155,7 +155,7 @@ export default function FoldersPage() {
           {folders.map((f) => (
             <div
               key={f.id}
-              className="group rounded-xl border border-gray-100 bg-white p-4 flex items-center gap-4 hover:border-gray-200 hover:shadow-sm transition"
+              className="group rounded-xl border border-line bg-canvas p-4 flex items-center gap-4 hover:border-line hover:shadow-sm transition"
             >
               <div className="flex size-9 items-center justify-center rounded-lg bg-amber-50 shrink-0">
                 <Folder className="size-4 text-amber-600" />
@@ -168,7 +168,7 @@ export default function FoldersPage() {
                       type="text"
                       value={editingName}
                       onChange={(e) => setEditingName(e.target.value)}
-                      className="border border-gray-200 rounded-lg px-2 py-1 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                      className="border border-line rounded-lg px-2 py-1 text-sm text-strong focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
                       autoFocus
                       onKeyDown={(e) => {
                         if (e.key === "Enter") handleRename(f.id);
@@ -189,7 +189,7 @@ export default function FoldersPage() {
                         setEditingId(null);
                         setEditingName("");
                       }}
-                      className="p-1 rounded text-gray-400 hover:bg-gray-100 transition"
+                      className="p-1 rounded text-faint hover:bg-muted-surface transition"
                     >
                       <X className="size-3.5" />
                     </button>
@@ -197,7 +197,7 @@ export default function FoldersPage() {
                 ) : (
                   <>
                     <p
-                      className="text-sm font-medium text-gray-900 truncate cursor-pointer hover:text-indigo-600 transition"
+                      className="text-sm font-medium text-strong truncate cursor-pointer hover:text-indigo-600 transition"
                       onClick={() => {
                         setEditingId(f.id);
                         setEditingName(f.name);
@@ -206,7 +206,7 @@ export default function FoldersPage() {
                     >
                       {f.name}
                     </p>
-                    <p className="text-xs text-gray-400 mt-0.5">
+                    <p className="text-xs text-faint mt-0.5">
                       {t("{f.link_count} 个链接", { "f.link_count": f.link_count })}
                     </p>
                   </>
@@ -219,7 +219,7 @@ export default function FoldersPage() {
                     setEditingId(f.id);
                     setEditingName(f.name);
                   }}
-                  className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition"
+                  className="p-1.5 rounded-lg text-faint hover:text-muted hover:bg-muted-surface transition"
                 >
                   <Pencil className="size-3.5" />
                 </button>
@@ -235,7 +235,7 @@ export default function FoldersPage() {
                     </button>
                     <button
                       onClick={() => setDeletingId(null)}
-                      className="p-1 rounded text-gray-400 hover:bg-gray-200 transition"
+                      className="p-1 rounded text-faint hover:bg-raised transition"
                     >
                       <X className="size-3" />
                     </button>
@@ -243,7 +243,7 @@ export default function FoldersPage() {
                 ) : (
                   <button
                     onClick={() => setDeletingId(f.id)}
-                    className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition"
+                    className="p-1.5 rounded-lg text-faint hover:text-red-500 hover:bg-red-50 transition"
                   >
                     <Trash2 className="size-3.5" />
                   </button>

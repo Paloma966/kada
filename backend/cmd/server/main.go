@@ -76,7 +76,9 @@ func main() {
 	if cfg.SMSCredentialsConfigured() {
 		smsSender, err = sms.NewAliyunSender(cfg.SMSAccessKeyID, cfg.SMSAccessKeySecret, cfg.SMSSignName, cfg.SMSTemplateCode)
 		if err != nil {
-			log.Printf("⚠️  failed to initialize SMS service: %v", err)
+			// Not fatal: every other feature still works. But phone sign-up cannot, and the reason is
+			// printed now rather than deferred to a request that would only report a provider error.
+			log.Printf("⚠️  SMS service disabled, phone sign-up will not work: %v", err)
 		}
 	} else {
 		// Distinguish "not configured" from "configured with the .env.example placeholders": both end in the

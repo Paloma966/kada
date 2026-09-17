@@ -20,6 +20,22 @@ type AliyunSender struct {
 }
 
 func NewAliyunSender(accessKeyID, accessKeySecret, signName, templateCode string) (*AliyunSender, error) {
+	if accessKeyID == "" || accessKeySecret == "" {
+		return nil, errors.New("missing Aliyun AccessKey pair: set SMS_ACCESS_KEY_ID and SMS_ACCESS_KEY_SECRET")
+	}
+
+	// The signature and the template are not defaulted. This service (dypnsapi, "SMS verification") ships
+	// one system-granted signature and one system-granted template per account, and their names only exist
+	// in the console - they cannot be guessed or created by hand. Substituting a value here, as this used
+	// to do with "恒创联众" / "100001", converts "nobody configured this" into a provider rejection that
+	// looks like a broken account, which is how it went undiagnosed.
+	if signName == "" {
+		return nil, errors.New("missing SMS signature: copy the system-granted sign name from the PNVS console into SMS_SIGN_NAME")
+	}
+	if templateCode == "" {
+		return nil, errors.New("missing SMS template: copy the system-granted template code from the PNVS console into SMS_TEMPLATE_CODE")
+	}
+
 	config := &openapi.Config{
 		AccessKeyId:     tea.String(accessKeyID),
 		AccessKeySecret: tea.String(accessKeySecret),
@@ -31,16 +47,9 @@ func NewAliyunSender(accessKeyID, accessKeySecret, signName, templateCode string
 		return nil, fmt.Errorf("failed to create SMS verification client: %w", err)
 	}
 
-	// Fall back to defaults when not explicitly configured so it works out of the box; production should
-	// override them through the SMS_SIGN_NAME / SMS_TEMPLATE_CODE environment variables
-	if signName == "" {
-		signName = "恒创联众"
-	}
-	if templateCode == "" {
-		templateCode = "100001"
-	}
-
-	log.Println("✅ Aliyun SMS verification service initialized")
+	// Logged because the pair is the first thing to check when a send is rejected: the signature and the
+	// template have to come from the same account and be used together.
+	log.Printf("✅ Aliyun SMS verification service initialized (sign_name=%q template_code=%q)", signName, templateCode)
 	return &AliyunSender{client: client, signName: signName, templateCode: templateCode}, nil
 }
 

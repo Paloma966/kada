@@ -35,7 +35,7 @@ export default function HomePage() {
             >
               {t("免费注册")}
             </Link>
-            <LanguageSwitcher />
+            <LanguageSwitcher onDark />
           </div>
         </header>
 

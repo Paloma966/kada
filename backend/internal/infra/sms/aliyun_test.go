@@ -57,3 +57,36 @@ func TestSMSProviderErrorEmptyPayload(t *testing.T) {
 		t.Errorf("unexpected message: %q", got)
 	}
 }
+
+// A missing signature or template must fail loudly at construction. Defaulting them is how a
+// configuration mistake turned into a provider rejection that read like a broken Aliyun account.
+func TestNewAliyunSenderRejectsIncompleteConfiguration(t *testing.T) {
+	tests := []struct {
+		name         string
+		accessKeyID  string
+		secret       string
+		signName     string
+		templateCode string
+		wantMentions string
+	}{
+		{"no credentials", "", "", "signature", "SMS_123", "SMS_ACCESS_KEY_ID"},
+		{"no secret", "id", "", "signature", "SMS_123", "SMS_ACCESS_KEY_ID"},
+		{"no signature", "id", "secret", "", "SMS_123", "SMS_SIGN_NAME"},
+		{"no template", "id", "secret", "signature", "", "SMS_TEMPLATE_CODE"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			sender, err := NewAliyunSender(tt.accessKeyID, tt.secret, tt.signName, tt.templateCode)
+			if err == nil {
+				t.Fatalf("expected an error naming the missing setting, got a sender: %+v", sender)
+			}
+			if sender != nil {
+				t.Errorf("expected no sender alongside the error")
+			}
+			if !strings.Contains(err.Error(), tt.wantMentions) {
+				t.Errorf("error %q should name %s", err, tt.wantMentions)
+			}
+		})
+	}
+}

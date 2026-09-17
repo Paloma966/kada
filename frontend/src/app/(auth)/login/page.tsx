@@ -130,7 +130,7 @@ export default function LoginPage() {
   return (
     <>
       <div className="fixed right-4 top-4 z-50">
-        <LanguageSwitcher />
+        <LanguageSwitcher onDark />
       </div>
       <AuthCard
         title={t("登录 Kada")}
@@ -144,7 +144,9 @@ export default function LoginPage() {
           </>
         }
       >
-        {/* Phone / email segmented switch */}
+        {/* Phone / email segmented switch. This screen is dark in both themes, so the selected segment is
+            literal white with dark type; a themed surface would turn black here and take the label with
+            it, since the label's colour is fixed too. */}
         <div className="mb-6 grid grid-cols-2 gap-1 rounded-lg bg-white/10 p-1">
           <button
             type="button"

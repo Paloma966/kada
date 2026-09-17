@@ -1,21 +1,78 @@
 @import "tailwindcss";
 
+/*
+ * Dark mode is driven by `data-theme` on <html>, not by the `prefers-color-scheme` media query.
+ *
+ * Tailwind's default `dark:` variant asks the browser directly, which cannot be overridden by a
+ * preference the app stores itself. Making the attribute the single source of truth means the OS setting
+ * and an explicit choice travel the same path, and a component never has to care which one won.
+ * ThemeScript in the root layout sets the attribute before the first paint, so there is no flash.
+ */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+/*
+ * Semantic colours.
+ *
+ * Components refer to a role (`text-body`, `bg-canvas`) rather than a shade (`text-gray-700`), because a
+ * shade that reads correctly on white is usually wrong on near-black. Every token below is redefined for
+ * dark mode, so a component written against these needs no `dark:` variant at all.
+ *
+ * Fixed colours - brand fills, status tints - are deliberately NOT redefined. `bg-indigo-600 text-white`
+ * is a pair: brightening the indigo for a dark theme would hand a light blue to white text and make the
+ * primary buttons unreadable, and a colour that does not change can never change the meaning of its
+ * partner. Where a fixed colour would genuinely fail on a dark surface the component says so with a
+ * `dark:` variant, which keeps those few deliberate choices visible instead of hiding them in a ramp.
+ */
 @theme {
   --color-brand: #4f46e5;        /* indigo-600 brand color */
   --color-brand-dark: #4338ca;   /* indigo-700 */
   --color-brand-soft: #eef2ff;   /* indigo-50 */
   --color-hairline: #e5e5e5;     /* neutral-200 hairline border */
   --color-surface: #fafafa;      /* neutral-50 page background */
+
+  /*
+   * Tailwind v4 has no `dark` config key; both themes are expressed as CSS variables. The light values
+   * mirror Tailwind's default palette, so replacing a `bg-gray-50` with `bg-subtle` does not change the
+   * light appearance at all - the tokens exist so that one class can mean two things.
+   */
+  --color-canvas: #ffffff;       /* page and card background */
+  --color-subtle: #f9fafb;       /* gray-50: recessed panels, table headers */
+  --color-muted-surface: #f3f4f6;/* gray-100: chips, inert controls */
+  --color-raised: #e5e7eb;       /* gray-200: selected / filled states */
+  --color-strong: #111827;       /* gray-900: headings and primary text */
+  --color-body: #374151;         /* gray-700: body text */
+  --color-muted: #6b7280;        /* gray-500: secondary text */
+  --color-faint: #9ca3af;        /* gray-400: placeholders, disabled, icons */
+  --color-line: #e5e7eb;         /* gray-200: borders and dividers */
+  --color-line-strong: #d1d5db;  /* gray-300: control borders, hover dividers */
 }
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+/* Dark theme: the neutral roles move to a near-black canvas and light type. */
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  --color-canvas: #111827;
+  --color-subtle: #0b1220;
+  --color-muted-surface: #1f2937;
+  --color-raised: #374151;
+  --color-strong: #f9fafb;
+  --color-body: #d1d5db;
+  --color-muted: #9ca3af;
+  --color-faint: #6b7280;
+  --color-line: #374151;
+  --color-line-strong: #4b5563;
+
+  /*
+   * `white` stays literal white in both themes. It is not a surface role here: it is the fill of the
+   * selected segment on the permanently dark sign-in screens, and the low-alpha wash over those
+   * backgrounds. Only `bg-canvas` follows the theme.
+   */
+  --color-white: #ffffff;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
+  background: var(--color-subtle);
+  color: var(--color-strong);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
     "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
 }
