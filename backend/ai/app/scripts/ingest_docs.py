@@ -14,7 +14,7 @@ DOCS_DIR = Path(settings.DOC_DIR)
 #向量数据库表名
 COLLECTION_NAME=settings.DOC_COLLECTION_NAME
 #连接到postgreasql
-PG_URL=settings.PostgreSQL_URL.replace("postgresql://", "postgresql+psycopg://")
+PG_URL=settings.PostgreSQL_URL.replace("+asyncpg", "+psycopg")
 def load_document()->list[str]:
     texts=[]
     for f in sorted(DOCS_DIR.glob("*.md"))+sorted(DOCS_DIR.glob("*.txt")):
@@ -37,17 +37,21 @@ def main():
     chunks=[]
     for d in docs:
         chunks.extend(splitter.split_text(d))
-        logging.info(f"共切成{len(chunks)}块")
-        logging.info("向量化和入库")
-        store=PGVector(
-            embeddings=get_embeddings(),
-            connection=PG_URL,
-            collection_name=COLLECTION_NAME
-        )
-        try:
-            store.delete_collection()
-            logging.info("清除旧数据成功")
-        except Exception as e:
-            logging.info("首次入库")
-        store.add_texts(chunks)
-        print(f"  ✅ 写入完成：表 {COLLECTION_NAME}，共 {len(chunks)} 条")
+    logging.info(f"共切成{len(chunks)}块")
+    logging.info("向量化和入库")
+    store=PGVector(
+        embeddings=get_embeddings(),
+        connection=PG_URL,
+        collection_name=COLLECTION_NAME
+    )
+    store.create_tables_if_not_exists()
+    try:
+        store.delete_collection()
+        logging.info("清除旧数据成功")
+    except Exception as e:
+        logging.info("首次入库")
+    store.create_collection()
+    store.add_texts(chunks)
+    print(f" 写入完成：表 {COLLECTION_NAME}，共 {len(chunks)} 条")
+if __name__ == "__main__":
+    main()

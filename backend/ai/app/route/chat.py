@@ -8,7 +8,7 @@ from pydantic import BaseModel
 from starlette.responses import JSONResponse
 
 from app.config import settings
-from app.service import  llm,session
+from app.service import  llm,session,rag
 
 router=APIRouter()
 #定义请求
@@ -20,7 +20,7 @@ class ChatRequest(BaseModel):
 prompt=ChatPromptTemplate.from_messages([
     ("system","你是kada平台的ai助手，帮助用户分析和管理短链接数据。请用简体中文来回答要求简洁准确"),
     MessagesPlaceholder("history"),
-    ("human","{input}"),
+    ("human","【参考资料】\n{context}\n\n【用户问题】{input}"),
 ])
 #把数据库里面的[{"role","content"}]转成langchain消息对象
 def to_langchain(history:list)->list:
@@ -38,10 +38,16 @@ def _see(event:str,data:dict)->str:
 #真模型
 async def real_stream(user_id: str,conv_id: str,history,user_message:str):
     history_message=to_langchain(history)
+    pieces=await rag.retrieve(user_message,k=4)
+
+    context="\n\n---\n\n".join(pieces) if pieces else"知识库中没有相关资料"
     chain=prompt|llm.get_model()
     full_text=""
-    async for chunk in chain.astream({"history":history_message,"input":user_message}):
+    async for chunk in chain.astream({"history":history_message,"context":context,"input":user_message}):
         text=chunk.content if isinstance(chunk.content,str)else str(chunk.content)
+        #过滤空chunk
+        if not text:
+            continue
         full_text+=text
         yield _see("token",{"delta":text})
     #会话记忆
