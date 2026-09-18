@@ -2,11 +2,12 @@ import json
 
 from fastapi import APIRouter,Request
 from fastapi.responses import StreamingResponse
-from langchain_core.messages import HumanMessage, AIMessage
+from langchain_core.messages import HumanMessage, AIMessage,ToolMessage,SystemMessage
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from pydantic import BaseModel
 from starlette.responses import JSONResponse
 
+from app.service.tools import ALL_TOOLS,TOOL_MAP
 from app.config import settings
 from app.service import  llm,session,rag
 
@@ -18,7 +19,8 @@ class ChatRequest(BaseModel):
     model:str |None=None
 #提示词
 prompt=ChatPromptTemplate.from_messages([
-    ("system","你是kada平台的ai助手，帮助用户分析和管理短链接数据。请用简体中文来回答要求简洁准确"),
+    ("system","你是kada平台的ai助手，帮助用户分析和管理短链接数据。请用简体中文来回答要求简洁准确。参考资料优先用："
+              "需要查实时信息或做计算时，可以提供调用的工具"),
     MessagesPlaceholder("history"),
     ("human","【参考资料】\n{context}\n\n【用户问题】{input}"),
 ])
@@ -41,15 +43,27 @@ async def real_stream(user_id: str,conv_id: str,history,user_message:str):
     pieces=await rag.retrieve(user_message,k=4)
 
     context="\n\n---\n\n".join(pieces) if pieces else"知识库中没有相关资料"
-    chain=prompt|llm.get_model()
+    messages=prompt.format_messages(
+        history=history_message,
+        context=context,
+        input=user_message,
+    )
+    model=llm.get_model().bind_tools(ALL_TOOLS)
     full_text=""
-    async for chunk in chain.astream({"history":history_message,"context":context,"input":user_message}):
-        text=chunk.content if isinstance(chunk.content,str)else str(chunk.content)
-        #过滤空chunk
-        if not text:
-            continue
-        full_text+=text
-        yield _see("token",{"delta":text})
+    for _ in range(5):
+        ai_msg=await model.ainvoke(messages)
+        messages.append(ai_msg)
+        if not ai_msg.tool_calls:
+            if ai_msg.content:
+                full_text+=ai_msg.content
+                yield _see("token",{"delta":ai_msg.content})
+            break
+        for tc in ai_msg.tool_calls:
+            func=TOOL_MAP[tc["name"]]
+            result=func.invoke(tc["args"])
+            messages.append(
+                ToolMessage(content=str(result),tool_call_id=tc["id"])
+            )
     #会话记忆
     await session.append_message(user_id,conv_id,"user",user_message)
     if full_text:
