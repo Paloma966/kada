@@ -8,16 +8,18 @@ Python 只监听 `127.0.0.1`。
 
 ```
 浏览器 → Go 网关(/api/ai/*, JWT 认证) → 本服务(/v1/*, 仅内网) → DeepSeek
-                                              ├─ PostgreSQL：会话记录（真相源）
-                                              └─ Redis：会话热缓存（cache-aside）
+                                              ├─ PostgreSQL：会话记录（真相源）+ pgvector 知识库
+                                              ├─ Redis：会话热缓存（cache-aside）
+                                              └─ MCP 子服务(stdio) → 回调 Go /api/*（查统计、建短链）
 ```
 
-- Go 网关从 JWT 取出 `user_id`，注入 `X-Kada-User-ID` 头后转发；**客户端伪造的头会被覆盖**
+- Go 网关从 JWT 取出 `user_id`，注入 `X-Kada-User-ID` 头后转发；**客户端伪造的同名头会被覆盖**
 - 流式对话走 SSE：`token`（逐字）/ `done` / `error` 三种事件
+- 单会话模式：每个用户只保留一个当前会话，重新开始会物理删除旧会话
 
 ## 快速开始
 
-前置：PostgreSQL 16（已启用）、Redis 已运行，`DEEPSEEK_API_KEY` 已设置。
+前置：PostgreSQL 16（带 pgvector 扩展）、Redis 已运行，密钥见下方环境变量。
 
 ```bash
 pip install -r requirements.txt
@@ -25,35 +27,46 @@ cd backend/ai
 python -m app.main          # 监听 127.0.0.1:8000
 ```
 
+知识库文档入库（把 `docs/` 下的 md/txt 向量化写入 pgvector）：
+
+```bash
+python -m app.scripts.ingest_docs
+```
+
 ## 环境变量
+
+只有密钥从环境变量读取，其余参数（模型名、连接串、缓存 TTL 等）的默认值写在 `app/config.py`。
 
 | 变量 | 说明 | 默认 |
 | --- | --- | --- |
 | `DEEPSEEK_API_KEY` | DeepSeek API 密钥（必填） | 无 |
-| `DASHSCOPE_API_KEY` | 阿里云 DashScope（RAG embedding 预留） | 无 |
-| `PostgreSQL_URL` | SQLAlchemy 异步连接串 | `postgresql+asyncpg://kada:kada@127.0.0.1:5432/kada_ai` |
-| `REDIS_URL` | Redis 连接串 | `redis://127.0.0.1:6379/0` |
+| `aliyun` | 阿里云 DashScope API Key，用于 RAG 的 embedding | 无 |
+| `KADA_API_TOKEN` | Kada 长效 API Token，MCP 回调 Go 后端时认证用 | 无 |
 
-其余配置（模型名、缓存 TTL、RAG 预置项）见 `app/config.py`。
+> 注意 embedding 的环境变量名约定为 `aliyun`（与百炼账号对应），不是 `DASHSCOPE_API_KEY`。
+> 密钥不要写进代码或提交到仓库。
 
 ## 接口契约（仅内网，Go 网关透传）
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | POST | `/v1/chat` | SSE 流式对话，请求 `{conversation_id?, message}` |
-| GET | `/v1/conversations` | 当前用户的会话列表 |
-| GET | `/v1/conversations/{id}/messages` | 某会话的历史消息 |
-| DELETE | `/v1/conversations/{id}` | 删除会话 |
+| GET | `/v1/session/current` | 当前用户最新会话及其消息，没有则返回空 |
+| POST | `/v1/session/restart` | 删除当前用户所有旧会话，新建一个空会话 |
 | GET | `/healthz` | 健康检查 |
 
-所有接口通过 `X-Kada-User-ID` 头区分用户（由 Go 网关注入）。
+所有接口通过 `X-Kada-User-ID` 头区分用户（由 Go 网关注入，Python 不信任客户端直传）。
 
 ## 存储
 
-- **PostgreSQL**（SQLModel ORM）：`ai_conversations` / `ai_messages` 表，会话记录是真相源
-- **Redis**：缓存每个会话最近的消息，TTL 1 小时，读多写少的 cache-aside 模式
+- **PostgreSQL**（SQLModel ORM）：`ai_conversations` / `ai_messages` 表，会话记录是真相源；
+  删除会话时消息靠外键 `ON DELETE CASCADE` 连带删除
+- **pgvector**（langchain-postgres）：`langchain_pg_*` 表存知识库切片与向量，RAG 检索 top-k 片段
+- **Redis**：缓存每个会话最近的消息（默认 50 条、TTL 1 小时），读多写少的 cache-aside；
+  Redis 不可用时自动降级为直接查库
 
-## 已知规划
+## 工具能力
 
-- RAG 知识库问答：向量存储计划用 PostgreSQL 的 **pgvector** 扩展（不引入独立 Milvus），
-  配置已预留 `EMBEDDING_MODEL` / `DASHSCOPE_API_KEY` / `DOC_DIR` 等
+- 本地工具（`app/service/tools.py`）：查时间、加法等随进程运行的 `@tool`
+- MCP 工具（`app/mcp_server/kada_server.py`）：以 stdio 子进程方式被拉起，
+  回调 Go 后端查询短链总览、创建短链；MCP 连不上时 AI 降级为纯对话，不影响主流程

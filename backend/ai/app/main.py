@@ -1,42 +1,42 @@
-from fastapi import FastAPI
+"""Kada AI 服务入口（FastAPI）。"""
+
 from contextlib import asynccontextmanager
 
-from langchain_mcp_adapters.client import MultiServerMCPClient
+from fastapi import FastAPI
 
+from app.config import settings
 from app.route import chat
 from app.service import mcp_client
 from app.service.db import init_db
-from app.config import settings
+
 
 @asynccontextmanager
-#确保sql表存在
-async def lifespan(app:FastAPI):
+async def lifespan(app: FastAPI):
+    # 幂等创建会话表；知识库的向量表由 langchain-postgres 自行管理。
     await init_db()
+    # MCP 是增强能力而非硬依赖：连不上就让工具列表为空，AI 仍能纯对话。
+    # 注意 try 只包住启动连接，不能包住 yield，否则关停阶段抛的异常会被误报成"连接失败"。
     try:
-        client=MultiServerMCPClient(mcp_client.MCP_SERVER_CONFIG)
-        mcp_client.mcp_tool=await client.get_tools()
-        print(f"[MCP]已经加载{len(mcp_client.mcp_tool)}个工具"
-              f"{[t.name for t in mcp_client.mcp_tool]}")
-        yield
-    except Exception as e:
-        print(f"[MCP]连接失败，降级运行:{e}")
-        mcp_client.mcp_tool=[]
-        yield
+        tools = await mcp_client.load_tools()
+        print(f"[MCP] 已加载 {len(tools)} 个工具 {[t.name for t in tools]}")
+    except Exception as exc:
+        print(f"[MCP] 连接失败，降级运行：{exc}")
+    yield
 
 
+app = FastAPI(title="Kada AI Service", version="0.1.0", lifespan=lifespan)
 
-app = FastAPI(title="Kada AI Service", version="0.1.0",lifespan=lifespan)
 
 @app.get("/healthz")
 def healthz():
-    return {"status":"ok","service":"kada-ai","mock":settings.CHAT_MODEL}
+    return {"status": "ok", "service": "kada-ai", "model": settings.CHAT_MODEL}
 
-# 注：CORS 已移除 —— 现在前端通过 Go 网关（同源 /api/ai/*）访问，
-# Python 只监听 127.0.0.1 内网，不再需要跨域放行。
 
-#把chat.py里定义的所有接口挂到app上
+# 生产环境前端经 Go 网关同源访问 /api/ai/*，Python 只监听 127.0.0.1，不需要 CORS。
 app.include_router(chat.router)
+
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run("app.main:app", host="127.0.0.1", port=8000, reload=True)
