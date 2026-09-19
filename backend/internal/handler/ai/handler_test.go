@@ -97,20 +97,20 @@ func TestProxyOverwritesClientUserID(t *testing.T) {
 	}
 }
 
-// Conversation paths must be remapped too: /api/ai/conversations/{id}/messages
-// -> /v1/conversations/{id}/messages, keeping the id segment intact.
-func TestProxyForwardsConversationPaths(t *testing.T) {
+// Session paths must be remapped too: /api/ai/session/current
+// -> /v1/session/current.
+func TestProxyForwardsSessionPaths(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if got := r.URL.Path; got != "/v1/conversations/abc-123/messages" {
-			t.Errorf("upstream path = %q, want /v1/conversations/abc-123/messages", got)
+		if got := r.URL.Path; got != "/v1/session/current" {
+			t.Errorf("upstream path = %q, want /v1/session/current", got)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"messages":[]}`))
+		_, _ = w.Write([]byte(`{"conversation_id":null,"messages":[]}`))
 	}))
 	defer upstream.Close()
 
 	r := newTestRouter(t, upstream.URL)
-	w := serve(r, http.MethodGet, "/api/ai/conversations/abc-123/messages", bytes.NewBuffer(nil), nil)
+	w := serve(r, http.MethodGet, "/api/ai/session/current", bytes.NewBuffer(nil), nil)
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", w.Code)

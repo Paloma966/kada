@@ -40,7 +40,6 @@ const NAV_SECTIONS: NavSection[] = [
         isActive: (pathname: string) =>
           pathname === "/dashboard" || pathname.startsWith("/dashboard/links"), },
       { name: "域名", href: "/dashboard/domains", icon: Globe },
-      { name: "AI 助手", href: "/dashboard/ai", icon: Sparkles },
     ],
   },
   {
@@ -57,6 +56,12 @@ const NAV_SECTIONS: NavSection[] = [
       { name: "文件夹", href: "/dashboard/folders", icon: Folder },
       { name: "标签", href: "/dashboard/tags", icon: Tag },
       { name: "UTM 模板", href: "/dashboard/utm", icon: ArrowRightLeft },
+    ],
+  },
+  {
+    name: "AI",
+    items: [
+      { name: "AI 助手", href: "/dashboard/ai", icon: Sparkles },
     ],
   },
 ];

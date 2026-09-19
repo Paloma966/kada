@@ -8,7 +8,6 @@ import { Sidebar } from "./Sidebar";
 import { LanguageSwitcher } from "./LanguageSwitcher";
 import { getToken, getUser, removeToken } from "@/lib/auth";
 import { useT } from "@/lib/i18n";
-import { cn } from "@/lib/utils";
 import { useHydrated } from "@/lib/useHydrated";
 import type { User as UserType } from "@/lib/auth";
 
@@ -171,15 +170,8 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
 
         {/* Content */}
         <main className="flex-1 overflow-y-auto">
-          {/* AI 页面特殊处理：去掉居中限制和内边距，让页面贴边、占满剩余空间；
-              其他页面保持原来的 max-w-5xl 居中布局 */}
-          <div
-            className={cn(
-              pathname === "/dashboard/ai"
-                ? "h-full"
-                : "mx-auto max-w-5xl px-4 sm:px-6 py-4 sm:py-6"
-            )}
-          >
+          {/* 所有页面统一布局：居中 + 边距（AI 页也遵循，不再贴满） */}
+          <div className="mx-auto max-w-5xl px-4 sm:px-6 py-4 sm:py-6">
             {children}
           </div>
         </main>

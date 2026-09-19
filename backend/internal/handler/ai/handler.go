@@ -64,7 +64,7 @@ func NewHandler(aiBaseURL string) (*Handler, error) {
 		baseDirector(req) // sets scheme/host/query from the target URL
 
 		// Map the public path to the Python path: /api/ai/chat -> /v1/chat,
-		// /api/ai/conversations -> /v1/conversations, etc.
+		// /api/ai/session/current -> /v1/session/current, etc.
 		req.URL.Path = "/v1" + strings.TrimPrefix(req.URL.Path, "/api/ai")
 
 		// Security: never trust a client-supplied X-Kada-User-ID. The gateway
@@ -82,9 +82,9 @@ func NewHandler(aiBaseURL string) (*Handler, error) {
 func (h *Handler) RegisterRoutes(r *gin.RouterGroup, authMW gin.HandlerFunc) {
 	r.Use(authMW)
 	r.POST("/ai/chat", h.forward)
-	r.GET("/ai/conversations", h.forward)
-	r.GET("/ai/conversations/:conversation_id/messages", h.forward)
-	r.DELETE("/ai/conversations/:conversation_id", h.forward)
+	// 单会话模式：current 取当前用户最新会话及其消息，restart 删除旧会话并新建空会话
+	r.GET("/ai/session/current", h.forward)
+	r.POST("/ai/session/restart", h.forward)
 }
 
 // forward proxies the request to the Python AI service.

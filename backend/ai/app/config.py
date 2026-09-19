@@ -16,7 +16,7 @@ class Settings():
     MILVUS_URL="127.0.0.1:19530"
     DOC_COLLECTION_NAME="knowledge_docs"
     REDIS_URL="redis://127.0.0.1:6379/0"
-    PostgreSQL_URL="postgresql+asyncpg://kada:kada@127.0.0.1:5432/kada_ai"
+    PostgreSQL_URL="postgresql+asyncpg://kada:kada123@127.0.0.1:5432/kada_ai"
     #数据处理配置
     DOC_DIR="./docs"
     CHUNK_SIZE=500

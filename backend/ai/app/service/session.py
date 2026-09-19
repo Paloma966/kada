@@ -1,5 +1,7 @@
 import json
 import uuid
+
+from langchain_community.embeddings import awa
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 from app.config import settings
@@ -115,5 +117,19 @@ async def delete_conversation(user_id:str,conversation_id:str)->bool:
     if r is not   None:
         await  r.delete(cache_key(user_id,conversation_id))
     return True
+#取当前会话+全部消息
+async def get_current_session(user_id:str)->dict:
+    convs=await list_conversations(user_id)
+    if not convs:
+        return {"conversation_id":None,"messages":[]}
+    cid=convs[0]["conversation_id"]
+    msgs=await load_messages(user_id,cid)
+    return {"conversation_id":cid,"messages":msgs}
 
 
+#重新开始：删掉该用户所有的旧会话
+async def restart_session(user_id:str)->str:
+    convs=await list_conversations(user_id)
+    for c in convs:
+        await delete_conversation(user_id,c["conversation_id"])
+    return await new_conversation(user_id)
