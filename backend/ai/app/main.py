@@ -1,6 +1,10 @@
 from fastapi import FastAPI
 from contextlib import asynccontextmanager
+
+from langchain_mcp_adapters.client import MultiServerMCPClient
+
 from app.route import chat
+from app.service import mcp_client
 from app.service.db import init_db
 from app.config import settings
 
@@ -8,7 +12,17 @@ from app.config import settings
 #确保sql表存在
 async def lifespan(app:FastAPI):
     await init_db()
-    yield
+    try:
+        client=MultiServerMCPClient(mcp_client.MCP_SERVER_CONFIG)
+        mcp_client.mcp_tool=await client.get_tools()
+        print(f"[MCP]已经加载{len(mcp_client.mcp_tool)}个工具"
+              f"{[t.name for t in mcp_client.mcp_tool]}")
+        yield
+    except Exception as e:
+        print(f"[MCP]连接失败，降级运行:{e}")
+        mcp_client.mcp_tool=[]
+        yield
+
 
 
 app = FastAPI(title="Kada AI Service", version="0.1.0",lifespan=lifespan)

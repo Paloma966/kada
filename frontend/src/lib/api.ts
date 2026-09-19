@@ -419,20 +419,14 @@ export const aiAPI = {
       body: JSON.stringify(body),
     }),
 
-  // 会话列表（JSON 接口，复用 fetchAPI 的认证 + 错误处理）
-  listConversations: () =>
-    fetchAPI("/api/ai/conversations", { token: getToken() ?? undefined }),
+  // 获取当前会话（最新一个）及其消息：进 AI 页时调用，自动续上上次聊天
+  getCurrentSession: () =>
+    fetchAPI("/api/ai/session/current", { token: getToken() ?? undefined }),
 
-  // 单个会话的历史消息
-  getMessages: (conversationId: string) =>
-    fetchAPI(`/api/ai/conversations/${conversationId}/messages`, {
-      token: getToken() ?? undefined,
-    }),
-
-  // 删除会话
-  deleteConversation: (conversationId: string) =>
-    fetchAPI(`/api/ai/conversations/${conversationId}`, {
-      method: "DELETE",
+  // 重新开始：后端删掉该用户的旧会话，新建一个空会话并返回其 id
+  restartSession: () =>
+    fetchAPI("/api/ai/session/restart", {
+      method: "POST",
       token: getToken() ?? undefined,
     }),
 };

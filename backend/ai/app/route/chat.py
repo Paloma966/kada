@@ -6,6 +6,8 @@ from langchain_core.messages import HumanMessage, AIMessage,ToolMessage,SystemMe
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from pydantic import BaseModel
 from starlette.responses import JSONResponse
+from app.service import mcp_client
+from app.service.mcp_client import mcp_tool
 
 from app.service.tools import ALL_TOOLS,TOOL_MAP
 from app.config import settings
@@ -48,7 +50,7 @@ async def real_stream(user_id: str,conv_id: str,history,user_message:str):
         context=context,
         input=user_message,
     )
-    model=llm.get_model().bind_tools(ALL_TOOLS)
+    model=llm.get_model().bind_tools(ALL_TOOLS+mcp_client.mcp_tool)
     full_text=""
     for _ in range(5):
         ai_msg=await model.ainvoke(messages)
@@ -59,8 +61,15 @@ async def real_stream(user_id: str,conv_id: str,history,user_message:str):
                 yield _see("token",{"delta":ai_msg.content})
             break
         for tc in ai_msg.tool_calls:
-            func=TOOL_MAP[tc["name"]]
-            result=func.invoke(tc["args"])
+            if tc["name"] in TOOL_MAP:
+                result =TOOL_MAP[tc["name"].invoke(tc["args"])]
+            else:
+                mcp_tool=next((t for t in mcp_client.mcp_tool if t.name==tc["name"]),None)
+                if mcp_tool is None:
+                    result=f"未加工具：{tc['name']}"
+                else :
+                    result=await mcp_tool.ainvoke(tc)
+
             messages.append(
                 ToolMessage(content=str(result),tool_call_id=tc["id"])
             )
@@ -82,24 +91,15 @@ async def chat(req:ChatRequest,request:Request):
     gen=real_stream(user_id,conv_id,history,req.message)
     return StreamingResponse(gen,media_type="text/event-stream")
 
-#会话列表
-@router.get("/v1/conversations")
-async def list_convs(request:Request):
-    user_id=request.headers.get("X-Kada-User-ID", "demo-user")
-    convs=await session.list_conversations(user_id)
-    return {"conversations":convs}
+#当前会话
+@router.get("/v1/session/current")
+async def current_session(requset:Request):
+    user_id=requset.headers.get("X-Kada-User-ID","demo-user")
+    return await session.get_current_session(user_id)
+#重新开始
+@router.post("v1/session/restart")
+async def restart_session(request:Request):
+    user_id=request.headers.get("X-Kada-User-ID","demo-user")
+    new_id=await session.restart_session(user_id)
+    return {"conversation_id":new_id}
 
-#单会话历史
-@router.get("/v1/conversations/{conversation_id}/messages")
-async def get_conv(conversation_id:str ,request:Request):
-    user_id=request.headers.get("X-Kada-User-ID", "demo-user")
-    msgs=await session.load_messages(user_id,conversation_id)
-    return {"messages":msgs}
-
-@router.delete("/v1/conversations/{conversation_id}")
-async def delete_conv(conversation_id:str ,requset:Request):
-    user_id=requset.headers.get("X-Kada-User-ID", "demo-user")
-    ok=await session.delete_conversation(user_id,conversation_id)
-    if not ok:
-        return JSONResponse(status_code=404,content={"error":"会话不存在"})
-    return {"ok":True}
