@@ -1,11 +1,18 @@
+"""对话大模型客户端单例。"""
 
-from app.config import settings
 from langchain_openai import ChatOpenAI
 
-#创建模型实例
+from app.config import settings
+
 _model = None
 
+
 def get_model() -> ChatOpenAI:
+    """全局复用同一个模型客户端。
+
+    单例是为了复用底层 HTTP 连接池，避免每个请求都重新构造客户端；
+    streaming=True 让上层可以逐 token 流式输出（SSE 打字效果）。
+    """
     global _model
     if _model is None:
         _model = ChatOpenAI(

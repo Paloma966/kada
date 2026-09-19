@@ -82,7 +82,8 @@ func NewHandler(aiBaseURL string) (*Handler, error) {
 func (h *Handler) RegisterRoutes(r *gin.RouterGroup, authMW gin.HandlerFunc) {
 	r.Use(authMW)
 	r.POST("/ai/chat", h.forward)
-	// 单会话模式：current 取当前用户最新会话及其消息，restart 删除旧会话并新建空会话
+	// Single-session mode: current returns the user's latest conversation with
+	// its messages, restart drops it and creates a fresh empty one.
 	r.GET("/ai/session/current", h.forward)
 	r.POST("/ai/session/restart", h.forward)
 }

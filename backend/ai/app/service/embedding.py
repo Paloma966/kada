@@ -1,22 +1,18 @@
-import asyncio
+"""文本向量化（embedding）客户端单例，供知识库入库和检索使用。"""
+
 from langchain_community.embeddings import DashScopeEmbeddings
 
-
 from app.config import settings
-#全局embedding客户端
-_embeddings:DashScopeEmbeddings|None=None
 
-def get_embeddings()->DashScopeEmbeddings:
+_embeddings: DashScopeEmbeddings | None = None
+
+
+def get_embeddings() -> DashScopeEmbeddings:
+    """全局复用同一个 embedding 客户端（DashScope SDK 是同步实现）。"""
     global _embeddings
     if _embeddings is None:
-        _embeddings=DashScopeEmbeddings(
+        _embeddings = DashScopeEmbeddings(
             model=settings.EMBEDDING_MODEL,
             dashscope_api_key=settings.DASHSCOPE_API_KEY,
         )
     return _embeddings
-
-async def aembed_query(text:str)->list[float]:
-    return await asyncio.to_thread(get_embeddings().embed_query,text)
-
-async def aembed_documents(texts:list[str])->list[list[float]]:
-    return await asyncio.to_thread(get_embeddings().embed_documents,texts)
