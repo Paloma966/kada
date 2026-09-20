@@ -36,7 +36,7 @@ class Settings(BaseSettings):
 
     # MCP 子服务回调 Go 后端的地址与长效 API Token
     KADA_API_BASE: str = "http://localhost:8080"
-    KADA_API_TOKEN: str = os.getenv("KADA_API_TOKEN", "")
+    KADA_API_TOKEN: str ="kada_4d6c97c34b195f6d44adba6cef986d2ad59ebe76a2d7b251"
 
 
 settings = Settings()
