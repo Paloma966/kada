@@ -1,12 +1,16 @@
-// Extracts the "Verify deployment" and "Report the smoke test result" scripts out of ci.yml and runs them
-// against a stubbed curl, so each outcome is observed instead of assumed.
+// Extracts the "Verify deployment", "Report the smoke test result" and "Check the SMS credentials" steps
+// out of ci.yml and runs them, so each outcome is observed instead of assumed.
 //
 //   node scripts/verify-deploy-step.test.js
 //
-// The cases are the ones that actually appeared in CI (35: the edge reset the TLS handshake, 6: the host
-// did not resolve) plus the healthy case and a reachable-but-unhealthy API. It asserts that the verify
-// step never fails the job, that it records the right status, and that the report step warns only when
-// the smoke test genuinely did not pass.
+// The verification cases are the ones that actually appeared in CI (35: the edge reset the TLS handshake,
+// 6: the host did not resolve) plus the healthy case and a reachable-but-unhealthy API. It asserts that
+// the verify step never fails the job, that it records the right status, and that the report step warns
+// only when the smoke test genuinely did not pass.
+//
+// The SMS cases assert the property that makes that step safe to ship: a missing SMS credential warns and
+// still exits 0, because the Aliyun signature and template have to be approved in the console before they
+// exist at all, and the point of the warning is that a site nobody can sign into must not be quiet.
 //
 // Generates scripts/.verify-deploy-out/ and runs it with bash. Git Bash cannot run under the default
 // sandbox (it needs a signal pipe), so this looks for WSL bash first and falls back to Git Bash.
@@ -22,7 +26,7 @@ const toPosix = (p) => p.replace(/\\/g, "/");
 fs.rmSync(outDir, { recursive: true, force: true });
 fs.mkdirSync(outDir, { recursive: true });
 
-// --- pull the two steps' run: blocks out of the workflow ------------------------------------------------
+// --- pull the three steps' run: blocks out of the workflow ----------------------------------------------
 const workflow = fs.readFileSync(path.join(root, ".github", "workflows", "ci.yml"), "utf8");
 
 function extractRun(name) {
@@ -45,6 +49,7 @@ function extractRun(name) {
 const write = (name, content) => fs.writeFileSync(path.join(outDir, name), content.replace(/\r\n/g, "\n"), "utf8");
 write("step-verify.sh", extractRun("Verify deployment"));
 write("step-report.sh", extractRun("Report the smoke test result"));
+write("step-check-sms.sh", extractRun("Check the SMS credentials"));
 
 // --- the harness that decides whether each case behaved -------------------------------------------------
 const HARNESS = String.raw`#!/usr/bin/env bash
@@ -151,6 +156,7 @@ STUB
 echo "--- bash -n ---"
 bash -n "$HERE/step-verify.sh" && echo "step-verify.sh parses"
 bash -n "$HERE/step-report.sh" && echo "step-report.sh parses"
+bash -n "$HERE/step-check-sms.sh" && echo "step-check-sms.sh parses"
 echo
 
 echo "--- cases ---"
@@ -158,6 +164,59 @@ run_case ok        0 passed no  "(none)"                              "runner re
 run_case reset     0 failed yes "curl 35: a TLS handshake failure"    "edge resets the TLS handshake (exit 35)"
 run_case dns       0 failed yes "curl 6: could not fetch"             "DNS does not resolve (exit 6)"
 run_case unhealthy 0 failed yes "did not answer with a healthy payload" "reachable but the API is not healthy"
+echo
+
+echo "--- the SMS advisory step ---"
+
+# A missing SMS credential must warn without failing the deploy, must name every missing key, and must say
+# what actually breaks; with all four set it must be completely silent.
+run_sms_case() {
+  mode="$1"; want_warning="$2"; want_summary="$3"; label="$4"
+  dir="$HERE/case-sms-$mode"
+  rm -rf "$dir"; mkdir -p "$dir"
+  : > "$dir/summary.md"
+
+  if [ "$mode" = "present" ]; then
+    SMS_ACCESS_KEY_ID=id SMS_ACCESS_KEY_SECRET=secret SMS_SIGN_NAME=kada SMS_TEMPLATE_CODE=SMS_336675166 \
+      GITHUB_STEP_SUMMARY="$dir/summary.md" bash "$HERE/step-check-sms.sh" > "$dir/out.txt" 2>&1
+  else
+    SMS_ACCESS_KEY_ID= SMS_ACCESS_KEY_SECRET= SMS_SIGN_NAME= SMS_TEMPLATE_CODE= \
+      GITHUB_STEP_SUMMARY="$dir/summary.md" bash "$HERE/step-check-sms.sh" > "$dir/out.txt" 2>&1
+  fi
+  rc=$?
+
+  warned=no
+  grep -q '::warning' "$dir/out.txt" && warned=yes
+  summary=no
+  [ -s "$dir/summary.md" ] && summary=yes
+
+  problems=""
+  [ "$rc" = "0" ] || problems="$problems exit=$rc(want 0)"
+  [ "$warned" = "$want_warning" ] || problems="$problems warning=$warned(want $want_warning)"
+  [ "$summary" = "$want_summary" ] || problems="$problems summary=$summary(want $want_summary)"
+
+  if [ "$want_warning" = "yes" ]; then
+    for key in SMS_ACCESS_KEY_ID SMS_ACCESS_KEY_SECRET SMS_SIGN_NAME SMS_TEMPLATE_CODE; do
+      grep -q "$key" "$dir/out.txt" || problems="$problems does-not-name-$key"
+    done
+    grep -qi 'nobody can sign in' "$dir/out.txt" || problems="$problems does-not-say-what-breaks"
+    grep -q 'SMS_ACCESS_KEY_ID' "$dir/summary.md" || problems="$problems summary-missing-keys"
+    grep -q '| Secret |' "$dir/summary.md" || problems="$problems summary-missing-table"
+  fi
+
+  if [ -z "$problems" ]; then
+    printf 'ok    %s\n' "$label"
+  else
+    printf 'FAIL  %s\n' "$label"
+    printf '        reason:%s\n' "$problems"
+    fails=$((fails + 1))
+  fi
+  printf '        exit=%s warning=%s summary=%s\n' "$rc" "$warned" "$summary"
+  printf '        out: %s\n' "$(head -c 300 "$dir/out.txt")"
+}
+
+run_sms_case missing yes yes "SMS credentials missing: warns loudly, still exits 0"
+run_sms_case present no  no  "SMS credentials present: says nothing at all"
 echo
 
 if [ "$fails" = "0" ]; then

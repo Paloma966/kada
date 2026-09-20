@@ -326,14 +326,75 @@ jobs:
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: 22
-          source: "backend/bin/server,backend/bin/migrate,deploy-pkg/*,deploy-version.txt,deploy/deploy-ai.sh,deploy/docker-compose.ai.yml"
+          source: "backend/bin/server,backend/bin/migrate,deploy-pkg/*,deploy-version.txt,deploy/deploy-ai.sh,deploy/upsert-env.sh,deploy/docker-compose.ai.yml"
           target: /tmp/kada-deploy/
           strip_components: 0
+
+      # The SMS credentials are advisory, so this step cannot fail the deploy - but "advisory" must not
+      # mean "quiet". It runs on the runner rather than on the host so the annotation and the job summary
+      # are guaranteed to render: text that has travelled back over SSH is only best-effort (see the
+      # --warn block in the deploy step, which repeats the same warning in the server's own log).
+      #
+      # It exists because phone number + SMS code is the only way to sign in: without these four the site
+      # is up and nobody can log into it, which is the kind of outage that looks green until someone tries.
+      - name: Check the SMS credentials
+        env:
+          SMS_ACCESS_KEY_ID: ${{ secrets.SMS_ACCESS_KEY_ID }}
+          SMS_ACCESS_KEY_SECRET: ${{ secrets.SMS_ACCESS_KEY_SECRET }}
+          SMS_SIGN_NAME: ${{ secrets.SMS_SIGN_NAME }}
+          SMS_TEMPLATE_CODE: ${{ secrets.SMS_TEMPLATE_CODE }}
+        run: |
+          missing=""
+          for name in SMS_ACCESS_KEY_ID SMS_ACCESS_KEY_SECRET SMS_SIGN_NAME SMS_TEMPLATE_CODE; do
+            if [ -z "${!name}" ]; then
+              missing="${missing:+$missing, }$name"
+            fi
+          done
+
+          if [ -z "$missing" ]; then
+            echo "the SMS credentials are configured"
+            exit 0
+          fi
+
+          {
+            echo "### Warning: the SMS credentials are not configured"
+            echo ""
+            echo "Missing: \`$missing\`"
+            echo ""
+            echo "The deployment continues, but **nobody can sign in**: a phone number plus an SMS code is"
+            echo "the only sign-in method, and in release mode the code is never written to the log."
+            echo ""
+            echo "| Secret | Where it comes from |"
+            echo "|---|---|"
+            echo "| \`SMS_ACCESS_KEY_ID\` / \`SMS_ACCESS_KEY_SECRET\` | Aliyun RAM AccessKey pair with SMS permission |"
+            echo "| \`SMS_SIGN_NAME\` / \`SMS_TEMPLATE_CODE\` | The system-granted signature and template in the Aliyun PNVS console |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          echo "::warning title=SMS is not configured::Nobody can sign in until $missing is set. The deployment itself continues."
 
       - name: Apply schema and restart services
         uses: appleboy/ssh-action@v1.2.2
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          # The provider keys live here rather than in a file someone edits over SSH. "The AI page is
+          # broken" and "the SMS code never arrives" were both, in the end, an empty line in
+          # /opt/kada/ai/ai.env or /opt/kada/backend/.env that nothing had ever checked; see
+          # deploy/upsert-env.sh for how these are written and why the deployment stops when they are
+          # missing.
+          #
+          # Add them under Settings -> Secrets and variables -> Actions:
+          #   DEEPSEEK_API_KEY      chat model key
+          #   DASHSCOPE_API_KEY     Aliyun Bailian embedding key (written to ai.env as `aliyun`)
+          #   AI_INTERNAL_SECRET    openssl rand -hex 32; written to BOTH sides so they cannot disagree
+          #   SMS_ACCESS_KEY_ID / SMS_ACCESS_KEY_SECRET / SMS_SIGN_NAME / SMS_TEMPLATE_CODE
+          #                         the Aliyun PNVS credentials; without them nobody can sign in
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          DASHSCOPE_API_KEY: ${{ secrets.DASHSCOPE_API_KEY }}
+          AI_INTERNAL_SECRET: ${{ secrets.AI_INTERNAL_SECRET }}
+          SMS_ACCESS_KEY_ID: ${{ secrets.SMS_ACCESS_KEY_ID }}
+          SMS_ACCESS_KEY_SECRET: ${{ secrets.SMS_ACCESS_KEY_SECRET }}
+          SMS_SIGN_NAME: ${{ secrets.SMS_SIGN_NAME }}
+          SMS_TEMPLATE_CODE: ${{ secrets.SMS_TEMPLATE_CODE }}
         with:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USER }}
@@ -344,7 +405,7 @@ jobs:
           # first build can exceed - and it would fail the deploy after the API and the
           # frontend had already been replaced.
           command_timeout: 30m
-          envs: DATABASE_URL
+          envs: DATABASE_URL,DEEPSEEK_API_KEY,DASHSCOPE_API_KEY,AI_INTERNAL_SECRET,SMS_ACCESS_KEY_ID,SMS_ACCESS_KEY_SECRET,SMS_SIGN_NAME,SMS_TEMPLATE_CODE
           script: |
             set -euo pipefail
 
@@ -353,6 +414,44 @@ jobs:
             FRONTEND_DIR=/opt/kada/frontend
 
             echo "Deploying $(head -1 "$DEPLOY_DIR/deploy-version.txt")"
+
+            # 0. Sync the secrets BEFORE touching anything on this host.
+            #
+            #    Placement is the whole point: a missing key must fail the deployment while every service
+            #    is still running the previous, working build. Run this after step 3 and a forgotten
+            #    secret would take the site down and only then say why.
+            #
+            #    --set with an empty value keeps whatever the file already holds, so a host configured by
+            #    hand keeps working; --require is what makes "nothing there at all" a hard failure.
+            echo "Syncing secrets into the runtime env files"
+            bash "$DEPLOY_DIR/deploy/upsert-env.sh" /opt/kada/ai/ai.env \
+              --set "DEEPSEEK_API_KEY=$DEEPSEEK_API_KEY" \
+              --set "aliyun=$DASHSCOPE_API_KEY" \
+              --set "AI_INTERNAL_SECRET=$AI_INTERNAL_SECRET" \
+              --require DEEPSEEK_API_KEY \
+              --require aliyun \
+              --require AI_INTERNAL_SECRET
+
+            # The gateway reads AI_INTERNAL_SECRET from its own .env, and the AI service reads it from
+            # ai.env. Writing both from the same secret is the only way they cannot end up different -
+            # which is what a 401 "only the Go gateway may call this service" always means.
+            #
+            # The SMS credentials are checked with --warn rather than --require: the signing name and the
+            # template have to be approved in the Aliyun console, which takes days, and blocking every
+            # deploy until then would stop unrelated fixes from shipping. They are still not optional for
+            # the product - the runner-side check in the step before this one annotates the run and writes
+            # the job summary, and this block repeats it in the server's own log.
+            bash "$DEPLOY_DIR/deploy/upsert-env.sh" "$BACKEND_DIR/.env" \
+              --set "AI_INTERNAL_SECRET=$AI_INTERNAL_SECRET" \
+              --set "SMS_ACCESS_KEY_ID=$SMS_ACCESS_KEY_ID" \
+              --set "SMS_ACCESS_KEY_SECRET=$SMS_ACCESS_KEY_SECRET" \
+              --set "SMS_SIGN_NAME=$SMS_SIGN_NAME" \
+              --set "SMS_TEMPLATE_CODE=$SMS_TEMPLATE_CODE" \
+              --require AI_INTERNAL_SECRET \
+              --warn SMS_ACCESS_KEY_ID \
+              --warn SMS_ACCESS_KEY_SECRET \
+              --warn SMS_SIGN_NAME \
+              --warn SMS_TEMPLATE_CODE
 
             # 1. Back up the running binary so a failed start can be rolled back.
             echo "Backing up the current binary"

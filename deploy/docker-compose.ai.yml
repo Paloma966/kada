@@ -8,8 +8,8 @@
 # depends_on, so it can only ever start the AI container.
 #
 # Install as /opt/kada/ai/docker-compose.yml with the source tree next to it in
-# /opt/kada/ai/src; deploy/deploy-ai.sh does both, and that script is what CI
-# and `make deploy-ai` run.
+# /opt/kada/ai/src; deploy/deploy-ai.sh does both, and that script is what the CI
+# deploy job runs on the host.
 #
 # network_mode: host is load-bearing:
 #   - inside the container 127.0.0.1 means the host, so POSTGRES_URL / REDIS_URL
