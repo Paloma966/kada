@@ -5,6 +5,8 @@ import (
 	"log"
 	"strings"
 	"testing"
+
+	"github.com/alibabacloud-go/tea/tea"
 )
 
 func TestMaskPhone(t *testing.T) {
@@ -128,5 +130,39 @@ func TestNewAliyunSenderWarnsAboutImplausibleCredentialLengths(t *testing.T) {
 		if !strings.Contains(warning, want) {
 			t.Errorf("warning should mention %q, got: %s", want, warning)
 		}
+	}
+}
+
+// The send contract, pinned because getting it wrong is invisible until a real message is attempted.
+//
+// SendSmsVerifyCode generates the code itself: the template variable must carry the placeholder
+// "##code##" and not a code of ours (Aliyun rejects anything else with isv.INVALID_PARAMETERS, which is
+// how the first real send failed), and the generated code only comes back for storage because
+// ReturnVerifyCode is set. CodeLength has to be explicit too - its default is 4 digits while the sign-in
+// form, the stored hash and the input field all expect 6 - and digits-only matches that input.
+func TestBuildSendRequestPinsTheProviderContract(t *testing.T) {
+	sender := &AliyunSender{signName: "kada", templateCode: "SMS_000000000"}
+	request := sender.buildSendRequest("13800138000")
+
+	if got, want := tea.StringValue(request.TemplateParam), `{"code":"##code##","min":"5"}`; got != want {
+		t.Errorf("TemplateParam = %q, want %q", got, want)
+	}
+	if got := tea.Int64Value(request.CodeLength); got != 6 {
+		t.Errorf("CodeLength = %d, want 6: the default is 4 and the form expects six digits", got)
+	}
+	if got := tea.Int64Value(request.CodeType); got != 1 {
+		t.Errorf("CodeType = %d, want 1 (digits only)", got)
+	}
+	if !tea.BoolValue(request.ReturnVerifyCode) {
+		t.Error("ReturnVerifyCode is false: the generated code would never reach the sms_codes table")
+	}
+	if got := tea.Int64Value(request.ValidTime); got != 300 {
+		t.Errorf("ValidTime = %d, want 300 to match the five minutes the code row lives for", got)
+	}
+	if got := tea.StringValue(request.PhoneNumber); got != "13800138000" {
+		t.Errorf("PhoneNumber = %q", got)
+	}
+	if got := tea.StringValue(request.SignName); got != "kada" {
+		t.Errorf("SignName = %q", got)
 	}
 }

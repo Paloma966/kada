@@ -1,11 +1,9 @@
 package sms
 
 import (
-	"crypto/rand"
 	"errors"
 	"fmt"
 	"log"
-	"math/big"
 	"os"
 
 	openapi "github.com/alibabacloud-go/darabonba-openapi/v2/client"
@@ -74,18 +72,35 @@ func NewAliyunSender(accessKeyID, accessKeySecret, signName, templateCode string
 	return &AliyunSender{client: client, signName: signName, templateCode: templateCode}, nil
 }
 
-func (s *AliyunSender) SendVerificationCode(phone string) (code string, err error) {
-	code = generateCode()
-
-	request := &dypnsapi.SendSmsVerifyCodeRequest{
-		PhoneNumber:   tea.String(phone),
-		SchemeName:    tea.String("SMS"),
-		SignName:      tea.String(s.signName),
-		TemplateCode:  tea.String(s.templateCode),
-		TemplateParam: tea.String(fmt.Sprintf(`{"code":"%s","min":"5"}`, code)),
+// buildSendRequest assembles the call. It is split out from the send so the contract it encodes can be
+// asserted without a network round trip.
+//
+// The provider generates the code, not this service: the template variable carries the placeholder
+// "##code##" and Aliyun substitutes a code of its own for it. A code of our own in that field is rejected
+// with isv.INVALID_PARAMETERS before any message is sent, which is exactly how the first real send
+// failed. ReturnVerifyCode asks the provider to hand the generated code back, so verification stays where
+// it already is - hashed into the sms_codes table with an expiry and an attempt limit - instead of being
+// delegated to Aliyun afterwards.
+//
+// CodeLength is explicit because its default is 4 while the sign-in form, the stored hash and the input
+// field all expect six digits. CodeType 1 is digits only, matching that numeric input. ValidTime repeats
+// the five minutes the code row lives for, so both sides agree on the deadline.
+func (s *AliyunSender) buildSendRequest(phone string) *dypnsapi.SendSmsVerifyCodeRequest {
+	return &dypnsapi.SendSmsVerifyCodeRequest{
+		PhoneNumber:      tea.String(phone),
+		SchemeName:       tea.String("SMS"),
+		SignName:         tea.String(s.signName),
+		TemplateCode:     tea.String(s.templateCode),
+		TemplateParam:    tea.String(`{"code":"##code##","min":"5"}`),
+		CodeLength:       tea.Int64(6),
+		CodeType:         tea.Int64(1),
+		ValidTime:        tea.Int64(300),
+		ReturnVerifyCode: tea.Bool(true),
 	}
+}
 
-	response, err := s.client.SendSmsVerifyCode(request)
+func (s *AliyunSender) SendVerificationCode(phone string) (code string, err error) {
+	response, err := s.client.SendSmsVerifyCode(s.buildSendRequest(phone))
 	if err != nil {
 		log.Printf("aliyun SMS request failed (sign_name=%q template_code=%q phone=%s): %v",
 			s.signName, s.templateCode, maskPhone(phone), err)
@@ -108,6 +123,17 @@ func (s *AliyunSender) SendVerificationCode(phone string) (code string, err erro
 			s.signName, s.templateCode, maskPhone(phone), providerCode, providerMessage)
 		return "", errors.New(smsProviderError(providerCode, providerMessage))
 	}
+
+	// The message is out and the code in it is the provider's. Returning "" here would store a hash of
+	// nothing and leave the recipient holding a code that cannot ever be verified, so refuse loudly
+	// instead: the caller reports a failed send and the user can ask for another one.
+	if response.Body.Model == nil || tea.StringValue(response.Body.Model.VerifyCode) == "" {
+		log.Printf("aliyun SMS accepted the request but returned no verification code "+
+			"(sign_name=%q template_code=%q phone=%s); the code it sent cannot be verified here",
+			s.signName, s.templateCode, maskPhone(phone))
+		return "", errors.New(smsProviderError(providerCode, "the provider did not return the generated code"))
+	}
+	code = tea.StringValue(response.Body.Model.VerifyCode)
 
 	log.Printf("📱 verification code sent to %s", maskPhone(phone))
 	return code, nil
@@ -153,9 +179,4 @@ func (s *AliyunSender) CheckVerificationCode(phone, code string) (bool, error) {
 	}
 
 	return tea.StringValue(response.Body.Model.VerifyResult) == "PASS", nil
-}
-
-func generateCode() string {
-	n, _ := rand.Int(rand.Reader, big.NewInt(1000000))
-	return fmt.Sprintf("%06d", n.Int64())
 }
