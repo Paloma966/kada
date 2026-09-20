@@ -71,6 +71,34 @@ if ! grep -qE '^[[:space:]]*AI_INTERNAL_SECRET=[^[:space:]]' "$ENV_FILE"; then
   echo "         requests from any process on this host, not just the Go gateway" >&2
 fi
 
+# POSTGRES_URL is the one connection string that cannot be left to a default. app/config.py falls back to
+# a development DSN with a guessed password, so an empty value does not fail here - it produces a container
+# that starts, then dies inside the lifespan hook's init_db(), and the rollback only happens after the image
+# has been built. That is the most expensive possible way to learn that one line is missing.
+#
+# REDIS_URL and KADA_API_BASE are deliberately not required: their defaults
+# (redis://127.0.0.1:6379/0 and http://localhost:8080) are what this host actually runs, and Redis is
+# documented as optional - the service degrades to a database read. Requiring them would block a deploy
+# that was going to work.
+if ! grep -qE '^[[:space:]]*POSTGRES_URL=[^[:space:]]' "$ENV_FILE"; then
+  cat >&2 <<EOF
+POSTGRES_URL is empty in $ENV_FILE
+
+Without it the service falls back to the development DSN baked into
+backend/ai/app/config.py - a guessed password against 127.0.0.1:5432/kada_ai - and the
+container crash-loops inside init_db() instead of failing here.
+
+Fill it in from deploy/ai.env.example (mode 600):
+
+  POSTGRES_URL=postgresql+asyncpg://kada:<database password>@127.0.0.1:5432/kada_ai
+
+The password is the same one the Go API uses; it is in /opt/kada/backend/.env as
+DATABASE_URL, and the database name changes from kada to kada_ai. deploy/setup-ai-db.sh
+creates that database and enables the vector extension in it.
+EOF
+  exit 1
+fi
+
 # The kada_ai database must exist before the container starts: init_db() runs in
 # the lifespan hook, so a missing database is a crash loop rather than a bad
 # health check. deploy/setup-ai-db.sh prepares it.

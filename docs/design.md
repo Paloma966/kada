@@ -609,9 +609,12 @@ Three supported shapes:
    The image is built **on the host**: a Python service is not a binary to copy, and only the source
    changes between deploys, so the pip layers stay cached. `deploy/deploy-ai.sh` is the only
    implementation of that step - the deploy job syncs `backend/ai`, `deploy/docker-compose.ai.yml` and
-   the script, then runs it. It refuses to deploy without `/opt/kada/ai/ai.env`, or with an empty
-   `DEEPSEEK_API_KEY` / `aliyun` in it (a service that starts and then fails every request is worse than a
-   refused deploy), waits for `/healthz`, and rolls back to the previous image otherwise.
+   the script, then runs it. It refuses to deploy without `/opt/kada/ai/ai.env`, with an empty
+   `POSTGRES_URL` in it, or with an empty `DEEPSEEK_API_KEY` / `aliyun` (a service that starts and then
+   fails every request is worse than a refused deploy; for the DSN it is worse still, because the
+   fallback in `backend/ai/app/config.py` carries a guessed password, so the container dies inside
+   `init_db()` only after a multi-minute image build). It waits for `/healthz`, and rolls back to the
+   previous image otherwise.
    `deploy/setup-ai-db.sh` creates `kada_ai` and enables the vector extension on a database that already
    exists, which `docker-entrypoint-initdb.d` can no longer do on an existing volume.
 
