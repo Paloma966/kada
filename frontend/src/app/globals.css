@@ -26,7 +26,8 @@
 @theme {
   --color-brand: #4f46e5;        /* indigo-600 brand color */
   --color-brand-dark: #4338ca;   /* indigo-700 */
-  --color-brand-soft: #eef2ff;   /* indigo-50 */
+  --color-brand-soft: #eef2ff;   /* indigo-50: brand-tinted surface */
+  --color-brand-ink: #4338ca;    /* indigo-700: text and icons on that surface */
   --color-hairline: #e5e5e5;     /* neutral-200 hairline border */
   --color-surface: #fafafa;      /* neutral-50 page background */
 
@@ -61,6 +62,27 @@
   --color-faint: #6b7280;
   --color-line: #374151;
   --color-line-strong: #4b5563;
+
+  /*
+   * The brand tint is a *surface role*, not a fixed pair: `bg-brand-soft text-brand-ink` is a chip, a
+   * selected nav item, an icon tile. Both halves therefore move together, or they meet in the middle - a
+   * light chip carrying light ink, which is what happens when only one of the two is themed.
+   */
+  --color-brand-soft: #312e81;   /* indigo-900 */
+  --color-brand-ink: #c7d2fe;    /* indigo-200 */
+
+  /*
+   * `gray-50` is remapped because this app uses it as a neutral surface (`bg-gray-50`, `bg-gray-50/50`,
+   * `border-gray-50`, `hover:bg-gray-50`), never as one half of a fixed pair: every place it appears sits
+   * under `text-*` classes that are themselves themed, or holds no text at all. Left alone it paints
+   * white panels and near-white code chips on a near-black page, with light text on top of them.
+   *
+   * It is deliberately the only raw Tailwind neutral remapped here. `indigo-600`, `red-600` and the other
+   * brand/status shades are fixed pairs (`bg-indigo-600 text-white`, `bg-red-50 text-red-600`) whose two
+   * halves must keep their contrast, and remapping one half is how a primary button ends up with white
+   * text on a pale blue fill.
+   */
+  --color-gray-50: #0b1220;
 
   /*
    * `white` stays literal white in both themes. It is not a surface role here: it is the fill of the

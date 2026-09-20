@@ -31,7 +31,7 @@ export default function CustomersPage() {
       {/* Summary cards */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-3">
         <div className="rounded-xl border border-line bg-canvas p-5 shadow-sm">
-          <div className="inline-flex size-10 items-center justify-center rounded-lg text-indigo-600 bg-indigo-50">
+          <div className="inline-flex size-10 items-center justify-center rounded-lg text-brand-ink bg-brand-soft">
             <Users className="size-5" />
           </div>
           <p className="mt-3 text-2xl font-bold text-strong tabular-nums">

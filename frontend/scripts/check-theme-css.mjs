@@ -68,6 +68,20 @@ check(
   !/--color-indigo-600/.test(darkBlock) && !/--color-red-600/.test(darkBlock),
   "these are fixed pairs; brightening them would make the button text unreadable"
 );
+// The tint is a surface role, so both halves have to move: a light chip whose ink did not follow would
+// carry light text on a light fill.
+check(
+  "the brand tint and its ink BOTH follow the theme",
+  /--color-brand-soft:\s*#312e81/.test(darkBlock) && /--color-brand-ink:\s*#c7d2fe/.test(darkBlock),
+  "bg-brand-soft and text-brand-ink are a pair; theme them together or not at all"
+);
+// gray-50 is used as a neutral surface across the app; left alone it paints white panels on a near-black
+// page. It is a neutral, not one half of a brand/status pair, which is why it may be remapped here.
+check(
+  "gray-50 is remapped for dark mode, so bg-gray-50 and hover:bg-gray-50 do not stay white",
+  /--color-gray-50:\s*#0b1220/.test(darkBlock),
+  "expected --color-gray-50 to be redefined in the dark block"
+);
 check("bg-canvas is generated", /\.bg-canvas\s*\{/.test(out));
 check("text-strong is generated", /\.text-strong\s*\{/.test(out));
 check("border-line is generated", /\.border-line\s*\{/.test(out));

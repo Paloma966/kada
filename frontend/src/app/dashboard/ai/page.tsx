@@ -161,7 +161,7 @@ export default function AIPage() {
           </div>
         ) : messages.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center text-center text-faint">
-            <div className="mb-3 flex size-14 items-center justify-center rounded-2xl bg-indigo-50">
+            <div className="mb-3 flex size-14 items-center justify-center rounded-2xl bg-brand-soft">
               <Sparkles className="size-7 text-indigo-500" />
             </div>
             <h3 className="text-lg font-semibold text-body">{t("开始对话")}</h3>

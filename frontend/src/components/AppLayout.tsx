@@ -6,6 +6,7 @@ import { LogOut, Menu } from "lucide-react";
 import { toast } from "sonner";
 import { Sidebar } from "./Sidebar";
 import { LanguageSwitcher } from "./LanguageSwitcher";
+import { ThemeToggle } from "./ThemeToggle";
 import { getToken, getUser, removeToken } from "@/lib/auth";
 import { useT } from "@/lib/i18n";
 import { useHydrated } from "@/lib/useHydrated";
@@ -57,7 +58,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
 
   if (!ready) {
     return (
-      <div className="flex h-screen items-center justify-center bg-gray-50">
+      <div className="flex h-screen items-center justify-center bg-subtle">
         <div className="flex flex-col items-center gap-3">
           <div className="size-8 animate-spin rounded-full border-2 border-indigo-600 border-t-transparent" />
           <p className="text-sm text-faint">{t("加载中...")}</p>
@@ -83,7 +84,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   })();
 
   return (
-    <div className="flex h-screen overflow-hidden bg-gray-50">
+    <div className="flex h-screen overflow-hidden bg-subtle">
       {/* Desktop Sidebar - always visible on lg+ */}
       <div className="hidden lg:block">
         <Sidebar />
@@ -119,8 +120,9 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             <h2 className="text-sm font-medium text-body">{pageTitle}</h2>
           </div>
 
-          {/* Right: language switcher + user */}
+          {/* Right: theme + language switcher + user */}
           <div className="flex items-center gap-2">
+            <ThemeToggle />
             <LanguageSwitcher />
             <div className="relative">
               <button
@@ -130,7 +132,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                 }}
                 className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm transition-colors hover:bg-muted-surface"
               >
-                <div className="flex size-8 items-center justify-center rounded-full bg-indigo-100 text-sm font-medium text-indigo-600 shrink-0">
+                <div className="flex size-8 items-center justify-center rounded-full bg-brand-soft text-sm font-medium text-brand-ink shrink-0">
                   {(user?.name || user?.email || "U")[0].toUpperCase()}
                 </div>
                 <span className="hidden sm:block text-sm font-medium text-body max-w-[120px] truncate">
@@ -157,7 +159,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                   </div>
                   <button
                     onClick={handleLogout}
-                    className="flex w-full items-center gap-2 px-3 py-2 text-sm text-muted hover:bg-gray-50 transition-colors"
+                    className="flex w-full items-center gap-2 px-3 py-2 text-sm text-muted hover:bg-muted-surface transition-colors"
                   >
                     <LogOut className="size-4" />
                     {t("退出登录")}

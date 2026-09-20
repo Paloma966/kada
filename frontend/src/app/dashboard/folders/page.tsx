@@ -117,7 +117,7 @@ export default function FoldersPage() {
           <p className="mt-1 text-sm text-muted">{t("请检查网络后重试")}</p>
           <button
             onClick={() => mutate()}
-            className="mt-3 text-sm font-medium text-indigo-600 hover:text-indigo-500"
+            className="mt-3 text-sm font-medium text-brand-ink hover:text-brand"
           >
             {t("重新加载")}
           </button>
@@ -197,7 +197,7 @@ export default function FoldersPage() {
                 ) : (
                   <>
                     <p
-                      className="text-sm font-medium text-strong truncate cursor-pointer hover:text-indigo-600 transition"
+                      className="text-sm font-medium text-strong truncate cursor-pointer hover:text-brand-ink transition"
                       onClick={() => {
                         setEditingId(f.id);
                         setEditingName(f.name);

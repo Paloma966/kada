@@ -35,7 +35,7 @@ export default function AnalyticsPage() {
       label: t("总链接数"),
       value: totalLinks.toLocaleString(),
       icon: Link2,
-      color: "text-indigo-600 bg-indigo-50",
+      color: "text-brand-ink bg-brand-soft",
     },
     {
       label: t("总点击数"),

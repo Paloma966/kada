@@ -116,11 +116,11 @@ export function Sidebar({ onCloseMobile }: { onCloseMobile?: () => void }) {
                     className={cn(
                       "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
                       isActive
-                        ? "bg-indigo-50 text-indigo-700"
+                        ? "bg-brand-soft text-brand-ink"
                         : "text-muted hover:bg-muted-surface hover:text-strong"
                     )}
                   >
-                    <Icon className={cn("size-4 shrink-0", isActive && "text-indigo-600")} />
+                    <Icon className={cn("size-4 shrink-0", isActive && "text-brand-ink")} />
                     <span>{t(item.name)}</span>
                   </Link>
                 );
@@ -138,11 +138,11 @@ export function Sidebar({ onCloseMobile }: { onCloseMobile?: () => void }) {
           className={cn(
             "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
             pathname === "/dashboard/settings"
-              ? "bg-indigo-50 text-indigo-700"
+              ? "bg-brand-soft text-brand-ink"
               : "text-muted hover:bg-muted-surface hover:text-strong"
           )}
         >
-          <Settings className={cn("size-4 shrink-0", pathname === "/dashboard/settings" && "text-indigo-600")} />
+          <Settings className={cn("size-4 shrink-0", pathname === "/dashboard/settings" && "text-brand-ink")} />
           <span>{t("设置")}</span>
         </Link>
         <p className="px-3 text-xs text-faint">Kada v0.2</p>

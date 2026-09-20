@@ -86,7 +86,7 @@ export default function DomainsPage() {
         </div>
         <button
           onClick={() => setShowGuide(!showGuide)}
-          className="inline-flex items-center gap-1.5 text-sm text-indigo-600 hover:text-indigo-700 transition"
+          className="inline-flex items-center gap-1.5 text-sm text-brand-ink hover:text-brand transition"
         >
           <Info className="size-4" />
           {t("如何配置？")}
@@ -95,16 +95,16 @@ export default function DomainsPage() {
 
       {/* DNS Setup Guide */}
       {showGuide && (
-        <div className="rounded-xl border border-indigo-100 bg-indigo-50/50 p-5">
+        <div className="rounded-xl border border-line bg-brand-soft/50 p-5">
           <h3 className="font-semibold text-indigo-900 text-sm mb-3">{t("配置自定义域名")}</h3>
           <ol className="space-y-2 text-sm text-indigo-800">
             <li className="flex gap-2">
               <span className="font-medium shrink-0">1.</span>
-              <span>{t("在域名 DNS 管理中添加一条 ")}<code className="bg-indigo-100 px-1 rounded text-xs font-mono">CNAME</code>{t(" 记录，指向 ")}<code className="bg-indigo-100 px-1 rounded text-xs font-mono">47.122.124.48</code></span>
+              <span>{t("在域名 DNS 管理中添加一条 ")}<code className="bg-brand-soft px-1 rounded text-xs font-mono">CNAME</code>{t(" 记录，指向 ")}<code className="bg-brand-soft px-1 rounded text-xs font-mono">47.122.124.48</code></span>
             </li>
             <li className="flex gap-2">
               <span className="font-medium shrink-0">2.</span>
-              <span>{t("在下方添加你的域名（例如 ")}<code className="bg-indigo-100 px-1 rounded text-xs font-mono">s.example.com</code>{t("）")}</span>
+              <span>{t("在下方添加你的域名（例如 ")}<code className="bg-brand-soft px-1 rounded text-xs font-mono">s.example.com</code>{t("）")}</span>
             </li>
             <li className="flex gap-2">
               <span className="font-medium shrink-0">3.</span>
@@ -156,7 +156,7 @@ export default function DomainsPage() {
           <p className="mt-1 text-sm text-muted">{t("请检查网络后重试")}</p>
           <button
             onClick={() => mutate()}
-            className="mt-3 text-sm font-medium text-indigo-600 hover:text-indigo-500"
+            className="mt-3 text-sm font-medium text-brand-ink hover:text-brand"
           >
             {t("重新加载")}
           </button>
