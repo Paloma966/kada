@@ -165,4 +165,10 @@ func TestBuildSendRequestPinsTheProviderContract(t *testing.T) {
 	if got := tea.StringValue(request.SignName); got != "kada" {
 		t.Errorf("SignName = %q", got)
 	}
+	// The scheme name is account-specific and its default is the default service; the hardcoded "SMS"
+	// this used to send was a guess, and the live account accepts the granted pair only without it.
+	if request.SchemeName != nil {
+		t.Errorf("SchemeName = %q, want it left out so the provider uses the default service",
+			tea.StringValue(request.SchemeName))
+	}
 }
