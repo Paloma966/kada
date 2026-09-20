@@ -11,37 +11,59 @@
 
 ### 1. 合并前必须先完成的三件事
 
-合并到 `main` = 立即部署，而这次部署的第 7 步会启动 AI 容器。**没有下面三项，第 7 步会直接失败**
-（API 和前端已经部署成功，只有 AI 页面不可用）：
+合并到 `main` = 立即部署。**没有下面三项，部署会在第 0 步就停下**（第 0 步同步密钥，失败时旧版本仍在
+运行，站点不受影响，只是这次部署不会完成）：
 
 1. **建 AI 数据库**（只需一次）：
+
    ```bash
-   make setup-ai-db DEPLOY_HOST=root@<服务器IP>
+   scp deploy/setup-ai-db.sh root@<服务器IP>:/tmp/
+   ssh root@<服务器IP> "bash /tmp/setup-ai-db.sh"
    ```
+
    它创建 `kada_ai` 库并在该库内启用 `vector` 扩展，可重复执行。
    报 `pgvector is not available` → 原生 PostgreSQL 装 `postgresql-16-pgvector` 并重启，
    Docker 则换成 `pgvector/pgvector:pg16` 镜像。
 
-2. **配 `/opt/kada/ai/ai.env`**（服务器上，只需一次）：
+2. **配 `/opt/kada/ai/ai.env` 里的连接串**（服务器上，只需一次）：
+
    ```bash
    mkdir -p /opt/kada/ai
    scp deploy/ai.env.example root@<服务器IP>:/opt/kada/ai/ai.env
    ssh root@<服务器IP> "chmod 600 /opt/kada/ai/ai.env && vi /opt/kada/ai/ai.env"
    ```
-   填 6 个值：`POSTGRES_URL`、`REDIS_URL`、`KADA_API_BASE`、`DEEPSEEK_API_KEY`、`aliyun`、
-   `AI_INTERNAL_SECRET`。其中 `AI_INTERNAL_SECRET` 用 `openssl rand -hex 32` 生成。
 
-3. **网关侧配同一个密钥**（服务器上）：
-   ```bash
-   ssh root@<服务器IP> "echo 'AI_INTERNAL_SECRET=<上一步那个值>' >> /opt/kada/backend/.env"
-   ```
-   改动 `backend/.env` 后需要 `systemctl restart kada-api` 才生效——流水线重启 API 时会自动读到，
-   所以放在推送前配置即可。**两边不一致时，AI 页面会整体返回 401。**
+   只需要填三个**非密钥**的连接串：`POSTGRES_URL`、`REDIS_URL`、`KADA_API_BASE`。
+   `DEEPSEEK_API_KEY`、`aliyun`、`AI_INTERNAL_SECRET` 不用手填——第 3 步配好后，部署时会自动写进去。
 
-另外两项检查（不属于阻塞项，但会导致体验降级）：
+3. **在 GitHub 仓库加密钥**（Settings → Secrets and variables → Actions）：
 
-- 服务器 nginx 要有 `/api/ai/` 的 location（关闭缓冲，SSE 才能逐字输出）。没有就 `make deploy-nginx`。
-- 平台「设置 → API Token」里**吊销旧的长效令牌**。代码已经不用它了，但它仍在 git 历史中，是一把真令牌。
+   | Secret | 用途 | 写到哪 | 缺失时 |
+   | --- | --- | --- | --- |
+   | `DEEPSEEK_API_KEY` | 对话模型密钥 | `ai.env` 的 `DEEPSEEK_API_KEY` | **部署失败** |
+   | `DASHSCOPE_API_KEY` | 阿里云百炼 Embedding 密钥 | `ai.env` 的 `aliyun` | **部署失败** |
+   | `AI_INTERNAL_SECRET` | 网关共享密钥，`openssl rand -hex 32` 生成 | **两边都写**：`ai.env` 与 `backend/.env` | **部署失败** |
+   | `SMS_ACCESS_KEY_ID` / `SMS_ACCESS_KEY_SECRET` / `SMS_SIGN_NAME` / `SMS_TEMPLATE_CODE` | 阿里云短信 | `backend/.env` | 部署继续，但**没人能登录**，每次部署都会告警 |
+
+   部署作业的第 0 步用 `deploy/upsert-env.sh` 把这些值幂等写入上面两个文件，**在替换任何服务之前**。
+   缺 `--require` 的键（AI 那三个）就在这一步失败并打印是哪一个，旧版本继续对外服务——比"服务起来了、
+   健康检查过了、然后每个请求都失败"好排查得多。
+
+   **SMS 那四个是 `--warn` 而不是 `--require`，这是个取舍**：签名的模板都要在阿里云 PNVS 控制台审核，
+   通常要等几天，在那之前卡死部署会让无关的修复也发不出去。但"不阻塞"不等于"能忽略"：
+
+   - runner 上有一个单独的检查步骤（部署前），缺哪个就在 GitHub Actions 上打**黄色告警**并在
+     Job Summary 里列出补哪个 Secret；
+   - 服务器侧的部署日志里也会打一遍同样的告警；
+   - 但对产品来说它们仍然不是可选项——**短信验证码是唯一的登录方式**，缺了它们站点就是"服务正常但
+     没人能登录"，而且 release 模式下验证码不会打到日志里。**阿里云签名/模板一批下来，把四个 Secret
+     填上重跑一次部署即可，不需要登服务器。**
+
+   另外两项检查（不属于阻塞项，但会导致体验降级）：
+
+   - 服务器 nginx 要有 `/api/ai/` 的 location（关闭缓冲，SSE 才能逐字输出）。没有就按第二部分里的
+     nginx 步骤更新。
+   - 平台「设置 → API Token」里**吊销旧的长效令牌**。代码已经不用它了，但它仍在 git 历史中，是一把真令牌。
 
 ### 2. 提交
 
@@ -62,7 +84,7 @@ git add backend/ai/app backend/ai/requirements.txt \
 git commit -m "feat(ai): act as the signed-in user and accept only gateway requests"
 
 # ② CI 与部署：镜像构建、冒烟测试、自动部署
-git add .github/workflows/ci.yml deploy Makefile docker-compose.yml .env.example backend/.env.example
+git add .github/workflows/ci.yml deploy docker-compose.yml .env.example backend/.env.example
 git commit -m "ci: build, smoke-test and deploy the AI service"
 
 # ③ 文档
@@ -94,6 +116,10 @@ git push -u origin feat/ai-per-user-identity
 
 合并（普通合并 / squash 都行）后流水线会多出 `deploy` 作业，部署步骤如下：
 
+0. **同步密钥**：从 GitHub Secrets 把 `DEEPSEEK_API_KEY` / `DASHSCOPE_API_KEY` / `AI_INTERNAL_SECRET`
+   与四个 `SMS_*` 写入服务器上的 `ai.env` 与 `backend/.env`。AI 那三个缺任一就立刻失败退出；
+   SMS 缺失只告警（部署前有一个 runner 侧检查会打告警并在 Job Summary 里列出缺哪个）。
+   这一步放在最前面，所以密钥缺失时旧版本仍在服务，站点不受影响。
 1. 备份 `kada-api` 二进制 → 应用数据库迁移 → 重启 `kada-api` → 健康检查（失败则回滚二进制）
 2. 替换并重启前端
 3. **同步 `backend/ai` 源码到服务器 → 在服务器上构建 AI 镜像 → 重启 `kada-ai` 容器 → 探活 →
@@ -105,8 +131,11 @@ git push -u origin feat/ai-per-user-identity
 > 新 Go 二进制只认新路径，而旧 AI 容器只认旧路径。窗口只有几分钟，第 3 步成功后自愈，用户重新
 > 发一条消息即可。短链主站不受影响。
 
-**不需要新增任何 GitHub Secret**：流水线仍只用已有的 `SERVER_HOST`、`SERVER_USER`、
-`SSH_PRIVATE_KEY`、`DATABASE_URL`（`SITE_URL` 变量可选）。AI 的密钥全部放在服务器上。
+**必须新增 GitHub Secret**：除了已有的 `SERVER_HOST`、`SERVER_USER`、`SSH_PRIVATE_KEY`、
+`DATABASE_URL`（`SITE_URL` 变量可选），还要加上第 1 节表格里的七个（`DEEPSEEK_API_KEY`、
+`DASHSCOPE_API_KEY`、`AI_INTERNAL_SECRET`、四个 `SMS_*`）。其中**前三个必须先配**，否则部署会失败；
+四个 `SMS_*` 缺失只告警。它们都由流水线写进服务器的 `ai.env` 与 `backend/.env`，所以以后改密钥只需要
+改 Secret 再重跑部署，不用再登服务器。
 
 ---
 
@@ -138,7 +167,7 @@ CREATE EXTENSION IF NOT EXISTS vector;
 > `deploy/postgres/initdb/01-create-ai-db.sql` 只在数据卷**首次初始化**时生效，已有数据的服务器
 > 必须用上面的脚本。
 
-**② 配 AI 的密钥文件**
+**② 配 AI 的连接串（密钥交给流水线）**
 
 ```bash
 mkdir -p /opt/kada/ai
@@ -152,18 +181,19 @@ vi /opt/kada/ai/ai.env
 | `POSTGRES_URL` | `postgresql+asyncpg://kada:<数据库密码>@127.0.0.1:5432/kada_ai` |
 | `REDIS_URL` | `redis://127.0.0.1:6379/0` |
 | `KADA_API_BASE` | `http://127.0.0.1:8080` |
-| `DEEPSEEK_API_KEY` | 对话模型密钥 |
-| `aliyun` | 阿里云百炼（DashScope）Embedding 密钥，变量名就是 `aliyun` |
-| `AI_INTERNAL_SECRET` | `openssl rand -hex 32` 生成，**要和网关侧一致** |
 
-**③ 让网关带上同一个密钥**
+另外三个（`DEEPSEEK_API_KEY`、`aliyun`、`AI_INTERNAL_SECRET`）**留空即可**：部署作业会用
+`deploy/upsert-env.sh` 从 GitHub Secrets 写进去，`--set` 遇到空值不会覆盖已有内容，
+`--require` 会在值仍然缺失时让部署失败并说明缺哪个。
 
-```bash
-echo 'AI_INTERNAL_SECRET=<与 ai.env 完全相同的值>' >> /opt/kada/backend/.env
-```
+**③ 网关侧的同名密钥：不用手配**
 
-配置文件缺失或两边不一致时的表现：`deploy-ai.sh` 会拒绝部署并打印该怎么建文件；两边不一致则
-AI 接口返回 401 `only the Go gateway may call this service`。
+`AI_INTERNAL_SECRET` 也由同一个 Secret 写进 `/opt/kada/backend/.env`。以前它需要在两个文件里各填一遍、
+值还必须完全一致，不一致时 AI 页面整体返回 401 `only the Go gateway may call this service`——现在两边
+出自同一个 Secret，不可能再对不上。
+
+`deploy-ai.sh` 在构建镜像前会再校验一次：`/opt/kada/ai/ai.env` 不存在、或 `DEEPSEEK_API_KEY` / `aliyun`
+为空，就直接拒绝构建——服务"能起来、健康检查能过、然后每个请求都失败"是最难排查的一种坏法。
 
 另外确认 nginx 配置里有 `/api/ai/` 段（关闭缓冲，否则 SSE 打字效果消失、60 秒断流）：
 
@@ -171,8 +201,12 @@ AI 接口返回 401 `only the Go gateway may call this service`。
 docker exec kada-nginx nginx -T 2>/dev/null | grep -c 'location /api/ai/'   # 应为 1
 ```
 
-没有就 `make deploy-nginx`（从本地仓库执行），或在服务器上更新 `/opt/kada/nginx/nginx-prod.conf`
-后 `docker restart kada-nginx`。
+没有就在服务器上更新配置并重启 nginx 容器：
+
+```bash
+scp nginx/nginx-prod.conf root@<服务器>:/opt/kada/nginx/
+ssh root@<服务器> "docker restart kada-nginx"
+```
 
 ### 合并后
 
@@ -222,7 +256,7 @@ cd /opt/kada/ai && docker compose build && docker compose up -d   # 用现存源
 | --- | --- |
 | AI 容器 | `docker tag kada-ai:previous kada-ai:deploy && docker compose -f /opt/kada/ai/docker-compose.yml up -d --force-recreate` |
 | Go API | 流水线每次部署前会把旧二进制备份到 `/opt/kada/backend/backups/server.<时间戳>`：`cp /opt/kada/backend/backups/server.<最新> /opt/kada/backend/bin/server && systemctl restart kada-api` |
-| 前端 | 无自动备份：在本地 `git revert` 后重跑流水线，或用 `make deploy-fe` 重新推上一版构建 |
+| 前端 | 无自动备份：在本地 `git revert` 后重跑流水线（推荐），或在服务器上重新解包上一版构建 |
 
 > 这次的路由改名让三端互相绑定：只回滚其中一端会让 AI 页面 404。要回滚就整体回到上一个 commit。
 
@@ -231,11 +265,14 @@ cd /opt/kada/ai && docker compose build && docker compose up -d   # 用现存源
 | 现象 | 原因 |
 | --- | --- |
 | `/api/ai/*` 返回 502 | AI 容器没起来或没监听 8000。`docker logs kada-ai`；`kada_ai` 库缺失会让启动阶段就崩 |
-| 返回 401 `only the Go gateway may call this service` | 两边 `AI_INTERNAL_SECRET` 不一致。改成同一个值后分别重启 `kada-api` 与 `kada-ai` |
+| 返回 401 `only the Go gateway may call this service` | `ai.env` 与 `backend/.env` 里的 `AI_INTERNAL_SECRET` 不一致。现在两边都由同一个 GitHub Secret 写入，重跑一次部署即可对齐 |
 | 日志有 `[AUTH] 未配置 AI_INTERNAL_SECRET` | 密钥为空，来源校验被关闭，仅限本机开发，生产必须配上 |
+| AI 页面能打开但每次提问都失败 | `ai.env` 里的 `DEEPSEEK_API_KEY` / `aliyun` 为空或写错。部署时 `deploy-ai.sh` 会先拒绝这种状态；已经跑起来的话，改 GitHub Secret 后重跑部署 |
 | 回答总是"知识库中没有相关资料"，日志有 `[RAG] 检索失败` | 没跑入库脚本、`aliyun` 密钥错、或 pgvector 未启用 |
 | 工具报 HTTP 401/403，聊天正常 | 用户的登录已过期，重新登录即可（**不需要重启服务**） |
 | 工具回"无法执行：本次请求没有携带登录凭据" | 请求绕过了网关直连 Python（本地调试才会出现） |
+| **没人能登录**（验证码收不到），日志有 `❌ SMS service disabled, NOBODY CAN SIGN IN: missing SMS …` | `backend/.env` 里少 `SMS_SIGN_NAME` 或 `SMS_TEMPLATE_CODE`。**这两个值不在仓库里**，去阿里云 PNVS 控制台取；本账号的签名是 `kada`。它们曾经被硬编码在源码里、也曾在 `backend/.env.example` 里，都在重构中被清掉了——完整经过见 `docs/design.md` §9.1 |
+| 验证码接口返回 `failed to send SMS: … (provider code: …)` | 签名/模板没通过、AccessKey 被停用或欠费。日志里那一行带 `sign_name=` / `template_code=`，两者必须来自同一个账号且成对使用 |
 
 更完整的说明见 `backend/ai/README.md`（架构、环境变量、接口契约、工具能力）。
 

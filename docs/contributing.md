@@ -52,9 +52,12 @@ Fill in `.env` before starting anything:
 
 - `JWT_SECRET` — a strong random value: `openssl rand -hex 32`.
 - `POSTGRES_PASSWORD` — anything non-default.
-- SMS variables — leave them **empty** to disable real sending. Verification codes are then printed
-  to the API log outside release mode, which is all a local setup needs. Copying the placeholder
-  value is worse than leaving them empty: the API starts and then fails on every sign-up.
+- SMS variables — leave them **empty** in a local setup: real sending is then disabled and verification
+  codes are printed to the API log outside release mode. Copying the placeholder value is worse than
+  leaving them empty, because the API starts and then fails on every sign-in. In production these are
+  needed for anyone to sign in at all (phone + SMS code is the only method); they are written from
+  repository secrets by the deploy job (`deploy/upsert-env.sh`), which warns loudly rather than failing
+  while the Aliyun signature and template are still awaiting approval.
 
 ### Line endings
 
@@ -67,9 +70,9 @@ unformatted while CI sees it as clean.
 ### Everything in Docker
 
 ```bash
-make docker-up      # nginx :80, API :8080, frontend :3000, PostgreSQL :5432
-make docker-logs
-make docker-down
+docker compose up -d      # nginx :80, API :8080, frontend :3000, PostgreSQL :5432
+docker compose logs -f
+docker compose down
 ```
 
 The API applies the schema on startup (`DB_AUTO_MIGRATE=true` in Compose), so a fresh volume comes up
@@ -78,10 +81,10 @@ ready to use. Nginx serves the app at `http://localhost`.
 ### Backend and frontend on the host
 
 ```bash
-make docker-up                # at least postgres + redis (kafka optional)
-make db-migrate               # apply the schema
-make dev                      # API on :8080
-make dev-fe                   # frontend on :3000
+docker compose up -d postgres redis   # kafka is optional
+cd backend && go run ./cmd/migrate/   # apply the schema
+cd backend && go run ./cmd/server/main.go   # API on :8080
+cd frontend && npm run dev                  # frontend on :3000
 ```
 
 When the frontend runs on the host, keep `NEXT_PUBLIC_API_URL` pointing at the API
@@ -89,24 +92,28 @@ When the frontend runs on the host, keep `NEXT_PUBLIC_API_URL` pointing at the A
 
 ## 4. Everyday commands
 
-| Command | Does |
+There is no Makefile: these are the commands CI runs, and a wrapper would only be one more place for the
+two to drift apart.
+
+| Task | Command |
 |---|---|
-| `make dev` / `make dev-fe` | Run the API / frontend locally |
-| `make test` | Go tests |
-| `make test-fe` | Frontend tests |
-| `make test-race` | Go tests with the race detector (what CI runs) |
-| `make lint` / `make lint-fe` | `go vet` / ESLint |
-| `make lint-ci` | `golangci-lint` (what CI runs) |
-| `make db-migrate` | Apply the schema |
-| `make db-reset` | Destroy the database volume and start over |
-| `make build` / `make build-fe` | Production builds |
-| `make docker-up` / `docker-down` / `docker-logs` | Compose lifecycle |
+| Run the API | `cd backend && go run ./cmd/server/main.go` |
+| Run the frontend | `cd frontend && npm run dev` |
+| Go tests | `cd backend && go test ./... -v` |
+| Frontend tests | `cd frontend && npm test` |
+| Go tests with the race detector (what CI runs) | `cd backend && go test ./... -v -count=1 -race -coverprofile=coverage.out` |
+| `go vet` / ESLint | `cd backend && go vet ./...` / `cd frontend && npm run lint` |
+| `golangci-lint` (what CI runs) | `cd backend && golangci-lint run --timeout=5m ./...` |
+| Apply the schema | `cd backend && go run ./cmd/migrate/` |
+| Destroy the database volume and start over | `docker compose down -v && docker compose up -d postgres redis && cd backend && go run ./cmd/migrate/` |
+| Production builds | `cd backend && CGO_ENABLED=0 go build -o bin/server ./cmd/server/main.go` / `cd frontend && npm run build` |
+| Compose lifecycle | `docker compose up -d` / `docker compose down` / `docker compose logs -f` |
 
 Before opening a pull request, these should all pass:
 
 ```bash
-make lint && make test && make test-fe && make lint-ci
-cd frontend && npx tsc --noEmit && npm run build
+cd backend && go vet ./... && go test ./... -count=1 -race
+cd frontend && npm run lint && npx tsc --noEmit && npm run build
 ```
 
 ## 5. Making a change
@@ -134,7 +141,7 @@ internal/handler/<res>/handler.go thin HTTP layer + RegisterRoutes
 cmd/server/main.go                build the service and register the routes
 ```
 
-Add the rows to `entity.Models()` if you added a table, then run `make db-migrate`.
+Add the rows to `entity.Models()` if you added a table, then run `cd backend && go run ./cmd/migrate/`.
 
 ### Adding UI text
 
@@ -263,7 +270,7 @@ The schema is the GORM models in `backend/internal/domain/entity`. There are no 
    first).
 3. Update `internal/domain/entity/models_test.go`: expected table name, expected columns, and any new
    unique index or `ON DELETE` rule.
-4. Run `make db-migrate` and verify against a real database. The entity tests assert the model's
+4. Run `cd backend && go run ./cmd/migrate/` and verify against a real database. The entity tests assert the model's
    intent; only a database proves the DDL is accepted.
 
 AutoMigrate is additive, so an existing installation picks up new tables, columns, indexes and

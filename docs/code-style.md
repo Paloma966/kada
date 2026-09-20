@@ -135,11 +135,11 @@ Section banners are used sparingly in longer files:
 ```go
 // Good
 if err := s.db.WithContext(ctx).Create(&row).Error; err != nil {
-    log.Printf("register by email failed: %v", err)
+    log.Printf("create workspace %q for user %d failed: %v", row.Slug, row.UserID, err)
     if isDuplicateKey(err) {
-        return nil, domain.ErrEmailTaken
+        return nil, ErrSlugTaken
     }
-    return nil, fmt.Errorf("registration failed: %w", err)
+    return nil, fmt.Errorf("failed to create workspace: %w", err)
 }
 ```
 
@@ -364,6 +364,6 @@ runtime environment variable, where it does nothing at all.
 Run before pushing:
 
 ```bash
-make lint-ci                      # gofmt, goimports, govet, staticcheck, gosec, misspell
+cd backend && golangci-lint run --timeout=5m   # gofmt, goimports, govet, staticcheck, gosec, misspell
 cd frontend && npx tsc --noEmit && npm run lint
 ```

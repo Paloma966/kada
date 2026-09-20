@@ -20,13 +20,14 @@ watch how they are clicked. This document explains how the system is put togethe
 
 | Capability | Notes |
 |---|---|
-| Authentication | Phone + SMS code, email + password, JWT bearer token for the API |
+| Authentication | Phone + SMS code behind a graphical challenge, JWT bearer token for the API |
 | Links | Create, edit, disable, expire, password protect, batch delete and batch tag |
 | Organisation | Folders, tags, workspaces |
 | Custom domains | DNS TXT ownership verification before a domain can serve links |
 | Analytics | Click totals, daily trend, platform breakdown, visitor list, raw event log |
 | Integrations | UTM templates, QR codes, CSV export, personal API tokens |
-| Presentation | Bilingual UI (Chinese / English), dark theme |
+| AI assistant | RAG over the project knowledge base, tools that run as the signed-in user |
+| Presentation | Bilingual UI (Chinese / English), light and dark themes |
 
 The primary tension in the design is that **redirection is hot and analytics is cold**. Following a
 short link must be fast and must not fail because a database is busy, while counting clicks is
@@ -189,7 +190,7 @@ remains the source of truth and a cold cache only costs latency.
 The schema is defined by the GORM models in `internal/domain/entity` and applied with
 `AutoMigrate`. There are no SQL migration files.
 
-- `cmd/migrate` applies the schema; `make db-migrate` runs it.
+- `cmd/migrate` applies the schema (`cd backend && go run ./cmd/migrate/`).
 - The API server applies it on startup **only** when `DB_AUTO_MIGRATE=true`, so that in production a
   restart cannot change the database as a side effect.
 - AutoMigrate is additive: it creates missing tables, columns, indexes and constraints, and never
@@ -228,12 +229,13 @@ users ──┬── links ──┬── click_logs
         ├── utm_templates
         └── api_tokens
 
-sms_codes  (standalone, keyed by phone)
+sms_codes       (standalone, keyed by phone)
+login_captchas  (standalone, keyed by id)
 ```
 
 | Table | Purpose | Notable columns |
 |---|---|---|
-| `users` | Accounts | `phone`, `email` (unique), `wechat_openid`, `password_hash` |
+| `users` | Accounts | `phone` (unique); `email`, `password_hash`, `wechat_openid` are retained legacy columns that no sign-in path reads |
 | `links` | Short links | `short_code` (unique), `original_url`, `domain`, `password_hash`, `expires_at`, `is_active`, `click_count` |
 | `click_logs` | One row per click | `platform`, `ip`, `referer`, `event_id` (unique, idempotency) |
 | `folders`, `tags`, `link_tags` | Organisation | `link_tags` is a plain junction table |
@@ -241,12 +243,17 @@ sms_codes  (standalone, keyed by phone)
 | `domains` | Custom domains | `verified`, unique per `(user_id, name)` |
 | `utm_templates` | Reusable UTM sets | `utm_*` columns |
 | `api_tokens` | Programmatic access | `token_hash` (unique); the raw token is shown once |
-| `sms_codes` | Pending SMS logins | `code_hash` (sha256), `attempts`, `expires_at`; the plaintext code is never stored |
+| `sms_codes` | Pending SMS logins | `code_hash` (sha256), `ip` (per-IP quotas), `attempts`, `expires_at`; the plaintext code is never stored |
+| `login_captchas` | Pending graphical challenges | `code_hash` (sha256 of the upper-cased answer), `attempts`, `expires_at` |
 
 Design rules:
 
 - **Passwords are never stored in a form that can be replayed.** Account and link passwords use
-  bcrypt; SMS codes and API tokens are stored as SHA-256 hashes.
+  bcrypt; SMS codes, captchas and API tokens are stored as SHA-256 hashes, and the plaintext of a
+  one-time secret is never written to the database or the log.
+- **The graphical challenge lives in PostgreSQL, not Redis.** Redis is optional in this deployment - the
+  rate limiter fails open when it is down - and a captcha that silently stops being enforced is worse than
+  no captcha, because the endpoint still looks protected. The database is not optional.
 - **Deletion semantics are explicit.** Deleting a user cascades to their folders, tags, domains,
   templates and tokens, but only detaches links (`ON DELETE SET NULL`) so public links do not vanish.
   Deleting a folder or workspace detaches its links. Deleting a link cascades to its click logs.
@@ -260,7 +267,9 @@ because it is highly interactive.
 | Path | Content |
 |---|---|
 | `/` | Landing page with the animated starfield |
-| `/login`, `/register` | Auth pages (phone or email), dark glass card |
+| `/login` | Sign-in: phone number, graphical challenge, SMS code, privacy consent |
+| `/register` | Redirects to `/login`: a new phone number is registered on the spot |
+| `/privacy` | Privacy policy, linked from the consent checkbox before sign-in |
 | `/dashboard` | Overview: totals, trend, recent links |
 | `/dashboard/links`, `/new`, `/[id]` | Link list, creation form, detail/edit |
 | `/dashboard/analytics`, `/events`, `/customers` | Click analytics, raw events, visitors |
@@ -304,8 +313,21 @@ Settings → 外观, with a third option that hands control back to the system.
   cannot, because a shade that reads correctly on white is usually wrong on near-black. The scales are
   not inverted wholesale: brand and status colours are fixed, because `bg-indigo-600 text-white` is a
   pair and brightening the indigo for a dark canvas would leave white text on a light blue.
+- **A tint is a surface role and both halves move together.** `bg-brand-soft text-brand-ink` is a chip, a
+  selected nav item, an icon tile - not a fixed pair - so it is redefined per theme as a unit. Theming
+  only one of the two is how a light chip ends up carrying light ink.
+- **`gray-50` is the one raw Tailwind neutral remapped for dark mode.** The app uses it purely as a
+  neutral surface (`bg-gray-50`, `bg-gray-50/50`, `border-gray-50`, `hover:bg-gray-50`), always under
+  `text-*` classes that are themselves themed; left alone it paints white panels and near-white code
+  chips on a near-black page. `frontend/scripts/check-theme-css.mjs` asserts both this and the fact that
+  `indigo-600`/`red-600` are *not* remapped, so the two rules cannot be confused by accident.
 - The sign-in and landing screens are dark in **both** themes. Anything on them that must stay light -
   the selected segment, the language chip - uses literal white rather than a themed surface.
+- **The switch is in the top bar.** A one-click sun/moon toggle sits beside the language switcher and pins
+  an explicit choice; Settings keeps the three-way control (follow system / light / dark). Before
+  hydration the toggle renders the server's assumption and is disabled, because the real value comes from
+  `localStorage` and reading it during the first client render is the hydration mismatch `useHydrated`
+  exists to prevent.
 - An inline `<script>` in the document head sets the attribute while the HTML is parsed. It is
   deliberately **not** `next/script`'s `beforeInteractive`: that queues the body through Next's loader,
   which measured 62ms *after* the first frame and produced a visible light flash. `scripts/check-theme-timing.mjs`
@@ -317,26 +339,38 @@ render disagree, and React discards the tree as a hydration mismatch.
 
 ## 7. Key flows
 
-### 7.1 Sign-up by email
+### 7.1 Sign-in is phone-only
 
-```text
-POST /api/auth/register-by-email
-  → validate body (email, min password length, name)
-  → normalise email to lower case
-  → bcrypt hash
-  → INSERT users
-      duplicate → 409 (domain.ErrEmailTaken)
-      other     → 500, cause logged
-  → sign JWT → 201 { token, user }
-```
+There is one way in: a phone number and an SMS code. A number that has never been seen is registered on
+the spot, so "sign in" and "sign up" are the same request and there is no separate registration flow.
+
+Two other sign-in paths were removed rather than hidden, and the reason is worth recording:
+
+- **WeChat.** The schema had carried `wechat_openid`/`wechat_unionid` from the start and the config had
+  `WECHAT_APP_ID`/`WECHAT_APP_SECRET`, but no route ever read them. Implementing it needs an approved
+  WeChat Open Platform application, and an individual cannot register one, so the columns stay (existing
+  data is untouched) and nothing else does.
+- **Email + password.** It duplicated what the phone path already did, added a second credential to
+  police, and after the phone flow was hardened it was the only endpoint left that could be attacked
+  without an SMS cost. `users.email` and `users.password_hash` remain in the schema so old rows keep
+  their data; `email` is now an optional contact field on the profile and nothing reads `password_hash`.
 
 ### 7.2 Login by phone
 
 ```text
-POST /api/auth/send-sms-code
-  → per-phone cooldown (60s) and daily cap (10) are checked against sms_codes
+GET /api/auth/captcha
+  → generate a 4-character code and its SVG (internal/infra/captcha, no image or font dependency)
+  → store sha256(NORMALISED code) in login_captchas with a 5-minute expiry
+  → 200 { captcha_id, image: "data:image/svg+xml;base64,..." }   (Cache-Control: no-store)
+
+POST /api/auth/send-sms-code   { phone, captcha_id, captcha_code }
+  → one UPDATE consumes the challenge atomically (unused, unexpired, attempts < 5)
+      failure → 400, and attempts is incremented for that id
+  → per-phone quotas: 60s cooldown, 10/day            → 429 + Retry-After
+  → per-IP quotas: 10/hour, 30/day                    → 429
   → provider sends the code, sha256(code) is stored with a 5-minute expiry
       provider error → the provider code and message are surfaced (see 8.4)
+  → 200
 
 POST /api/auth/login-by-phone
   → one UPDATE consumes the pending code atomically (unused, unexpired, attempts < 5)
@@ -344,6 +378,20 @@ POST /api/auth/login-by-phone
   → find or create the user by phone
   → sign JWT → 200 { token, user }
 ```
+
+Three properties of that ordering are deliberate:
+
+1. **The captcha is checked first and is burned either way.** An unauthenticated endpoint that makes the
+   server send paid messages is the most abusable thing in this app, so no send can happen without a human
+   having solved a challenge - and a challenge that survives a refused send is a challenge an automated
+   caller can reuse. The client re-fetches one after every attempt for exactly that reason.
+2. **The quotas are independent.** The per-phone pair bounds the damage to one victim; the per-IP pair is
+   what notices a script walking a list of numbers, which the per-phone quotas never would (each number is
+   used once). The per-IP figures are looser on purpose: a campus or office NAT legitimately shares an
+   address.
+3. **A quota is a 429, a wrong captcha is a 400.** Returning 500 for both - which the handler used to do -
+   tells a client to retry a request that will keep failing, and tells an operator to look for a server
+   fault that does not exist.
 
 ### 7.3 Recording a click
 
@@ -442,13 +490,33 @@ existing `/api/*` routes. Four consequences decide the shape of that:
 | `GIN_MODE` | `debug` | `release` silences dev output and enables strict checks |
 | `API_BASE_URL` | `https://kada.click` | Base for generated short URLs |
 | `FRONTEND_URL` | `http://localhost:3000` | CORS and redirects |
-| `SMS_ACCESS_KEY_ID`, `SMS_ACCESS_KEY_SECRET` | empty | Alibaba Cloud credentials; empty disables real sending |
+| `SMS_ACCESS_KEY_ID`, `SMS_ACCESS_KEY_SECRET` | empty | Alibaba Cloud credentials; empty disables real sending (and, in production, sign-in) |
 | `SMS_SIGN_NAME`, `SMS_TEMPLATE_CODE` | empty | The system-granted signature and template from the PNVS console; both are required, see below |
 | `KAFKA_BROKERS` | empty | Comma-separated brokers; empty disables Kafka (clicks are written directly) |
 | `KAFKA_TOPIC` | `clicks` | Click event topic |
 | `NEXT_PUBLIC_API_URL` | `""` (same origin) | API base for the browser |
 | `AI_BASE_URL` | `http://127.0.0.1:8000` | Internal Python AI service the gateway proxies `/api/ai/*` to |
 | `AI_INTERNAL_SECRET` | empty | Injected as `X-Internal-Secret`; the AI service accepts only requests carrying it |
+
+`SMS_SIGN_NAME` has no default on purpose. It used to fall back to the literal `kada`, and for this
+deployment that is in fact the account's real signature - which is precisely what made the outage
+invisible: with the signature always supplied by a default, the missing template code (see 9.1) still
+produced a constructed sender, and the failure came back as an Aliyun rejection rather than as "this is
+not configured". Empty now means "not configured", and the startup log says so. The cost is one explicit
+setting: `SMS_SIGN_NAME=kada` for this account.
+
+None of these secrets are set on the server by hand any more. The deploy job writes them from GitHub
+repository secrets with `deploy/upsert-env.sh`, as its **first** step, before a single service is replaced.
+That script draws the line between the two kinds of missing value, and the line is a product decision:
+
+- `--require` for the AI keys. A service that starts, passes `/healthz` and then fails every question is
+  worse to diagnose than a refused deploy, so the deployment fails while the previous build keeps serving.
+- `--warn` for the SMS credentials. The Aliyun signature and template have to be approved in the console,
+  which takes days, and blocking every deploy until then would stop unrelated fixes from shipping. The
+  warning is doubled: a runner-side step annotates the run and writes the job summary, and the server's own
+  log repeats it. It is a warning about the *deployment*, not about the product - phone + SMS code is the
+  only way to sign in, so a site without them is up and unusable, and in release mode the code is never
+  logged.
 
 The Python AI service reads its own environment (`backend/ai/app/config.py`), and in production those
 values live in `/opt/kada/ai/ai.env` rather than in the repository's `.env`:
@@ -480,11 +548,39 @@ separate SMS product (`dysmsapi`). That distinction decides the configuration:
   the PNVS console. They cannot be created or edited, and they must be used as a pair - a granted
   signature with a custom template is rejected, and so is the reverse.
 - `SMS_SIGN_NAME` and `SMS_TEMPLATE_CODE` have **no defaults**. They used to fall back to a hardcoded
-  signature and a made-up template code, which turned "nobody configured this" into a provider rejection
-  that read like a broken account. Startup now names the missing setting instead, and phone sign-up stays
-  disabled until it is set.
+  signature and a made-up template code (`恒创联众` / `100001`, values that exist on nobody's account), which
+  turned "nobody configured this" into a provider rejection that read like a broken account. Startup now
+  names the missing setting instead, and phone sign-up stays disabled until it is set.
 - The PNVS console, its data, and its package are all separate from the SMS product: sending is billed
   against a PNVS "SMS verification" package, which the SMS product's free trial does not cover.
+
+**Where the working pair went (worth reading before debugging "SMS stopped working").**
+
+SMS really did work in production once, and the reason it stopped is on the record:
+
+1. `05eda08 feat: add Alibaba Cloud SMS verification` recorded the account's real pair in
+   `backend/.env.example`: signature `kada`, and a template code of the form `SMS_…`. (The exact code is
+   deliberately not repeated here - see the note below - but it is recoverable with
+   `git show 05eda08:backend/.env.example`.)
+2. `8420bd9 refactor: move the backend from pgx to GORM with AutoMigrate` blanked that whole SMS section of
+   the example file while rewriting it, so **the only copy of the template code in the repository was
+   deleted by an unrelated refactor**. Nothing failed at the time: the code still had the `恒创联众` /
+   `100001` fallback and a `kada` default for the signature, so a deployment that had never configured the
+   pair kept limping along.
+3. `fbc1763 fix: fail on an unset SMS signature instead of substituting one` removed that fallback and made
+   an unset signature or template a hard startup failure. Correct on its own - but by then the right value
+   was gone from the repo, so "fail loudly" became "SMS is disabled and nobody knows what to put back".
+4. Removing the `kada` default (this change) is the last step of the same idea. It costs one explicit
+   setting - **the signature for this account is `kada`** - and buys a startup line that says what is
+   missing instead of a provider error that looks like a broken account.
+
+The template code and the AccessKey pair are **not in the repository and never were** (the AccessKey is
+only ever read from the environment; a history search for the `LTAI` prefix finds nothing but accidental
+substrings inside base64 hashes in `go.sum`). Both come from the Aliyun side: the pair from the PNVS
+console, the credentials from RAM. That is also where they belong - a signature and a template code are
+account-specific values, so they are kept in the environment (and, in production, in repository secrets
+that the deploy writes out), not in the tree. Recording the incident above without re-committing the value
+is the point: the lesson is "the value was lost", not "paste it back into the source".
 
 ## 10. Deployment
 
@@ -507,11 +603,18 @@ Three supported shapes:
    The image is built **on the host**: a Python service is not a binary to copy, and only the source
    changes between deploys, so the pip layers stay cached. `deploy/deploy-ai.sh` is the only
    implementation of that step - the deploy job syncs `backend/ai`, `deploy/docker-compose.ai.yml` and
-   the script, then runs it, and `make deploy-ai` runs the same script by hand. It refuses to deploy
-   without `/opt/kada/ai/ai.env` (a service that starts and then fails every request is worse than a
+   the script, then runs it. It refuses to deploy without `/opt/kada/ai/ai.env`, or with an empty
+   `DEEPSEEK_API_KEY` / `aliyun` in it (a service that starts and then fails every request is worse than a
    refused deploy), waits for `/healthz`, and rolls back to the previous image otherwise.
    `deploy/setup-ai-db.sh` creates `kada_ai` and enables the vector extension on a database that already
    exists, which `docker-entrypoint-initdb.d` can no longer do on an existing volume.
+
+   The provider keys themselves reach the host from **GitHub repository secrets**, written into
+   `/opt/kada/ai/ai.env` and `/opt/kada/backend/.env` by `deploy/upsert-env.sh` as the first step of the
+   deploy, before any service is replaced. That file is the fix for a whole class of outage: both "the AI
+   page is broken" and "the SMS code never arrives" turned out to be an empty line in a file on the
+   server that nothing had ever checked. A `--require`d key that is missing fails the deployment while the
+   previous build is still serving, and an empty `--set` leaves an existing hand-configured value alone.
 
 The deploy job applies the schema **before** replacing the binary, so a failed migration leaves the
 previous version running.
@@ -557,7 +660,8 @@ step that requires manual setup is a failure mode of its own.
 | Frontend | Vitest for pure helpers (starfield geometry, ophiuchus lines, utilities) |
 | AI service | CI builds `backend/ai`, asserts the DashScope SDK is importable and boots the container against a real PostgreSQL to hit `/healthz` |
 
-Run everything with `make test` and `make test-fe`; CI additionally runs `go vet`, `golangci-lint`,
+Run everything with `cd backend && go test ./... -count=1 -race` and `cd frontend && npm test`; CI
+additionally runs `go vet`, `golangci-lint`,
 `tsc --noEmit` and the production build on every pull request. The AI service gets a job of its own
 (`ai-build`) because its failures show up at request time rather than at import time: a requirements.txt
 missing the embedding SDK, or an image that cannot start, passes every startup check and only breaks when
