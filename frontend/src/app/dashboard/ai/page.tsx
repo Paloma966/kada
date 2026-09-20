@@ -26,7 +26,7 @@ export default function AIPage() {
   useEffect(() => {
     (async () => {
       try {
-        const data = await aiAPI.getCurrentSession();
+        const data = await aiAPI.getCurrentConversation();
         if (data.conversation_id) {
           setConversationId(data.conversation_id);
           setMessages(
@@ -54,7 +54,7 @@ export default function AIPage() {
   const restart = async () => {
     if (loading || initLoading) return;
     try {
-      const data = await aiAPI.restartSession();
+      const data = await aiAPI.restartConversation();
       setMessages([]);
       setConversationId(data.conversation_id ?? null);
       setInput("");

@@ -28,14 +28,21 @@ import (
 // gin.Context, so we smuggle the value through the request context.
 type userIDCtxKey struct{}
 
+// internalAuthHeader is the header that tells the Python service this request
+// came through the gateway rather than from some other local process - which is
+// what makes the X-Kada-User-ID header sent alongside it trustworthy. The value
+// it carries is the shared secret, not the header name itself.
+const internalAuthHeader = "X-Internal-Secret"
+
 // Handler proxies /api/ai/* to the internal Python AI service.
 type Handler struct {
 	proxy *httputil.ReverseProxy
 }
 
 // NewHandler builds the gateway that forwards /api/ai/* to the Python service
-// at aiBaseURL (e.g. http://127.0.0.1:8000).
-func NewHandler(aiBaseURL string) (*Handler, error) {
+// at aiBaseURL (e.g. http://127.0.0.1:8000). internalSecret is injected as
+// X-Internal-Secret; an empty secret disables the check on both sides.
+func NewHandler(aiBaseURL, internalSecret string) (*Handler, error) {
 	target, err := url.Parse(aiBaseURL)
 	if err != nil {
 		return nil, err
@@ -63,9 +70,14 @@ func NewHandler(aiBaseURL string) (*Handler, error) {
 	proxy.Director = func(req *http.Request) {
 		baseDirector(req) // sets scheme/host/query from the target URL
 
-		// Map the public path to the Python path: /api/ai/chat -> /v1/chat,
-		// /api/ai/session/current -> /v1/session/current, etc.
-		req.URL.Path = "/v1" + strings.TrimPrefix(req.URL.Path, "/api/ai")
+		// Map the public path to the Python path by dropping this gateway's mount
+		// prefix: /api/ai/chat -> /chat, /api/ai/conversations/current ->
+		// /conversations/current. The AI service owns its own paths and knows
+		// nothing about /api/ai, so the two surfaces can move independently.
+		req.URL.Path = strings.TrimPrefix(req.URL.Path, "/api/ai")
+		if req.URL.Path == "" {
+			req.URL.Path = "/"
+		}
 
 		// Security: never trust a client-supplied X-Kada-User-ID. The gateway
 		// always overwrites it with the authenticated user id from the JWT,
@@ -73,6 +85,15 @@ func NewHandler(aiBaseURL string) (*Handler, error) {
 		req.Header.Del("X-Kada-User-ID")
 		if userID, ok := req.Context().Value(userIDCtxKey{}).(int64); ok && userID > 0 {
 			req.Header.Set("X-Kada-User-ID", strconv.FormatInt(userID, 10))
+		}
+
+		// Same rule for the service secret. Deleting matters even when no secret
+		// is configured: the AI service must never see a header the gateway did
+		// not send, or a caller could smuggle one in and make a direct request
+		// look like it came through the gateway.
+		req.Header.Del(internalAuthHeader)
+		if internalSecret != "" {
+			req.Header.Set(internalAuthHeader, internalSecret)
 		}
 	}
 	return h, nil
@@ -83,9 +104,11 @@ func (h *Handler) RegisterRoutes(r *gin.RouterGroup, authMW gin.HandlerFunc) {
 	r.Use(authMW)
 	r.POST("/ai/chat", h.forward)
 	// Single-session mode: current returns the user's latest conversation with
-	// its messages, restart drops it and creates a fresh empty one.
-	r.GET("/ai/session/current", h.forward)
-	r.POST("/ai/session/restart", h.forward)
+	// its messages, restart drops it and creates a fresh empty one. The paths say
+	// conversations, not "session": the table is ai_conversations and the
+	// response already carries conversation_id.
+	r.GET("/ai/conversations/current", h.forward)
+	r.POST("/ai/conversations/restart", h.forward)
 }
 
 // forward proxies the request to the Python AI service.

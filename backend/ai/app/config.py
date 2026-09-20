@@ -34,9 +34,13 @@ class Settings(BaseSettings):
     CACHE_TTL_SECONDS: int = 3600  # 热缓存存活 1 小时，过期后下次读取自动回填
     MAX_MESSAGES: int = 50  # 只喂最近 N 条给模型，避免对话过长撑爆上下文窗口
 
-    # MCP 子服务回调 Go 后端的地址与长效 API Token
+    # Go 后端地址：业务工具（查统计、建短链）以"当前登录用户"的凭据回调它的 /api/*。
+    # 这里没有任何长效令牌：凭据就是网关转发的用户 JWT，见 service/kada_tools.py。
     KADA_API_BASE: str = "http://localhost:8080"
-    KADA_API_TOKEN: str ="kada_4d6c97c34b195f6d44adba6cef986d2ad59ebe76a2d7b251"
+
+    # 与 Go 网关共享的服务密钥：网关代理时会注入 X-Internal-Secret，本服务据此确认
+    # 调用方是网关（见 route/deps.py）。为空=不做校验，仅限本机开发。
+    AI_INTERNAL_SECRET: str = os.getenv("AI_INTERNAL_SECRET", "")
 
 
 settings = Settings()

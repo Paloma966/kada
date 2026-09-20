@@ -41,7 +41,7 @@ func serve(r *gin.Engine, method, target string, body *bytes.Buffer, headers map
 func newTestRouter(t *testing.T, upstream string) *gin.Engine {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
-	h, err := NewHandler(upstream)
+	h, err := NewHandler(upstream, "")
 	if err != nil {
 		t.Fatalf("NewHandler: %v", err)
 	}
@@ -50,12 +50,12 @@ func newTestRouter(t *testing.T, upstream string) *gin.Engine {
 	return r
 }
 
-// The gateway must forward /api/ai/chat to /v1/chat, inject the authenticated
-// user id, and stream the SSE body back verbatim.
+// The gateway must forward /api/ai/chat to /chat (the mount prefix is dropped),
+// inject the authenticated user id, and stream the SSE body back verbatim.
 func TestProxyForwardsChatWithUserID(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if got := r.URL.Path; got != "/v1/chat" {
-			t.Errorf("upstream path = %q, want /v1/chat", got)
+		if got := r.URL.Path; got != "/chat" {
+			t.Errorf("upstream path = %q, want /chat", got)
 		}
 		if got := r.Header.Get("X-Kada-User-ID"); got != "42" {
 			t.Errorf("X-Kada-User-ID = %q, want 42", got)
@@ -97,12 +97,12 @@ func TestProxyOverwritesClientUserID(t *testing.T) {
 	}
 }
 
-// Session paths must be remapped too: /api/ai/session/current
-// -> /v1/session/current.
-func TestProxyForwardsSessionPaths(t *testing.T) {
+// Nested conversation paths are remapped by the same prefix strip:
+// /api/ai/conversations/current -> /conversations/current.
+func TestProxyForwardsConversationPaths(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if got := r.URL.Path; got != "/v1/session/current" {
-			t.Errorf("upstream path = %q, want /v1/session/current", got)
+		if got := r.URL.Path; got != "/conversations/current" {
+			t.Errorf("upstream path = %q, want /conversations/current", got)
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"conversation_id":null,"messages":[]}`))
@@ -110,7 +110,56 @@ func TestProxyForwardsSessionPaths(t *testing.T) {
 	defer upstream.Close()
 
 	r := newTestRouter(t, upstream.URL)
-	w := serve(r, http.MethodGet, "/api/ai/session/current", bytes.NewBuffer(nil), nil)
+	w := serve(r, http.MethodGet, "/api/ai/conversations/current", bytes.NewBuffer(nil), nil)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", w.Code)
+	}
+}
+
+// The gateway is the only component allowed to present the internal secret, so a
+// client-supplied copy must be replaced by the configured one.
+func TestProxyInjectsInternalSecret(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("X-Internal-Secret"); got != "gateway-secret" {
+			t.Errorf("X-Internal-Secret = %q, want gateway-secret", got)
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer upstream.Close()
+
+	gin.SetMode(gin.TestMode)
+	h, err := NewHandler(upstream.URL, "gateway-secret")
+	if err != nil {
+		t.Fatalf("NewHandler: %v", err)
+	}
+	r := gin.New()
+	h.RegisterRoutes(r.Group("/api"), fakeAuth(42))
+
+	// The client tries to smuggle its own value in.
+	w := serve(r, http.MethodPost, "/api/ai/chat", bytes.NewBufferString(`{}`),
+		map[string]string{"X-Internal-Secret": "client-value"})
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", w.Code)
+	}
+}
+
+// With no secret configured nothing is injected, but a client-supplied value must
+// still be dropped: the AI service would otherwise treat a direct caller as the
+// gateway and believe the user id that caller made up.
+func TestProxyDropsClientSecretWhenUnset(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("X-Internal-Secret"); got != "" {
+			t.Errorf("X-Internal-Secret = %q, want it removed", got)
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer upstream.Close()
+
+	r := newTestRouter(t, upstream.URL)
+	w := serve(r, http.MethodPost, "/api/ai/chat", bytes.NewBufferString(`{}`),
+		map[string]string{"X-Internal-Secret": "client-value"})
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", w.Code)

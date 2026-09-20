@@ -1,0 +1,43 @@
+# Production AI service: the Python service on its own, against the PostgreSQL
+# and Redis that already run on this host.
+#
+# Deliberately separate from the root docker-compose.yml. That file is the
+# one-host/dev stack, and `docker compose up -d ai` there would also start its
+# own postgres and redis - which collide with the PostgreSQL/Redis the host
+# already runs (the compose postgres publishes 127.0.0.1:5432). This file has no
+# depends_on, so it can only ever start the AI container.
+#
+# Install as /opt/kada/ai/docker-compose.yml with the source tree next to it in
+# /opt/kada/ai/src; deploy/deploy-ai.sh does both, and that script is what CI
+# and `make deploy-ai` run.
+#
+# network_mode: host is load-bearing:
+#   - inside the container 127.0.0.1 means the host, so POSTGRES_URL / REDIS_URL
+#     / KADA_API_BASE keep the values they already have in backend/.env;
+#   - the Go gateway (a native systemd process) reaches the container on
+#     127.0.0.1:8000, which is AI_BASE_URL's default, so nothing has to be
+#     rewired on the Go side;
+#   - the port never enters Docker's iptables chains, so ufw still governs it
+#     (published ports bypass ufw on Linux).
+services:
+  ai:
+    build:
+      context: ./src
+      # The Dockerfile defaults to the Tsinghua mirror for domestic servers.
+      # Somewhere else, override it:
+      #   PIP_INDEX_URL=https://pypi.org/simple docker compose build
+      args:
+        PIP_INDEX_URL: ${PIP_INDEX_URL:-https://pypi.tuna.tsinghua.edu.cn/simple}
+    image: kada-ai:deploy
+    container_name: kada-ai
+    network_mode: host
+    env_file:
+      - ./ai.env
+    # Loopback only: the Go gateway is the only intended caller.
+    command: ["uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", "8000"]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5

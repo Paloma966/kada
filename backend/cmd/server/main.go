@@ -126,7 +126,7 @@ func main() {
 	analyticsH := analyticsHandler.NewHandler(db)
 
 	// AI gateway: proxies /api/ai/* to the internal Python AI service
-	aiH, err := aiHandler.NewHandler(cfg.AIBaseURL)
+	aiH, err := aiHandler.NewHandler(cfg.AIBaseURL, cfg.AIInternalSecret)
 	if err != nil {
 		log.Fatalf("Failed to initialize AI gateway: %v", err)
 	}

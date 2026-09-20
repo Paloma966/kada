@@ -419,13 +419,14 @@ export const aiAPI = {
       body: JSON.stringify(body),
     }),
 
-  // 获取当前会话（最新一个）及其消息：进 AI 页时调用，自动续上上次聊天
-  getCurrentSession: () =>
-    fetchAPI("/api/ai/session/current", { token: getToken() ?? undefined }),
+  // 获取当前会话（最新一个）及其消息：进 AI 页时调用，自动续上上次聊天。
+  // 路径按数据模型叫 conversations：表是 ai_conversations，返回体是 conversation_id。
+  getCurrentConversation: () =>
+    fetchAPI("/api/ai/conversations/current", { token: getToken() ?? undefined }),
 
   // 重新开始：后端删掉该用户的旧会话，新建一个空会话并返回其 id
-  restartSession: () =>
-    fetchAPI("/api/ai/session/restart", {
+  restartConversation: () =>
+    fetchAPI("/api/ai/conversations/restart", {
       method: "POST",
       token: getToken() ?? undefined,
     }),

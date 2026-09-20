@@ -12,6 +12,10 @@ from app.service.db import init_db
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # 来源校验靠 AI_INTERNAL_SECRET：没配就等于不校验，必须说出来，
+    # 否则"生产上忘了配"会静默退化成"同机任何进程都能冒充网关读别人的会话"。
+    if not settings.AI_INTERNAL_SECRET:
+        print("[AUTH] 未配置 AI_INTERNAL_SECRET：业务接口不校验来源，仅供本机开发")
     # 幂等创建会话表；知识库的向量表由 langchain-postgres 自行管理。
     await init_db()
     # MCP 是增强能力而非硬依赖：连不上就让工具列表为空，AI 仍能纯对话。
