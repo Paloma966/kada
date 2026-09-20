@@ -20,7 +20,8 @@ set -euo pipefail
 
 AI_DB=${AI_DB:-kada_ai}
 PG_USER=${PG_USER:-kada}
-# Name of a running PostgreSQL container, when PostgreSQL is containerised.
+# Name of a running PostgreSQL container, when PostgreSQL is containerised. Treated as a hint, not as the
+# only possibility: see the detection below.
 # Uses the "-" (unset-only) form so an explicit empty value forces the local psql.
 PG_CONTAINER=${PG_CONTAINER-kada-postgres-1}
 
@@ -32,11 +33,46 @@ esac
 
 # PSQL is the command prefix without -d, so the same prefix can address the
 # maintenance database and the new one.
+#
+# The container is looked up by its *image*, not only by the name above. The name depends on the compose
+# project directory, so a host that runs the same image under a different name used to fall straight
+# through to `sudo -u postgres psql` - a command that cannot work where PostgreSQL is containerised (there
+# is no postgres system user, and the failure says nothing about the real problem).
+pg_container_by_image() {
+  docker ps --format '{{.Names}}	{{.Image}}' 2>/dev/null |
+    awk -F'\t' 'tolower($2) ~ /postgres|pgvector/ { print $1; exit }'
+}
+
 if [ -z "${PSQL:-}" ]; then
-  if docker ps --format '{{.Names}}' 2>/dev/null | grep -qx "$PG_CONTAINER"; then
+  if [ -n "$PG_CONTAINER" ] && docker ps --format '{{.Names}}' 2>/dev/null | grep -qx "$PG_CONTAINER"; then
     PSQL="docker exec -i $PG_CONTAINER psql -U $PG_USER"
   else
-    PSQL="sudo -u postgres psql"
+    found=$(pg_container_by_image)
+    if [ -n "$found" ]; then
+      PSQL="docker exec -i $found psql -U $PG_USER"
+    elif command -v psql >/dev/null 2>&1 && id postgres >/dev/null 2>&1; then
+      PSQL="sudo -u postgres psql"
+    else
+      cat >&2 <<EOF
+could not find a PostgreSQL server to prepare
+
+Looked for, in order:
+  1. a running container named "${PG_CONTAINER:-<none>}"           not running
+  2. a running container with a postgres or pgvector image         none
+  3. a local psql plus a "postgres" system user                    not available
+
+Point this script at the right one:
+
+  # container under another name or image - list what is running:
+  docker ps --format '{{.Names}}\t{{.Image}}'
+  PG_CONTAINER=<that name> bash deploy/setup-ai-db.sh
+
+  # a local PostgreSQL where you reach the superuser another way:
+  PSQL="sudo -u postgres psql" bash deploy/setup-ai-db.sh
+  PSQL="psql -U postgres"      bash deploy/setup-ai-db.sh
+EOF
+      exit 1
+    fi
   fi
 fi
 echo "Using: $PSQL"
