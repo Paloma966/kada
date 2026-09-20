@@ -70,20 +70,22 @@ nginx 已为 `/api/ai/` 关闭缓冲以保证 SSE 逐字输出。
 
 首次部署（各执行一次）：
 
-1. **数据库**：本地执行 `make setup-ai-db`（等价于把 `deploy/setup-ai-db.sh` 拷到服务器上跑一次）。
+1. **数据库**：把 `deploy/setup-ai-db.sh` 拷到服务器上执行一次
+   （`scp deploy/setup-ai-db.sh <host>:/tmp/ && ssh <host> "bash /tmp/setup-ai-db.sh"`）。
    它创建 `kada_ai` 库并在**这个库**（不是 Go 的 `kada` 库）里启用 vector 扩展，可重复执行。
    报 `pgvector is not available` 时：原生 PostgreSQL 装 `postgresql-16-pgvector` 并重启，
    Docker 则换成 `pgvector/pgvector:pg16` 镜像。
-2. **密钥**：服务器上 `mkdir -p /opt/kada/ai`，把 `deploy/ai.env.example` 拷成 `/opt/kada/ai/ai.env` 并
+2. **连接串**：服务器上 `mkdir -p /opt/kada/ai`，把 `deploy/ai.env.example` 拷成 `/opt/kada/ai/ai.env` 并
    `chmod 600`（仓库不在服务器上就先从本地 `scp deploy/ai.env.example <host>:/opt/kada/ai/ai.env`），
-   填入 `POSTGRES_URL` / `REDIS_URL` / `KADA_API_BASE` / `DEEPSEEK_API_KEY` / `aliyun` / `AI_INTERNAL_SECRET`。
-   `deploy/deploy-ai.sh` 缺这个文件时直接失败：否则会起一个启动正常、健康检查通过、
-   但每个对话请求都在模型侧报错的空壳服务，比拒绝部署难查得多。
-3. **网关侧同一个密钥**：在后端的 `/opt/kada/backend/.env` 里写同一个 `AI_INTERNAL_SECRET`
-   （`openssl rand -hex 32` 生成），然后 `systemctl restart kada-api`。
-   两边不一致时本服务会对网关的请求回 401，AI 页面整体不可用。
-4. **启动**：推 `main` 后 CI 自动部署（构建镜像 → 重启容器 → 探活 → 失败回滚到上一个镜像）；
-   手动等价命令是本地 `make deploy-ai`，或服务器上 `bash /opt/kada/ai/deploy-ai.sh`。
+   填入 `POSTGRES_URL` / `REDIS_URL` / `KADA_API_BASE` 这三个连接串即可。
+   三个密钥（`DEEPSEEK_API_KEY` / `aliyun` / `AI_INTERNAL_SECRET`）不用手填：部署作业用
+   `deploy/upsert-env.sh` 从 GitHub Secrets 写进去，缺任何一个都会让部署失败并说明是哪一个。
+   `deploy/deploy-ai.sh` 在构建镜像前也会再校验一次 `DEEPSEEK_API_KEY` 与 `aliyun`：
+   否则会起一个启动正常、健康检查通过、但每个对话请求都在模型侧报错的空壳服务，比拒绝部署难查得多。
+3. **网关侧同一个密钥**：同样由 GitHub Secret 写进 `/opt/kada/backend/.env`，不需要手动对齐。
+   两边不一致时本服务会对网关的请求回 401，AI 页面整体不可用——现在两边出自同一个值，不会再不一致。
+4. **启动**：推 `main` 后 CI 自动部署（同步密钥 → 构建镜像 → 重启容器 → 探活 → 失败回滚到上一个镜像）；
+   手动等价命令是服务器上的 `bash /opt/kada/ai/deploy-ai.sh`。
 5. **入库知识库**：`docker exec kada-ai python -m app.scripts.ingest_docs`
    每次执行都会先删掉同名 collection 再全量重建，所以只在文档变更后跑（会消耗 embedding 额度）。
    没入库不会让对话挂掉（检索失败降级为"没有参考资料"），但回答里就没有平台资料。
