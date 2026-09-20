@@ -569,6 +569,11 @@ separate SMS product (`dysmsapi`). That distinction decides the configuration:
   only comes back because `ReturnVerifyCode` is set. A code of our own in that field is rejected with
   `isv.INVALID_PARAMETERS` before any message is sent. `CodeLength` is pinned to 6 because its default is
   4 while the sign-in form, the stored hash and the input field all expect six.
+- `SchemeName` is left out, so the provider uses the default service. It is an account-specific name whose
+  documented default is exactly that, and the hardcoded `SMS` the request used to carry was a guess that
+  nothing had ever checked - probed against the live account, the granted pair answers `OK` as soon as the
+  parameter is absent. `CheckSmsVerifyCode` omits it for the same reason: a check has to name the scheme
+  the code was issued under.
 - The console describes the granted pair as being for **API 联调** and requires test phone numbers to be
   bound before 联调 starts (up to five), so the granted pair is what makes the flow testable for free;
   sending to arbitrary numbers needs a signature and a template of its own.
