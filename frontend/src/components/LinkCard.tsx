@@ -96,7 +96,7 @@ export function LinkCard({ link, onDelete, selectable, selected, onSelect }: Lin
                 checked={selected}
                 onChange={(e) => onSelect?.(link.id, e.target.checked)}
                 onClick={(e) => e.stopPropagation()}
-                className="size-4 rounded border-line-strong text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                className="size-4 rounded border-line-strong text-brand-ink focus:ring-indigo-500 cursor-pointer"
               />
             </div>
           )}
@@ -123,7 +123,7 @@ export function LinkCard({ link, onDelete, selectable, selected, onSelect }: Lin
               </div>
 
               <div className="flex items-center gap-2 text-sm">
-                <span className="text-indigo-600 font-mono text-xs sm:text-sm truncate">
+                <span className="text-brand-ink font-mono text-xs sm:text-sm truncate">
                   {link.short_url}
                 </span>
                 <button
@@ -131,7 +131,7 @@ export function LinkCard({ link, onDelete, selectable, selected, onSelect }: Lin
                   className={`shrink-0 p-1 rounded transition-colors ${
                     copied
                       ? "text-green-500 bg-green-50"
-                      : "text-faint hover:text-indigo-500"
+                      : "text-faint hover:text-brand-ink"
                   }`}
                   title={t("复制链接")}
                 >
@@ -159,7 +159,7 @@ export function LinkCard({ link, onDelete, selectable, selected, onSelect }: Lin
 
               <button
                 onClick={handleShowQR}
-                className="p-1.5 text-faint hover:text-indigo-500 hover:bg-indigo-50 rounded-lg transition-colors"
+                className="p-1.5 text-faint hover:text-brand-ink hover:bg-brand-soft rounded-lg transition-colors"
                 title={t("二维码")}
               >
                 <QrCode className="w-4 h-4" />
@@ -170,7 +170,7 @@ export function LinkCard({ link, onDelete, selectable, selected, onSelect }: Lin
                 target="_blank"
                 rel="noopener noreferrer"
                 onClick={(e) => e.stopPropagation()}
-                className="p-1.5 text-faint hover:text-indigo-500 hover:bg-indigo-50 rounded-lg transition-colors"
+                className="p-1.5 text-faint hover:text-brand-ink hover:bg-brand-soft rounded-lg transition-colors"
                 title={t("打开链接")}
               >
                 <ExternalLink className="w-4 h-4" />
@@ -179,7 +179,7 @@ export function LinkCard({ link, onDelete, selectable, selected, onSelect }: Lin
               <Link
                 href={`/dashboard/links/${link.id}`}
                 onClick={(e) => e.stopPropagation()}
-                className="p-1.5 text-faint hover:text-indigo-500 hover:bg-indigo-50 rounded-lg transition-colors"
+                className="p-1.5 text-faint hover:text-brand-ink hover:bg-brand-soft rounded-lg transition-colors"
                 title={t("编辑")}
               >
                 <Pencil className="w-4 h-4" />

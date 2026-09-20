@@ -183,7 +183,7 @@ export default function UTMPage() {
           <p className="mt-1 text-sm text-muted">{t("请检查网络后重试")}</p>
           <button
             onClick={() => mutate()}
-            className="mt-3 text-sm font-medium text-indigo-600 hover:text-indigo-500"
+            className="mt-3 text-sm font-medium text-brand-ink hover:text-brand"
           >
             {t("重新加载")}
           </button>

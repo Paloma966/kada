@@ -170,7 +170,7 @@ export default function DashboardPage() {
           <p className="mt-1 text-sm text-muted">{t("请检查网络后重试")}</p>
           <button
             onClick={() => mutate()}
-            className="mt-4 text-sm font-medium text-indigo-600 hover:text-indigo-500"
+            className="mt-4 text-sm font-medium text-brand-ink hover:text-brand"
           >
             {t("重新加载")}
           </button>
@@ -213,7 +213,7 @@ export default function DashboardPage() {
                 type="checkbox"
                 checked={links.length > 0 && selectedIds.size === links.length}
                 onChange={handleSelectAll}
-                className="size-4 rounded border-line-strong text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                className="size-4 rounded border-line-strong text-brand-ink focus:ring-indigo-500 cursor-pointer"
               />
               {t("全选")}
             </label>

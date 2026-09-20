@@ -232,7 +232,7 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
       <div className="max-w-2xl mx-auto text-center py-16">
         <div className="text-4xl mb-4">🔍</div>
         <h2 className="text-lg font-medium text-strong">{t("链接不存在")}</h2>
-        <Link href="/dashboard" className="inline-block mt-4 text-indigo-600 text-sm">{t("返回列表")}</Link>
+        <Link href="/dashboard" className="inline-block mt-4 text-brand-ink text-sm">{t("返回列表")}</Link>
       </div>
     );
   }
@@ -277,7 +277,7 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
               </div>
             ) : (
               <button onClick={() => setEditing(true)}
-                className="p-2 text-faint hover:text-indigo-600 transition shrink-0"><Pencil className="size-4" /></button>
+                className="p-2 text-faint hover:text-brand-ink transition shrink-0"><Pencil className="size-4" /></button>
             )}
           </div>
 
@@ -298,16 +298,16 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
         </div>
 
         {/* Short URL bar */}
-        <div className="px-6 py-4 bg-indigo-50/50 flex items-center gap-2">
-          <code className="text-indigo-700 font-mono font-medium text-sm flex-1 truncate">{link.short_url}</code>
+        <div className="px-6 py-4 bg-brand-soft/50 flex items-center gap-2">
+          <code className="text-brand-ink font-mono font-medium text-sm flex-1 truncate">{link.short_url}</code>
           <button onClick={() => copyToClipboard(link.short_url)}
-            className={`p-1.5 rounded-lg transition shrink-0 ${copied ? "text-green-500 bg-green-50" : "text-indigo-400 hover:text-indigo-600"}`}>
+            className={`p-1.5 rounded-lg transition shrink-0 ${copied ? "text-green-500 bg-green-50" : "text-indigo-400 hover:text-brand-ink"}`}>
             {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
           </button>
           <button onClick={() => setShowQR(true)}
-            className="p-1.5 rounded-lg text-indigo-400 hover:text-indigo-600 transition shrink-0"><QrCode className="size-3.5" /></button>
+            className="p-1.5 rounded-lg text-indigo-400 hover:text-brand-ink transition shrink-0"><QrCode className="size-3.5" /></button>
           <a href={link.short_url} target="_blank" rel="noopener noreferrer"
-            className="p-1.5 rounded-lg text-indigo-400 hover:text-indigo-600 transition shrink-0"><ExternalLink className="size-3.5" /></a>
+            className="p-1.5 rounded-lg text-indigo-400 hover:text-brand-ink transition shrink-0"><ExternalLink className="size-3.5" /></a>
         </div>
 
         {/* Stats row */}
@@ -323,7 +323,7 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
           <div className="p-4 text-center">
             <button
               onClick={() => setShowAnalytics(!showAnalytics)}
-              className={`text-sm font-bold transition ${showAnalytics ? "text-indigo-600" : "text-strong"}`}
+              className={`text-sm font-bold transition ${showAnalytics ? "text-brand-ink" : "text-strong"}`}
             >
               <BarChart3 className="size-4 inline mr-1" />
               {t("统计")}
@@ -488,7 +488,7 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
 
             {/* Advanced toggle */}
             <button type="button" onClick={() => setEditShowAdvanced(!editShowAdvanced)}
-              className="text-xs text-indigo-600 hover:text-indigo-700 font-medium">
+              className="text-xs text-brand-ink hover:text-brand font-medium">
               {editShowAdvanced ? t("隐藏高级选项 ▲") : t("展开高级选项 ▼")}
             </button>
 
@@ -592,7 +592,7 @@ export default function LinkDetailPage({ params }: { params: Promise<{ id: strin
           {/* Target URL */}
           <div className="mt-3 pt-3 border-t">
             <p className="text-xs font-medium text-muted mb-1">{t("目标 URL")}</p>
-            <a href={safeHref(link.original_url)} target="_blank" rel="noopener noreferrer" className="text-indigo-600 text-sm break-all hover:underline">
+            <a href={safeHref(link.original_url)} target="_blank" rel="noopener noreferrer" className="text-brand-ink text-sm break-all hover:underline">
               {link.original_url}
             </a>
           </div>

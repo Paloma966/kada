@@ -179,7 +179,7 @@ export default function CreateLinkPage() {
                               <p className="text-xs text-muted mt-0.5 line-clamp-2">{preview.description}</p>
                             )}
                             <a href={safeHref(originalUrl)} target="_blank" rel="noopener noreferrer"
-                              className="inline-flex items-center gap-1 text-xs text-indigo-500 hover:text-indigo-600 mt-1">
+                              className="inline-flex items-center gap-1 text-xs text-brand-ink hover:text-brand mt-1">
                               <ExternalLink className="size-3" />
                               {new URL(originalUrl).hostname}
                             </a>
@@ -293,7 +293,7 @@ export default function CreateLinkPage() {
                     )}
                     {allTags.length === 0 && (
                       <p className="text-xs text-faint py-1">
-                        {t("还没有标签，去")}<a href="/dashboard/tags" className="text-indigo-600 hover:underline ml-1">{t("标签管理")}</a>{t("创建")}
+                        {t("还没有标签，去")}<a href="/dashboard/tags" className="text-brand-ink hover:underline ml-1">{t("标签管理")}</a>{t("创建")}
                       </p>
                     )}
                   </div>
@@ -445,7 +445,7 @@ export default function CreateLinkPage() {
                   </div>
                 ) : (
                   <p className="text-xs text-faint py-2">
-                    {t("还没有 UTM 模板，去")}<a href="/dashboard/utm" className="text-indigo-600 hover:underline ml-1">{t("UTM 模板")}</a>{t("创建")}
+                    {t("还没有 UTM 模板，去")}<a href="/dashboard/utm" className="text-brand-ink hover:underline ml-1">{t("UTM 模板")}</a>{t("创建")}
                   </p>
                 )}
               </div>

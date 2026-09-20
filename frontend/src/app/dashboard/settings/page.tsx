@@ -131,7 +131,7 @@ export default function SettingsPage() {
 
         <div className="px-6 py-5 space-y-5">
           <div className="flex items-center gap-4">
-            <div className="flex size-14 items-center justify-center rounded-full bg-indigo-100 text-xl font-bold text-indigo-600">
+            <div className="flex size-14 items-center justify-center rounded-full bg-brand-soft text-xl font-bold text-brand-ink">
               {(savedUser?.name || savedUser?.email || "U")[0].toUpperCase()}
             </div>
             <div>
@@ -390,7 +390,9 @@ export default function SettingsPage() {
           </div>
           <div className="flex items-center gap-3 py-2">
             <Shield className="size-4 text-faint shrink-0" />
-            <div><p className="text-xs text-muted">{t("登录方式")}</p><p className="text-sm text-strong">{savedUser?.phone ? t("手机号验证码") : t("邮箱密码")}</p></div>
+            {/* Sign-in is phone-only now: every account has a phone number and none can be reached by email
+                or password any more, so this line no longer branches. */}
+            <div><p className="text-xs text-muted">{t("登录方式")}</p><p className="text-sm text-strong">{t("手机号验证码")}</p></div>
           </div>
         </div>
       </div>
@@ -417,7 +419,7 @@ function ThemeOption({
       aria-pressed={active}
       className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-medium transition ${
         active
-          ? "border-brand bg-brand-soft text-brand"
+          ? "border-brand bg-brand-soft text-brand-ink"
           : "border-line text-muted hover:bg-muted-surface hover:text-strong"
       }`}
     >
