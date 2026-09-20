@@ -507,16 +507,22 @@ setting: `SMS_SIGN_NAME=kada` for this account.
 
 None of these secrets are set on the server by hand any more. The deploy job writes them from GitHub
 repository secrets with `deploy/upsert-env.sh`, as its **first** step, before a single service is replaced.
-That script draws the line between the two kinds of missing value, and the line is a product decision:
 
-- `--require` for the AI keys. A service that starts, passes `/healthz` and then fails every question is
-  worse to diagnose than a refused deploy, so the deployment fails while the previous build keeps serving.
-- `--warn` for the SMS credentials. The Aliyun signature and template have to be approved in the console,
-  which takes days, and blocking every deploy until then would stop unrelated fixes from shipping. The
-  warning is doubled: a runner-side step annotates the run and writes the job summary, and the server's own
-  log repeats it. It is a warning about the *deployment*, not about the product - phone + SMS code is the
-  only way to sign in, so a site without them is up and unusable, and in release mode the code is never
-  logged.
+Every one of them is `--require`d, and the check reads **the file**, not the repository secrets. That
+placement is the whole design: an AI key or an SMS credential that is missing fails the deployment while
+the previous build keeps serving, and it fails before anything on the host has been touched. Reading the
+file rather than the secrets is also what keeps a hand-configured host deployable - `--set` with an empty
+value leaves an existing line alone, so a value that only exists on the server satisfies the check, and a
+check that looked at `secrets.*` instead would reject a deployment that was going to work.
+
+The SMS credentials were briefly exempt from that (`--warn`, i.e. report and continue), on the argument
+that the Aliyun signature and template have to be approved in the console before they exist at all and
+blocking every deploy until then would stop unrelated fixes from shipping. That argument lost: phone plus
+SMS code is the only way to sign in, so a host without them serves a site nobody can log into, and in
+release mode the code is never written to the log. A deployment that would produce that is better refused.
+What survives from the episode is a runner-side note (never a failure) saying that CI does not *manage*
+these four values yet - useful because whether they are set here or only on the host is invisible until the
+machine is rebuilt.
 
 The Python AI service reads its own environment (`backend/ai/app/config.py`), and in production those
 values live in `/opt/kada/ai/ai.env` rather than in the repository's `.env`:

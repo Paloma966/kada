@@ -330,13 +330,16 @@ jobs:
           target: /tmp/kada-deploy/
           strip_components: 0
 
-      # The SMS credentials are advisory, so this step cannot fail the deploy - but "advisory" must not
-      # mean "quiet". It runs on the runner rather than on the host so the annotation and the job summary
-      # are guaranteed to render: text that has travelled back over SSH is only best-effort (see the
-      # --warn block in the deploy step, which repeats the same warning in the server's own log).
+      # Whether the deployment may proceed is decided on the host, by the --require checks in the deploy
+      # step below: they read /opt/kada/backend/.env as it will actually be after the sync, which is the
+      # truth. This step cannot see that file, so it must not pretend to: it only reports whether CI is
+      # *managing* these four values, and it never fails the job.
       #
-      # It exists because phone number + SMS code is the only way to sign in: without these four the site
-      # is up and nobody can log into it, which is the kind of outage that looks green until someone tries.
+      # That distinction matters in both directions. A missing secret here does not necessarily mean an
+      # outage - a hand-configured host keeps working, because --set with an empty value leaves the file
+      # alone - so claiming "nobody can sign in" would be a false alarm, and false alarms are how real ones
+      # get ignored. It is still worth saying, because a value that only exists on the server is lost when
+      # the server is rebuilt.
       - name: Check the SMS credentials
         env:
           SMS_ACCESS_KEY_ID: ${{ secrets.SMS_ACCESS_KEY_ID }}
@@ -352,25 +355,30 @@ jobs:
           done
 
           if [ -z "$missing" ]; then
-            echo "the SMS credentials are configured"
+            echo "the SMS credentials are managed by this repository"
             exit 0
           fi
 
           {
-            echo "### Warning: the SMS credentials are not configured"
+            echo "### Note: CI does not manage the SMS credentials"
             echo ""
-            echo "Missing: \`$missing\`"
+            echo "Not set as repository secrets: \`$missing\`"
             echo ""
-            echo "The deployment continues, but **nobody can sign in**: a phone number plus an SMS code is"
-            echo "the only sign-in method, and in release mode the code is never written to the log."
+            echo "The deployment is not blocked by this - the check that decides runs on the host, against"
+            echo "\`/opt/kada/backend/.env\`, where these values may already be configured by hand. But as"
+            echo "long as they are not set here, they live only on that machine: rebuilding the host, or"
+            echo "rotating the credential, means editing it over SSH by hand again."
             echo ""
             echo "| Secret | Where it comes from |"
             echo "|---|---|"
             echo "| \`SMS_ACCESS_KEY_ID\` / \`SMS_ACCESS_KEY_SECRET\` | Aliyun RAM AccessKey pair with SMS permission |"
             echo "| \`SMS_SIGN_NAME\` / \`SMS_TEMPLATE_CODE\` | The system-granted signature and template in the Aliyun PNVS console |"
+            echo ""
+            echo "Phone number plus SMS code is the only sign-in method, so if the host is *also* missing"
+            echo "them, nobody can sign in and the deploy will fail at the sync step."
           } >> "$GITHUB_STEP_SUMMARY"
 
-          echo "::warning title=SMS is not configured::Nobody can sign in until $missing is set. The deployment itself continues."
+          echo "::notice title=CI does not manage the SMS credentials::$missing is not set as a repository secret; the deploy checks the host's own .env instead."
 
       - name: Apply schema and restart services
         uses: appleboy/ssh-action@v1.2.2
@@ -436,11 +444,11 @@ jobs:
             # ai.env. Writing both from the same secret is the only way they cannot end up different -
             # which is what a 401 "only the Go gateway may call this service" always means.
             #
-            # The SMS credentials are checked with --warn rather than --require: the signing name and the
-            # template have to be approved in the Aliyun console, which takes days, and blocking every
-            # deploy until then would stop unrelated fixes from shipping. They are still not optional for
-            # the product - the runner-side check in the step before this one annotates the run and writes
-            # the job summary, and this block repeats it in the server's own log.
+            # The SMS credentials are required too, and for the same reason as the AI keys: phone number
+            # plus SMS code is the only way to sign in, so a host without them serves a site nobody can log
+            # into. Checking them here is what makes that a refused deploy instead of a quiet outage. The
+            # check reads the file, not the repository secrets, so a host that was configured by hand keeps
+            # deploying normally.
             bash "$DEPLOY_DIR/deploy/upsert-env.sh" "$BACKEND_DIR/.env" \
               --set "AI_INTERNAL_SECRET=$AI_INTERNAL_SECRET" \
               --set "SMS_ACCESS_KEY_ID=$SMS_ACCESS_KEY_ID" \
@@ -448,10 +456,10 @@ jobs:
               --set "SMS_SIGN_NAME=$SMS_SIGN_NAME" \
               --set "SMS_TEMPLATE_CODE=$SMS_TEMPLATE_CODE" \
               --require AI_INTERNAL_SECRET \
-              --warn SMS_ACCESS_KEY_ID \
-              --warn SMS_ACCESS_KEY_SECRET \
-              --warn SMS_SIGN_NAME \
-              --warn SMS_TEMPLATE_CODE
+              --require SMS_ACCESS_KEY_ID \
+              --require SMS_ACCESS_KEY_SECRET \
+              --require SMS_SIGN_NAME \
+              --require SMS_TEMPLATE_CODE
 
             # 1. Back up the running binary so a failed start can be rolled back.
             echo "Backing up the current binary"
