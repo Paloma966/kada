@@ -177,7 +177,10 @@ run_sms_case() {
   : > "$dir/summary.md"
 
   if [ "$mode" = "present" ]; then
-    SMS_ACCESS_KEY_ID=id SMS_ACCESS_KEY_SECRET=secret SMS_SIGN_NAME=kada SMS_TEMPLATE_CODE=SMS_336675166 \
+    # Obviously fake values on purpose. Nothing here asserts on what a credential *is* (only on whether the
+    # step stays quiet when all four are set), so using the account's real template code would mean putting
+    # an account-specific value in the tree for no gain - see the note in docs/design.md section 9.1.
+    SMS_ACCESS_KEY_ID=id SMS_ACCESS_KEY_SECRET=secret SMS_SIGN_NAME=kada SMS_TEMPLATE_CODE=SMS_000000000 \
       GITHUB_STEP_SUMMARY="$dir/summary.md" bash "$HERE/step-check-sms.sh" > "$dir/out.txt" 2>&1
   else
     SMS_ACCESS_KEY_ID= SMS_ACCESS_KEY_SECRET= SMS_SIGN_NAME= SMS_TEMPLATE_CODE= \
