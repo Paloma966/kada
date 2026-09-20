@@ -33,6 +33,23 @@ python -m app.main          # 监听 127.0.0.1:8000
 python -m app.scripts.ingest_docs
 ```
 
+## 容器部署（生产）
+
+生产环境随仓库根目录的 Docker Compose 一起启动，不需要单独运行本服务：
+
+1. 在根目录 `.env` 填入 `DEEPSEEK_API_KEY`、`aliyun`、`KADA_API_TOKEN`（见根目录 `.env.example`）
+2. `docker compose up -d` 会按 `backend/ai/Dockerfile` 构建本服务；PostgreSQL 使用 pgvector 镜像，并在数据卷首次初始化时自动创建 `kada_ai` 库并启用 vector 扩展
+3. 首次启动后入库知识库文档：
+   ```bash
+   docker compose exec ai python -m app.scripts.ingest_docs
+   ```
+4. `KADA_API_TOKEN` 要等平台首次启动后，在「设置 → API Token」里创建（明文仅显示一次），填入 `.env` 后执行 `docker compose restart ai`
+
+容器内的连接地址由 compose 注入：数据库 `postgres:5432`、Redis `redis:6379`、MCP 回调 `http://backend:8080`；
+Go 网关通过 `AI_BASE_URL=http://ai:8000` 找到本服务，nginx 已为 `/api/ai/` 关闭缓冲以保证 SSE 逐字输出。
+
+> `deploy/postgres/initdb/` 下的建库脚本只在数据卷**首次初始化**时执行；在已有 PostgreSQL 数据卷上升级，需要手动执行一次该 SQL。
+
 ## 环境变量
 
 只有密钥从环境变量读取，其余参数（模型名、连接串、缓存 TTL 等）的默认值写在 `app/config.py`。
