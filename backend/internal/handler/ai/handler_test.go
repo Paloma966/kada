@@ -165,3 +165,27 @@ func TestProxyDropsClientSecretWhenUnset(t *testing.T) {
 		t.Fatalf("status = %d, want 200", w.Code)
 	}
 }
+
+// The AI service must see the gateway's own observation of the peer, not a
+// forwarding claim the caller picked: the rewrite step drops the inbound
+// X-Forwarded-* headers before writing its own, so a forged client IP cannot
+// reach the Python service. httptest.NewRequest sets RemoteAddr to
+// 192.0.2.1:1234, which is what SetXForwarded reports.
+func TestProxyReplacesClientForwardedFor(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("X-Forwarded-For"); got != "192.0.2.1" {
+			t.Errorf("X-Forwarded-For = %q, want the peer address 192.0.2.1", got)
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer upstream.Close()
+
+	r := newTestRouter(t, upstream.URL)
+	// client claims to be someone else
+	w := serve(r, http.MethodPost, "/api/ai/chat", bytes.NewBufferString(`{}`),
+		map[string]string{"X-Forwarded-For": "203.0.113.9"})
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", w.Code)
+	}
+}
