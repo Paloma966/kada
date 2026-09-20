@@ -550,13 +550,28 @@ separate SMS product (`dysmsapi`). That distinction decides the configuration:
 
 - It is the one SMS route open to **individually verified** accounts. The SMS product stopped accepting
   personal self-use qualifications, so personal signatures and templates can no longer be approved there.
-- The account gets **one** system-granted signature and **one** system-granted template, to be taken from
-  the PNVS console. They cannot be created or edited, and they must be used as a pair - a granted
-  signature with a custom template is rejected, and so is the reverse.
-- `SMS_SIGN_NAME` and `SMS_TEMPLATE_CODE` have **no defaults**. They used to fall back to a hardcoded
-  signature and a made-up template code (`恒创联众` / `100001`, values that exist on nobody's account), which
-  turned "nobody configured this" into a provider rejection that read like a broken account. Startup now
-  names the missing setting instead, and phone sign-up stays disabled until it is set.
+- The account gets **one** system-granted signature and **one** system-granted template, read from the
+  PNVS console (**短信认证 → 概览**). For this account they are the signature `恒创联众` and the template
+  `100001`, whose content is `您的验证码为${code}，…以上验证码${min}分钟内有效…`. They cannot be created or
+  edited, and they must be used as a pair: a granted signature with a custom template is rejected, and so
+  is the reverse.
+- The two products keep **separate registries**, and the same string means nothing in the other one. This
+  was settled for this account rather than argued: the SMS product's own `QuerySmsSignList` and
+  `QuerySmsTemplateList` both answer `TotalCount: 0`, so no signature and no template of that product
+  exists here, while PNVS answers `isv.INVALID_PARAMETERS` / 签名或者模版无效 for anything that is not the
+  granted pair.
+- `SMS_SIGN_NAME` and `SMS_TEMPLATE_CODE` have **no defaults**. They used to fall back to the granted pair
+  hardcoded in `aliyun.go`, which is why sends worked before anything was configured at all - and why an
+  unset variable looked harmless. Startup now names the missing setting instead, and phone sign-up stays
+  disabled until it is set.
+- The API contract is not the obvious one either. `SendSmsVerifyCode` **generates the code itself**: the
+  template variable must carry the placeholder `##code##` for Aliyun to substitute, and the generated code
+  only comes back because `ReturnVerifyCode` is set. A code of our own in that field is rejected with
+  `isv.INVALID_PARAMETERS` before any message is sent. `CodeLength` is pinned to 6 because its default is
+  4 while the sign-in form, the stored hash and the input field all expect six.
+- The console describes the granted pair as being for **API 联调** and requires test phone numbers to be
+  bound before 联调 starts (up to five), so the granted pair is what makes the flow testable for free;
+  sending to arbitrary numbers needs a signature and a template of its own.
 - The PNVS console, its data, and its package are all separate from the SMS product: sending is billed
   against a PNVS "SMS verification" package, which the SMS product's free trial does not cover.
 
@@ -564,29 +579,30 @@ separate SMS product (`dysmsapi`). That distinction decides the configuration:
 
 SMS really did work in production once, and the reason it stopped is on the record:
 
-1. `05eda08 feat: add Alibaba Cloud SMS verification` recorded the account's real pair in
-   `backend/.env.example`: signature `kada`, and a template code of the form `SMS_…`. (The exact code is
-   deliberately not repeated here - see the note below - but it is recoverable with
-   `git show 05eda08:backend/.env.example`.)
+1. `05eda08 feat: add Alibaba Cloud SMS verification` moved the pair out of the source and recorded the
+   **wrong** values in `backend/.env.example`: signature `kada` and a template code of the form `SMS_…`.
+   Neither exists in either registry of this account. Nothing appeared to break, because the source still
+   held the correct pair as a hardcoded fallback and kept using it.
 2. `8420bd9 refactor: move the backend from pgx to GORM with AutoMigrate` blanked that whole SMS section of
-   the example file while rewriting it, so **the only copy of the template code in the repository was
-   deleted by an unrelated refactor**. Nothing failed at the time: the code still had the `恒创联众` /
-   `100001` fallback and a `kada` default for the signature, so a deployment that had never configured the
-   pair kept limping along.
-3. `fbc1763 fix: fail on an unset SMS signature instead of substituting one` removed that fallback and made
-   an unset signature or template a hard startup failure. Correct on its own - but by then the right value
-   was gone from the repo, so "fail loudly" became "SMS is disabled and nobody knows what to put back".
-4. Removing the `kada` default (this change) is the last step of the same idea. It costs one explicit
-   setting - **the signature for this account is `kada`** - and buys a startup line that says what is
-   missing instead of a provider error that looks like a broken account.
+   the example file while rewriting it, so the only recorded copy of the template code disappeared. Still
+   nothing broke, for the same reason.
+3. `fbc1763 fix: fail on an unset SMS signature instead of substituting one` removed that fallback, which
+   was right on its own terms - a hardcoded account-specific pair has no business being a default. But the
+   host had no signature configured, so sending stopped, and the values then copied in by hand came from
+   the example file, which is to say the wrong ones. From there every send was rejected as an invalid
+   signature or template, and the rejection read like a broken account rather than a wrong pair.
+4. What ended it was reading the console instead of the repository: **短信认证 → 概览** lists the granted
+   signature and template, and a signature probe against both products showed the recorded values belong to
+   neither. The lesson is not "the value was lost" but "a wrong value was recorded as if it were the
+   account's, and nothing ever checked it against the provider".
 
-The template code and the AccessKey pair are **not in the repository and never were** (the AccessKey is
-only ever read from the environment; a history search for the `LTAI` prefix finds nothing but accidental
-substrings inside base64 hashes in `go.sum`). Both come from the Aliyun side: the pair from the PNVS
-console, the credentials from RAM. That is also where they belong - a signature and a template code are
-account-specific values, so they are kept in the environment (and, in production, in repository secrets
-that the deploy writes out), not in the tree. Recording the incident above without re-committing the value
-is the point: the lesson is "the value was lost", not "paste it back into the source".
+The AccessKey pair is **not in the repository and never was** (it is only ever read from the environment; a
+history search for the `LTAI` prefix finds nothing but accidental substrings inside base64 hashes in
+`go.sum`). The signature and template code are account-specific and read from the environment too, and
+`backend/.env.example` deliberately keeps them empty so a copied example file cannot pretend to be
+configured. They are named above because they are not secrets - they are visible in the console - and
+because refusing to name them is what turned one wrong assumption into an outage that took a console
+screenshot to end.
 
 ## 10. Deployment
 
