@@ -1,16 +1,18 @@
 #!/bin/bash
 # Deploy or refresh the Kada AI service container on the production host.
 #
-# Runs ON THE SERVER. CI copies this file to /opt/kada/ai/ and invokes it over
-# SSH, and `make deploy-ai` does the same from a workstation, so the two paths
-# cannot drift. The image is built here rather than shipped, because the AI
-# service is a whole Python environment and not a single binary; only the source
-# changes between deploys, so the pip layer of the image stays cached.
+# Runs ON THE SERVER. CI copies this file to /opt/kada/ai/ and invokes it over SSH, so the
+# pipeline and a hand-run deploy cannot drift. The image is built here rather than shipped,
+# because the AI service is a whole Python environment and not a single binary; only the
+# source changes between deploys, so the pip layer of the image stays cached.
 #
 # Expects:
 #   /opt/kada/ai/ai.env             secrets and connection strings (deploy/ai.env.example)
 #   /opt/kada/ai/docker-compose.yml deploy/docker-compose.ai.yml
 #   /tmp/kada-ai-src.tar.gz         the backend/ai source tree
+#
+# It refuses to run when a provider key is empty: CI syncs those from GitHub Secrets first
+# (deploy/upsert-env.sh), so an empty value means the secret is missing, not that the file is.
 #
 # Produces a container named kada-ai listening on 127.0.0.1:8000, which is where
 # the Go gateway looks for it (config.AIBaseURL defaults to http://127.0.0.1:8000).
@@ -33,6 +35,30 @@ Create it from deploy/ai.env.example (chmod 600) and fill in:
 
 This refuses to continue instead of deploying a service that starts, passes its
 health check and then fails every chat request on the provider side.
+EOF
+  exit 1
+fi
+
+# The provider keys are the difference between a service that answers and a service that starts, passes
+# its health check, and then fails every single question - which is the hardest possible way to find out
+# that a key is missing. CI writes them from GitHub Secrets before this script runs (deploy/upsert-env.sh),
+# so an empty one here means the secret was never set, not that the file is wrong.
+missing_keys=""
+for key in DEEPSEEK_API_KEY aliyun; do
+  if ! grep -qE "^[[:space:]]*${key}=[^[:space:]]" "$ENV_FILE"; then
+    missing_keys="$missing_keys $key"
+  fi
+done
+if [ -n "$missing_keys" ]; then
+  cat >&2 <<EOF
+missing required value(s) in $ENV_FILE:$missing_keys
+
+  DEEPSEEK_API_KEY  the chat model key
+  aliyun            the Aliyun Bailian (DashScope) embedding key - the variable name is literally "aliyun"
+
+Set the matching repository secret (DEEPSEEK_API_KEY / DASHSCOPE_API_KEY) and re-run the
+deployment; CI writes it into this file. Refusing to build an image whose chat requests
+would all fail.
 EOF
   exit 1
 fi
