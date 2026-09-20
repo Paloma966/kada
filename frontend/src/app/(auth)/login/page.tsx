@@ -49,13 +49,34 @@ export default function LoginPage() {
   } = useSWR("auth-captcha", () => authAPI.captcha(), {
     revalidateOnFocus: false,
     revalidateOnReconnect: false,
-    shouldRetryOnError: false,
+    // One blip must not take the whole form down with it. Deploying restarts kada-api, and nginx can
+    // answer the first request after that with a 502 from a pooled connection the old process owned.
+    // With retries switched off, that single failure left the field in its error state until the user
+    // clicked the image - which is indistinguishable from a login page that simply does not work. SWR
+    // only calls onErrorRetry at all when shouldRetryOnError is left at its default, so that line is
+    // gone rather than unused.
+    //
+    // Bounded on purpose: this is an unauthenticated endpoint, so three attempts spaced over ~3s is
+    // enough to ride out a restart and not enough to hammer a service that is genuinely down.
+    onErrorRetry: (_err, _key, _config, revalidate, { retryCount }) => {
+      if (retryCount > 3) return;
+      setTimeout(() => revalidate({ retryCount }), 500 * retryCount);
+    },
     // No dedupe window: the refresh after a send attempt MUST reach the server. The server consumes the
     // challenge on every attempt, so a suppressed refresh would leave the user looking at an image that
     // can no longer be answered - and it would only happen when they clicked quickly, which is the worst
     // way to find that out.
     dedupingInterval: 0,
   });
+
+  // The field can only say "could not load"; it cannot print a 502 or an unreachable API without turning
+  // the login form into a debug console. The reason still has to exist somewhere, so it goes to the
+  // browser console - which is exactly where the last investigation looked and found nothing at all.
+  useEffect(() => {
+    if (challengeError) {
+      console.error("kada: captcha challenge failed", challengeError);
+    }
+  }, [challengeError]);
 
   const captchaId = challenge?.captcha_id ?? "";
   const captchaImage = challenge?.image ?? "";
