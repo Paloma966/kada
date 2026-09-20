@@ -5,6 +5,13 @@ node_modules/
 # Go
 backend/bin/
 backend/tmp/
+# A stray `go build ./cmd/server` run inside backend/ drops the binary next to the source instead of in
+# bin/. One of those was committed and sat in the repository as a 47 MB Linux executable.
+backend/server
+
+# Scratch files (commit-message drafts) left behind by tooling run inside backend/
+backend/.gitmsg*.txt
+backend/.gm*.txt
 
 # Go tool caches (agents/tooling sometimes point these inside the repo)
 backend/.gocache/
