@@ -99,30 +99,25 @@ export async function fetchCSV(path: string, token: string): Promise<string> {
 }
 
 // ========== Auth API ==========
+//
+// Signing in is phone-only: the email/password and WeChat routes were removed from the API, not just from
+// this client. `captcha` returns a one-time graphical challenge whose `captcha_id` has to travel with the
+// answer on sendSMSCode - without it the request is rejected, which is the whole point of the challenge.
 
 export const authAPI = {
-  sendSMSCode: (phone: string) =>
+  captcha: (): Promise<{ captcha_id: string; image: string }> =>
+    fetchAPI("/api/auth/captcha"),
+
+  sendSMSCode: (phone: string, captchaId: string, captchaCode: string) =>
     fetchAPI("/api/auth/send-sms-code", {
       method: "POST",
-      body: JSON.stringify({ phone }),
+      body: JSON.stringify({ phone, captcha_id: captchaId, captcha_code: captchaCode }),
     }),
 
   loginByPhone: (phone: string, code: string) =>
     fetchAPI("/api/auth/login-by-phone", {
       method: "POST",
       body: JSON.stringify({ phone, code }),
-    }),
-
-  loginByEmail: (email: string, password: string) =>
-    fetchAPI("/api/auth/login-by-email", {
-      method: "POST",
-      body: JSON.stringify({ email, password }),
-    }),
-
-  registerByEmail: (email: string, password: string, name: string) =>
-    fetchAPI("/api/auth/register-by-email", {
-      method: "POST",
-      body: JSON.stringify({ email, password, name }),
     }),
 
   getMe: (token: string) => fetchAPI("/api/me", { token }),

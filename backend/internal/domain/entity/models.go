@@ -80,8 +80,10 @@ type SMSVerificationCode struct {
 	ID    int64  `gorm:"primaryKey" json:"id"`
 	Phone string `gorm:"type:varchar(20);not null;index:idx_sms_codes_phone,priority:1" json:"phone"`
 	// CodeHash stores sha256(code); the plaintext code is never persisted.
-	CodeHash  *string   `gorm:"type:varchar(64);index" json:"code_hash"`
-	IP        *string   `gorm:"type:varchar(45)" json:"ip"`
+	CodeHash *string `gorm:"type:varchar(64);index" json:"code_hash"`
+	// Indexed because the per-IP send quota counts rows by IP over a time window, and that count runs
+	// before every send.
+	IP        *string   `gorm:"type:varchar(45);index" json:"ip"`
 	Used      bool      `gorm:"default:false" json:"used"`
 	Attempts  int       `gorm:"not null;default:0" json:"attempts"`
 	ExpiresAt time.Time `gorm:"not null" json:"expires_at"`
@@ -92,7 +94,37 @@ type SMSVerificationCode struct {
 // has been called sms_codes since the first migration and auth_service still writes it with raw SQL.
 func (SMSVerificationCode) TableName() string { return "sms_codes" }
 
-// User is an account. A single user may authenticate by phone, email or WeChat.
+// LoginCaptcha is a one-time graphical challenge that has to be answered before an SMS code is sent.
+//
+// It is stored in PostgreSQL rather than Redis on purpose: Redis is optional in this deployment (rate
+// limiting fails open when it is down), and a captcha that silently stops being enforced is worse than
+// no captcha at all, because the endpoint still looks protected. The database is not optional.
+//
+// Only sha256(answer) is kept, so a leaked table cannot be replayed against the service.
+type LoginCaptcha struct {
+	// ID is the handle the client sends back; 32 hex characters from crypto/rand, not a UUID, because
+	// nothing here needs the version bits.
+	ID        string    `gorm:"type:varchar(32);primaryKey" json:"id"`
+	CodeHash  string    `gorm:"type:varchar(64);not null" json:"-"`
+	IP        *string   `gorm:"type:varchar(45)" json:"ip"`
+	Used      bool      `gorm:"not null;default:false" json:"used"`
+	Attempts  int       `gorm:"not null;default:0" json:"attempts"`
+	ExpiresAt time.Time `gorm:"not null;index" json:"expires_at"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+func (LoginCaptcha) TableName() string { return "login_captchas" }
+
+// User is an account.
+//
+// Accounts are created and signed in by phone number plus an SMS code, and nothing else: email/password
+// and WeChat sign-in were both removed (see docs/design.md - an individual cannot register a WeChat Open
+// Platform application, and an email+password path nobody could be bothered to verify was a liability).
+//
+// The email, password_hash, wechat_openid and wechat_unionid columns are kept so that accounts created
+// before that decision keep their data; nothing reads password_hash any more, and email is only an
+// optional contact field on the profile. Dropping them would be a destructive migration with no
+// functional gain, so the schema stays additive.
 //
 // The WeChat column names are declared explicitly because GORM shortens acronyms mid-name:
 // WechatOpenID would map to wechat_open_id, while the column is wechat_openid.
@@ -220,6 +252,7 @@ func Models() []any {
 		&LinkTag{},
 		&ClickLog{},
 		&SMSVerificationCode{},
+		&LoginCaptcha{},
 		&Domain{},
 		&UTMTemplate{},
 		&APIToken{},

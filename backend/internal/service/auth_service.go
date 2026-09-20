@@ -13,11 +13,11 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
-	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 
 	"github.com/chun/kada-backend/internal/domain"
 	"github.com/chun/kada-backend/internal/domain/entity"
+	"github.com/chun/kada-backend/internal/infra/captcha"
 	"github.com/chun/kada-backend/internal/middleware"
 )
 
@@ -26,6 +26,30 @@ type SMSSender interface {
 	SendVerificationCode(phone string) (code string, err error)
 	CheckVerificationCode(phone, code string) (bool, error)
 }
+
+// Sending an SMS costs money and can be used to harass whoever owns the number, so three independent
+// quotas have to hold before a message leaves the building:
+//
+//	per phone, 60s   - stops a single number being bombed and makes each attempt cost the attacker time;
+//	per phone, 10/day - bounds the damage to one victim to ten messages a day;
+//	per IP, 10/hour and 30/day - bounds a script that walks through a list of victim numbers, which the
+//	                  per-phone quota alone would never notice (each number is used once).
+//
+// The per-IP figures are deliberately looser than the per-phone ones because a campus or office NAT puts
+// many legitimate users behind one address; they are there to stop a bulk run, not to police a household.
+const (
+	smsPhoneCooldown = 60 * time.Second
+	smsPhoneDailyMax = 10
+	smsIPHourlyMax   = 10
+	smsIPDailyMax    = 30
+)
+
+// Graphical challenge lifetime and tolerance. Five minutes is long enough to read a distorted code and
+// type it, and short enough that a harvested id is useless. Five attempts bounds an automated solver.
+const (
+	captchaTTL         = 5 * time.Minute
+	captchaMaxAttempts = 5
+)
 
 type AuthService struct {
 	db        *gorm.DB
@@ -42,23 +66,95 @@ func NewAuthService(db *gorm.DB, jwtSecret, jwtExpire string, sms SMSSender) *Au
 // phonePattern matches mainland China mobile numbers: leading 1 + 3-9 + 9 digits
 var phonePattern = regexp.MustCompile(`^1[3-9]\d{9}$`)
 
-// normalizeEmail lower-cases the email and trims whitespace:
-// it guarantees the same canonical form is stored and queried on registration/login/update, making lookups case-insensitive together with the LOWER(email) unique index.
+// normalizeEmail lower-cases the email and trims whitespace so the same canonical form is stored and
+// queried. Email is no longer a sign-in method, but it is still an optional profile field.
 func normalizeEmail(email string) string {
 	return strings.ToLower(strings.TrimSpace(email))
 }
 
-// dummyPasswordHash makes the service still run one bcrypt comparison when the account does not exist or has no password set,
-// evening out the response time so an attacker cannot enumerate registered emails by latency.
-var dummyPasswordHash = func() string {
-	h, _ := bcrypt.GenerateFromPassword([]byte("kada-timing-equalizer"), bcrypt.DefaultCost)
-	return string(h)
-}()
+// GenerateCaptcha issues a graphical challenge for the client to solve before it may request an SMS.
+//
+// Expired rows are purged here rather than by a background job: this is the only place that creates them,
+// so the table cannot grow without bound and the deployment needs no scheduler.
+func (s *AuthService) GenerateCaptcha(ctx context.Context, ip string) (*domain.CaptchaResponse, error) {
+	code, err := captcha.Code()
+	if err != nil {
+		return nil, errors.New("failed to generate a verification code, please try again later")
+	}
 
-// SendSMSCode sends an SMS verification code
-func (s *AuthService) SendSMSCode(ctx context.Context, phone string) error {
+	id, err := randomID()
+	if err != nil {
+		return nil, errors.New("failed to generate a verification code, please try again later")
+	}
+
+	row := entity.LoginCaptcha{
+		ID:        id,
+		CodeHash:  sha256Hex(captcha.Normalize(code)),
+		IP:        stringPtr(ip),
+		ExpiresAt: time.Now().Add(captchaTTL),
+	}
+	if err := s.db.WithContext(ctx).Create(&row).Error; err != nil {
+		log.Printf("store captcha failed: %v", err)
+		return nil, errors.New("failed to generate a verification code, please try again later")
+	}
+
+	// Housekeeping: anything that expired more than an hour ago can never be answered.
+	if err := s.db.WithContext(ctx).Exec(
+		`DELETE FROM login_captchas WHERE expires_at < NOW() - INTERVAL '1 hour'`).Error; err != nil {
+		log.Printf("purge expired captchas failed: %v", err)
+	}
+
+	return &domain.CaptchaResponse{ID: id, Image: captcha.DataURI(code)}, nil
+}
+
+// consumeCaptcha validates an answer and burns it in a single statement.
+//
+// The UPDATE ... WHERE used = FALSE is the whole point: two concurrent requests carrying the same solved
+// challenge cannot both succeed, so one solved captcha cannot be reused to fan out SMS sends.
+func (s *AuthService) consumeCaptcha(ctx context.Context, id, answer string) error {
+	if id == "" || answer == "" {
+		return errors.New("the graphical verification code is required")
+	}
+
+	var consumed string
+	err := s.db.WithContext(ctx).Raw(`
+		UPDATE login_captchas SET used = TRUE
+		WHERE id = ?
+		  AND code_hash = ?
+		  AND used = FALSE
+		  AND expires_at > NOW()
+		  AND attempts < ?
+		RETURNING id
+	`, id, sha256Hex(captcha.Normalize(answer)), captchaMaxAttempts).Scan(&consumed).Error
+	if err == nil && consumed != "" {
+		return nil
+	}
+	if err != nil {
+		log.Printf("consume captcha %s failed: %v", id, err)
+	}
+
+	// Count the failure against every still-usable challenge for this id, so a solver cannot simply retry
+	// the same challenge forever.
+	_ = s.db.WithContext(ctx).Exec(`
+		UPDATE login_captchas SET attempts = attempts + 1
+		WHERE id = ? AND used = FALSE AND expires_at > NOW()
+	`, id).Error
+
+	return errors.New("the graphical verification code is incorrect or has expired")
+}
+
+// SendSMSCode sends an SMS verification code.
+//
+// The order of the checks is deliberate and is the order in which each one can reject the request most
+// cheaply: the captcha (fails a script outright and costs nothing), the phone quotas, then the IP quotas,
+// and only then the provider call, which is the only step that costs money.
+func (s *AuthService) SendSMSCode(ctx context.Context, phone, ip, captchaID, captchaAnswer string) error {
 	if !phonePattern.MatchString(phone) {
 		return errors.New("invalid phone number format")
+	}
+
+	if err := s.consumeCaptcha(ctx, captchaID, captchaAnswer); err != nil {
+		return err
 	}
 
 	// 60-second cooldown per phone number: prevents SMS bombing of a single number
@@ -66,15 +162,39 @@ func (s *AuthService) SendSMSCode(ctx context.Context, phone string) error {
 	if err := s.db.WithContext(ctx).Model(&entity.SMSVerificationCode{}).
 		Where("phone = ? AND created_at > NOW() - INTERVAL '60 seconds'", phone).
 		Count(&recent).Error; err == nil && recent > 0 {
-		return errors.New("too many requests, please try again in 60 seconds")
+		return &domain.RateLimitError{
+			Message:           "too many requests, please try again in 60 seconds",
+			RetryAfterSeconds: int(smsPhoneCooldown.Seconds()),
+		}
 	}
 
 	// daily cap of 10 per phone number: prevents bulk bombing and SMS cost loss
 	var daily int64
 	if err := s.db.WithContext(ctx).Model(&entity.SMSVerificationCode{}).
 		Where("phone = ? AND created_at > NOW() - INTERVAL '24 hours'", phone).
-		Count(&daily).Error; err == nil && daily >= 10 {
-		return errors.New("this phone number has reached its daily send limit, please try again tomorrow")
+		Count(&daily).Error; err == nil && daily >= smsPhoneDailyMax {
+		return &domain.RateLimitError{Message: "this phone number has reached its daily send limit, please try again tomorrow"}
+	}
+
+	// Per-IP quotas. They are skipped when the address is unknown: recording every unnamed caller as
+	// 0.0.0.0 and then counting them together would lock out the whole world the moment one script ran.
+	if ip != "" && ip != "0.0.0.0" {
+		var fromIPHour int64
+		if err := s.db.WithContext(ctx).Model(&entity.SMSVerificationCode{}).
+			Where("ip = ? AND created_at > NOW() - INTERVAL '1 hour'", ip).
+			Count(&fromIPHour).Error; err == nil && fromIPHour >= smsIPHourlyMax {
+			return &domain.RateLimitError{
+				Message:           "too many verification codes requested from this network, please try again later",
+				RetryAfterSeconds: 3600,
+			}
+		}
+
+		var fromIPDay int64
+		if err := s.db.WithContext(ctx).Model(&entity.SMSVerificationCode{}).
+			Where("ip = ? AND created_at > NOW() - INTERVAL '24 hours'", ip).
+			Count(&fromIPDay).Error; err == nil && fromIPDay >= smsIPDailyMax {
+			return &domain.RateLimitError{Message: "this network has reached its daily limit for verification codes, please try again tomorrow"}
+		}
 	}
 
 	var code string
@@ -100,8 +220,8 @@ func (s *AuthService) SendSMSCode(ctx context.Context, phone string) error {
 	// store the code hash in the database (valid for 5 minutes): no plaintext is persisted, so a database leak cannot be replayed directly
 	if err := s.db.WithContext(ctx).Exec(`
 		INSERT INTO sms_codes (phone, code_hash, ip, expires_at)
-		VALUES (?, ?, '0.0.0.0', ?)
-	`, phone, sha256Hex(code), time.Now().Add(5*time.Minute)).Error; err != nil {
+		VALUES (?, ?, ?, ?)
+	`, phone, sha256Hex(code), stringPtr(ip), time.Now().Add(5*time.Minute)).Error; err != nil {
 		log.Printf("store sms code failed: %v", err)
 		return errors.New("failed to store verification code, please try again later")
 	}
@@ -173,76 +293,8 @@ func (s *AuthService) LoginByPhone(ctx context.Context, phone, code string) (*do
 	return &domain.AuthResponse{Token: token, User: *user}, nil
 }
 
-// LoginByEmail logs in with email + password
-func (s *AuthService) LoginByEmail(ctx context.Context, email, password string) (*domain.AuthResponse, error) {
-	email = normalizeEmail(email)
-
-	var row entity.User
-	err := s.db.WithContext(ctx).Where("email = ?", email).First(&row).Error
-	if err != nil {
-		// account does not exist: still run one bcrypt comparison so the response time matches a wrong password, preventing email enumeration
-		_ = bcrypt.CompareHashAndPassword([]byte(dummyPasswordHash), []byte(password))
-		return nil, errors.New("invalid email or password")
-	}
-
-	passwordHash := ""
-	if row.PasswordHash != nil {
-		passwordHash = *row.PasswordHash
-	}
-	if passwordHash == "" {
-		// no password set: compare once as well and return the same error text, avoiding email enumeration and a timing side channel
-		log.Printf("login attempt for user without password set: id=%d", row.ID)
-		_ = bcrypt.CompareHashAndPassword([]byte(dummyPasswordHash), []byte(password))
-		return nil, errors.New("invalid email or password")
-	}
-
-	if compareErr := bcrypt.CompareHashAndPassword([]byte(passwordHash), []byte(password)); compareErr != nil {
-		return nil, errors.New("invalid email or password")
-	}
-
-	_ = s.db.WithContext(ctx).Model(&entity.User{}).
-		Where("id = ?", row.ID).
-		Update("last_login_at", time.Now()).Error
-
-	user := toUserInfo(row)
-	token, err := s.generateToken(*user)
-	if err != nil {
-		return nil, err
-	}
-
-	return &domain.AuthResponse{Token: token, User: *user}, nil
-}
-
-// RegisterByEmail registers with email
-func (s *AuthService) RegisterByEmail(ctx context.Context, email, password, name string) (*domain.AuthResponse, error) {
-	email = normalizeEmail(email)
-
-	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
-	if err != nil {
-		log.Printf("bcrypt hash failed: %v", err)
-		return nil, errors.New("registration failed, please try again later")
-	}
-
-	hashed := string(hash)
-	row := entity.User{Email: &email, PasswordHash: &hashed, Name: &name}
-	if createErr := s.db.WithContext(ctx).Create(&row).Error; createErr != nil {
-		log.Printf("register by email failed: %v", createErr)
-		// A duplicate email is a client mistake (409), anything else is a real server-side failure and
-		// must not be disguised as one; the handler maps the sentinel to the right status.
-		if isDuplicateKey(createErr) {
-			return nil, domain.ErrEmailTaken
-		}
-		return nil, fmt.Errorf("registration failed: %w", createErr)
-	}
-
-	user := toUserInfo(row)
-	token, err := s.generateToken(*user)
-	if err != nil {
-		return nil, err
-	}
-
-	return &domain.AuthResponse{Token: token, User: *user}, nil
-}
+// LoginByEmail and RegisterByEmail used to live here. They are gone: signing in happens by phone number
+// only (see entity.User), and `PATCH /api/me` remains the way an email is attached to a profile.
 
 // GetUserByID gets user info
 func (s *AuthService) GetUserByID(ctx context.Context, userID int64) (*domain.UserInfo, error) {
@@ -333,4 +385,26 @@ func (s *AuthService) generateToken(user domain.UserInfo) (string, error) {
 func generateSMSCode() string {
 	n, _ := rand.Int(rand.Reader, big.NewInt(1000000))
 	return fmt.Sprintf("%06d", n.Int64())
+}
+
+// randomID returns 32 hex characters from crypto/rand: the opaque handle for a captcha.
+//
+// It is not a UUID because nothing here needs the version/variant bits; what matters is that it cannot be
+// guessed from another challenge, which a counter or a timestamp would allow.
+func randomID() (string, error) {
+	buf := make([]byte, 16)
+	if _, err := rand.Read(buf); err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%x", buf), nil
+}
+
+// stringPtr returns nil for an empty string, so "no address" is stored as SQL NULL rather than as ”.
+// An empty string would otherwise be a value a COUNT query matches, quietly lumping every unnamed caller
+// into one quota bucket.
+func stringPtr(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
 }

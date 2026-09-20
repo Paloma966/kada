@@ -71,23 +71,29 @@ func main() {
 		defer infra.CloseRedis(redisClient)
 	}
 
-	// Initialize the Aliyun SMS verification service
+	// Initialize the Aliyun SMS verification service.
+	//
+	// This is no longer a nice-to-have: phone + SMS code is the only way to sign in, so a service that
+	// cannot send a code cannot be logged into at all. The process still starts (an unstartable API is a
+	// worse outage than an unreachable one) but it says so in the log, at the top, every time.
 	var smsSender service.SMSSender
 	if cfg.SMSCredentialsConfigured() {
 		smsSender, err = sms.NewAliyunSender(cfg.SMSAccessKeyID, cfg.SMSAccessKeySecret, cfg.SMSSignName, cfg.SMSTemplateCode)
 		if err != nil {
-			// Not fatal: every other feature still works. But phone sign-up cannot, and the reason is
+			// Not fatal: every other feature still works. But nobody can sign in, and the reason is
 			// printed now rather than deferred to a request that would only report a provider error.
-			log.Printf("⚠️  SMS service disabled, phone sign-up will not work: %v", err)
+			log.Printf("❌ SMS service disabled, NOBODY CAN SIGN IN: %v", err)
 		}
 	} else {
 		// Distinguish "not configured" from "configured with the .env.example placeholders": both end in the
-		// same warning, but the second one is the common cause of sign-up failing with a provider error.
+		// same warning, but the second one is the common cause of sign-in failing with a provider error.
 		if cfg.SMSAccessKeyID != "" || cfg.SMSAccessKeySecret != "" {
-			log.Println("⚠️  SMS_ACCESS_KEY_ID/SMS_ACCESS_KEY_SECRET still hold the .env.example placeholder values; " +
-				"SMS is disabled and phone sign-up cannot work until real Aliyun credentials are set")
+			log.Println("❌ SMS_ACCESS_KEY_ID/SMS_ACCESS_KEY_SECRET still hold the .env.example placeholder values; " +
+				"NOBODY CAN SIGN IN until real Aliyun credentials are set")
 		} else {
-			log.Println("⚠️  SMS service not configured; verification codes will only be printed to the log")
+			log.Println("⚠️  SMS not configured: NOBODY CAN SIGN IN. Verification codes are printed to this log " +
+				"instead (development only); set SMS_ACCESS_KEY_ID/SMS_ACCESS_KEY_SECRET/SMS_SIGN_NAME/SMS_TEMPLATE_CODE " +
+				"to enable real sending")
 		}
 	}
 

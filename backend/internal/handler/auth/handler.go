@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 
@@ -13,10 +14,9 @@ import (
 
 // AuthService is the authentication service interface (mockable for tests).
 type AuthService interface {
-	SendSMSCode(ctx context.Context, phone string) error
+	GenerateCaptcha(ctx context.Context, ip string) (*domain.CaptchaResponse, error)
+	SendSMSCode(ctx context.Context, phone, ip, captchaID, captchaAnswer string) error
 	LoginByPhone(ctx context.Context, phone, code string) (*domain.AuthResponse, error)
-	LoginByEmail(ctx context.Context, email, password string) (*domain.AuthResponse, error)
-	RegisterByEmail(ctx context.Context, email, password, name string) (*domain.AuthResponse, error)
 	GetUserByID(ctx context.Context, userID int64) (*domain.UserInfo, error)
 	UpdateUser(ctx context.Context, userID int64, name *string, email *string) (*domain.UserInfo, error)
 }
@@ -29,16 +29,20 @@ func NewHandler(svc AuthService) *Handler {
 	return &Handler{svc: svc}
 }
 
+// RegisterRoutes wires the auth endpoints.
+//
+// Signing in is phone-only. The email/password and WeChat routes are gone, not merely hidden in the UI:
+// an endpoint nobody uses is still an endpoint that can be attacked, and leaving `/auth/login-by-email`
+// reachable would keep a password path alive that no page links to and no test covers.
 func (h *Handler) RegisterRoutes(r *gin.RouterGroup, authMW gin.HandlerFunc, strictMW ...gin.HandlerFunc) {
 	// Public routes (strict rate limiting can be applied).
 	public := r.Group("")
 	if len(strictMW) > 0 && strictMW[0] != nil {
 		public.Use(strictMW[0])
 	}
+	public.GET("/auth/captcha", h.Captcha)
 	public.POST("/auth/send-sms-code", h.SendSMSCode)
 	public.POST("/auth/login-by-phone", h.LoginByPhone)
-	public.POST("/auth/login-by-email", h.LoginByEmail)
-	public.POST("/auth/register-by-email", h.RegisterByEmail)
 
 	// Routes that require authentication.
 	auth := r.Group("").Use(authMW)
@@ -46,16 +50,50 @@ func (h *Handler) RegisterRoutes(r *gin.RouterGroup, authMW gin.HandlerFunc, str
 	auth.PATCH("/me", h.UpdateMe)
 }
 
+// Captcha issues the graphical challenge that SendSMSCode requires.
+//
+// It is a GET because it has no side effect on the caller's session and is safe to retry; the row it
+// creates is one-time and expires in five minutes either way.
+func (h *Handler) Captcha(c *gin.Context) {
+	challenge, err := h.svc.GenerateCaptcha(c.Request.Context(), middleware.RealIP(c))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	// The image is a data URI, and the challenge is per-request: a cached copy would hand the same
+	// unsolved puzzle to two people behind one proxy.
+	c.Header("Cache-Control", "no-store")
+	c.JSON(http.StatusOK, gin.H{"captcha_id": challenge.ID, "image": challenge.Image})
+}
+
 // SendSMSCode sends an SMS verification code.
 func (h *Handler) SendSMSCode(c *gin.Context) {
 	var req domain.SendSMSRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "a valid phone number is required"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "a valid phone number and the graphical verification code are required"})
 		return
 	}
 
-	if err := h.svc.SendSMSCode(c.Request.Context(), req.Phone); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	// The IP is taken from the same place the rate limiter takes it: X-Real-IP, which nginx rewrites from
+	// $remote_addr. Reading X-Forwarded-For here instead would let a caller choose which quota bucket to
+	// be counted in by sending a header of their own.
+	if err := h.svc.SendSMSCode(c.Request.Context(), req.Phone, middleware.RealIP(c), req.CaptchaID, req.CaptchaCode); err != nil {
+		// A quota refusal is 429 with a wait time; a wrong captcha or a malformed number is 400. Reporting
+		// "too many requests" as 500 - which this handler used to do - tells a client to retry a request
+		// that will keep failing, and tells the operator to look for a server fault that does not exist.
+		var limited *domain.RateLimitError
+		if errors.As(err, &limited) {
+			if limited.RetryAfterSeconds > 0 {
+				c.Header("Retry-After", strconv.Itoa(limited.RetryAfterSeconds))
+			}
+			c.JSON(http.StatusTooManyRequests, gin.H{
+				"error":               limited.Message,
+				"retry_after_seconds": limited.RetryAfterSeconds,
+			})
+			return
+		}
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
@@ -65,7 +103,7 @@ func (h *Handler) SendSMSCode(c *gin.Context) {
 	})
 }
 
-// LoginByPhone logs in with phone number + verification code.
+// LoginByPhone logs in with phone number + verification code, creating the account on first use.
 func (h *Handler) LoginByPhone(c *gin.Context) {
 	var req domain.LoginByPhoneRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -80,50 +118,6 @@ func (h *Handler) LoginByPhone(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"token": resp.Token, "user": resp.User})
-}
-
-// LoginByEmail logs in with email + password.
-func (h *Handler) LoginByEmail(c *gin.Context) {
-	var req domain.LoginByEmailRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "email and password are required"})
-		return
-	}
-
-	resp, err := h.svc.LoginByEmail(c.Request.Context(), req.Email, req.Password)
-	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{"token": resp.Token, "user": resp.User})
-}
-
-// RegisterByEmail registers an account by email.
-func (h *Handler) RegisterByEmail(c *gin.Context) {
-	var req struct {
-		Email    string `json:"email" binding:"required,email"`
-		Password string `json:"password" binding:"required,min=6"`
-		Name     string `json:"name" binding:"required"`
-	}
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "valid registration details are required"})
-		return
-	}
-
-	resp, err := h.svc.RegisterByEmail(c.Request.Context(), req.Email, req.Password, req.Name)
-	if err != nil {
-		// A taken email is a client error (409); anything else is a server-side failure and must surface as
-		// 500 so a broken database is not reported to the user as "this email is already registered".
-		if errors.Is(err, domain.ErrEmailTaken) {
-			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
-			return
-		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "registration failed, please try again later"})
-		return
-	}
-
-	c.JSON(http.StatusCreated, gin.H{"token": resp.Token, "user": resp.User})
 }
 
 // UpdateMe updates the current user's profile.
