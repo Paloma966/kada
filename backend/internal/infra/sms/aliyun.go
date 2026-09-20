@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 
 	openapi "github.com/alibabacloud-go/darabonba-openapi/v2/client"
 	dypnsapi "github.com/alibabacloud-go/dypnsapi-20170525/v3/client"
@@ -27,6 +28,22 @@ const (
 	accessKeyIDLength     = 24
 	accessKeySecretLength = 30
 )
+
+// ErrProviderThrottled says the provider refused a send because of its own rate limit, not because
+// anything is misconfigured. The distinction decides how the caller answers: a throttle is a wait for the
+// user - a 429 with a retry-after - while a rejected signature or template is an operator problem that
+// must keep its provider code in the log and out of the user's face.
+var ErrProviderThrottled = errors.New("the SMS provider is throttling sends")
+
+// throttled reports whether a provider code means "too many sends".
+//
+// It matches on a substring rather than on a fixed list: Aliyun reports this as biz.FREQUENCY on PNVS and
+// as isv.BUSINESS_LIMIT_CONTROL or isv.DAY_LIMIT_CONTROL on the SMS product, and a list would quietly miss
+// the next variant - which is how a provider code ended up in front of a user in the first place.
+func throttled(providerCode string) bool {
+	code := strings.ToUpper(providerCode)
+	return strings.Contains(code, "FREQUENCY") || strings.Contains(code, "LIMIT")
+}
 
 func NewAliyunSender(accessKeyID, accessKeySecret, signName, templateCode string) (*AliyunSender, error) {
 	if accessKeyID == "" || accessKeySecret == "" {
@@ -122,6 +139,14 @@ func (s *AliyunSender) SendVerificationCode(phone string) (code string, err erro
 	providerCode := tea.StringValue(response.Body.Code)
 	if providerCode != "OK" {
 		providerMessage := tea.StringValue(response.Body.Message)
+		// The provider reports its own rate limit as a business code on an HTTP 200, so this branch is the
+		// only place it can be recognized. Logging it separately keeps "too many sends" from looking like
+		// a broken account in the journal, which is exactly how it looked before.
+		if throttled(providerCode) {
+			log.Printf("aliyun SMS throttled (sign_name=%q template_code=%q phone=%s): code=%q message=%q",
+				s.signName, s.templateCode, maskPhone(phone), providerCode, providerMessage)
+			return "", fmt.Errorf("%w: %s", ErrProviderThrottled, providerCode)
+		}
 		log.Printf("aliyun SMS rejected (sign_name=%q template_code=%q phone=%s): code=%q message=%q",
 			s.signName, s.templateCode, maskPhone(phone), providerCode, providerMessage)
 		return "", errors.New(smsProviderError(providerCode, providerMessage))

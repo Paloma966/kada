@@ -2,10 +2,15 @@ package sms
 
 import (
 	"bytes"
+	"errors"
 	"log"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
+	openapi "github.com/alibabacloud-go/darabonba-openapi/v2/client"
+	dypnsapi "github.com/alibabacloud-go/dypnsapi-20170525/v3/client"
 	"github.com/alibabacloud-go/tea/tea"
 )
 
@@ -129,6 +134,78 @@ func TestNewAliyunSenderWarnsAboutImplausibleCredentialLengths(t *testing.T) {
 	for _, want := range []string{"SMS_ACCESS_KEY_SECRET", "12", "30", "SignatureDoesNotMatch"} {
 		if !strings.Contains(warning, want) {
 			t.Errorf("warning should mention %q, got: %s", want, warning)
+		}
+	}
+}
+
+// stubProvider points a real provider client at a local server, so the paths that turn a provider answer
+// into an error can be exercised without a network round trip to Aliyun. The credentials are well formed
+// because the request is signed before it is sent, whatever the server answers.
+func stubProvider(t *testing.T, body string) *AliyunSender {
+	t.Helper()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(body))
+	}))
+	t.Cleanup(server.Close)
+
+	client, err := dypnsapi.NewClient(&openapi.Config{
+		AccessKeyId:     tea.String(strings.Repeat("L", accessKeyIDLength)),
+		AccessKeySecret: tea.String(strings.Repeat("s", accessKeySecretLength)),
+		Endpoint:        tea.String(strings.TrimPrefix(server.URL, "http://")),
+		Protocol:        tea.String("http"),
+	})
+	if err != nil {
+		t.Fatalf("building a stubbed client: %v", err)
+	}
+	return &AliyunSender{client: client, signName: "kada", templateCode: "SMS_000000000"}
+}
+
+// The provider reports its own rate limit as a business code on an HTTP 200, so the branch that reads the
+// code is the only place it can be told apart from a misconfiguration - and the caller has to answer
+// differently, because a throttle is a wait for the user while a rejected signature is the operator's
+// problem. Before this, "biz.FREQUENCY" traveled out to the sign-in form as an English provider code.
+func TestSendVerificationCodeFlagsAProviderThrottle(t *testing.T) {
+	sender := stubProvider(t, `{"Code":"biz.FREQUENCY","Message":"check frequency failed","RequestId":"stub","Success":false}`)
+
+	_, err := sender.SendVerificationCode("13800138000")
+	if !errors.Is(err, ErrProviderThrottled) {
+		t.Fatalf("a throttled send must be recognizable as ErrProviderThrottled, got: %v", err)
+	}
+}
+
+// A rejected signature or template is not a throttle: the cause has to stay in the chain so the operator
+// can see which misconfiguration it is, and it must not be reported to the user as something to retry.
+func TestSendVerificationCodeKeepsARejectionDistinctFromAThrottle(t *testing.T) {
+	sender := stubProvider(t, `{"Code":"isv.SMS_SIGNATURE_ILLEGAL","Message":"signature is not approved","RequestId":"stub","Success":false}`)
+
+	_, err := sender.SendVerificationCode("13800138000")
+	if err == nil {
+		t.Fatal("expected an error for a rejected signature")
+	}
+	if errors.Is(err, ErrProviderThrottled) {
+		t.Error("a rejected signature must not be reported as a throttle")
+	}
+	if !strings.Contains(err.Error(), "isv.SMS_SIGNATURE_ILLEGAL") {
+		t.Errorf("the cause should name the provider code, got: %v", err)
+	}
+}
+
+// Both products report a rate limit, under different codes, and neither is worth enumerating: a list would
+// quietly stop matching the next variant, which is exactly how a provider code reached a user.
+func TestThrottledCodesAreRecognised(t *testing.T) {
+	throttles := []string{"biz.FREQUENCY", "isv.BUSINESS_LIMIT_CONTROL", "isv.DAY_LIMIT_CONTROL", "biz.frequency"}
+	for _, code := range throttles {
+		if !throttled(code) {
+			t.Errorf("%q is a rate limit and should be treated as one", code)
+		}
+	}
+
+	others := []string{"", "OK", "isv.SMS_SIGNATURE_ILLEGAL", "isv.INVALID_PARAMETERS", "isv.ACCOUNT_NOT_EXISTS"}
+	for _, code := range others {
+		if throttled(code) {
+			t.Errorf("%q is a misconfiguration, not a rate limit", code)
 		}
 	}
 }
