@@ -85,10 +85,13 @@ func NewAliyunSender(accessKeyID, accessKeySecret, signName, templateCode string
 // CodeLength is explicit because its default is 4 while the sign-in form, the stored hash and the input
 // field all expect six digits. CodeType 1 is digits only, matching that numeric input. ValidTime repeats
 // the five minutes the code row lives for, so both sides agree on the deadline.
+//
+// SchemeName is deliberately absent. Its documented default is "the default service", and the name is
+// account-specific: the hardcoded "SMS" this used to send was a guess that nothing had ever checked, and
+// the live account answers OK for the granted pair the moment the parameter is left out.
 func (s *AliyunSender) buildSendRequest(phone string) *dypnsapi.SendSmsVerifyCodeRequest {
 	return &dypnsapi.SendSmsVerifyCodeRequest{
 		PhoneNumber:      tea.String(phone),
-		SchemeName:       tea.String("SMS"),
 		SignName:         tea.String(s.signName),
 		TemplateCode:     tea.String(s.templateCode),
 		TemplateParam:    tea.String(`{"code":"##code##","min":"5"}`),
@@ -162,11 +165,13 @@ func maskPhone(phone string) string {
 	return phone[:3] + "****" + phone[len(phone)-4:]
 }
 
+// CheckVerificationCode asks the provider to verify a code it issued. The service does not use it - codes
+// are verified against the hash in sms_codes - but it stays part of the SMSSender contract, and it must
+// name the same scheme the send used. That is the default one, so SchemeName is left out here too.
 func (s *AliyunSender) CheckVerificationCode(phone, code string) (bool, error) {
 	request := &dypnsapi.CheckSmsVerifyCodeRequest{
 		PhoneNumber: tea.String(phone),
 		VerifyCode:  tea.String(code),
-		SchemeName:  tea.String("SMS"),
 	}
 
 	response, err := s.client.CheckSmsVerifyCode(request)
