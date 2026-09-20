@@ -162,7 +162,7 @@ async def delete_conversation(user_id: str, conversation_id: str) -> bool:
     return True
 
 
-async def get_current_session(user_id: str) -> dict:
+async def get_current_conversation(user_id: str) -> dict:
     """单会话模式：返回该用户最新一个会话及其消息；没有则返回空。"""
     conversations = await list_conversations(user_id)
     if not conversations:
@@ -172,7 +172,7 @@ async def get_current_session(user_id: str) -> dict:
     return {"conversation_id": cid, "messages": messages}
 
 
-async def restart_session(user_id: str) -> str:
+async def restart_conversation(user_id: str) -> str:
     """重新开始：删掉该用户所有旧会话（含缓存），返回全新空会话 id。"""
     conversations = await list_conversations(user_id)
     for conversation in conversations:

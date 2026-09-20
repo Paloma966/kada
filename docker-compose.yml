@@ -50,6 +50,8 @@ services:
       DB_AUTO_MIGRATE: "true"
       # Internal Python AI service reached over the compose network
       AI_BASE_URL: http://ai:8000
+      # Shared secret so the AI service accepts only requests from this gateway
+      AI_INTERNAL_SECRET: ${AI_INTERNAL_SECRET:-}
     depends_on:
       postgres:
         condition: service_healthy
@@ -57,6 +59,13 @@ services:
 
   # Python AI assistant. Internal only (no host port): the Go gateway proxies
   # /api/ai/* to it after JWT authentication. MCP callbacks go back to Go.
+  #
+  # This is the one-host stack (everything on one machine, as in local
+  # development). On a server that already runs its own PostgreSQL and Redis,
+  # the depends_on below would try to start compose's postgres too and collide
+  # on 127.0.0.1:5432, so either start it with `--no-deps` or, better, use the
+  # production file deploy/docker-compose.ai.yml, which can only start this one
+  # service. See backend/ai/README.md.
   ai:
     build: ./backend/ai
     environment:
@@ -67,8 +76,11 @@ services:
       # AI key never blocks the rest of the stack.
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
       aliyun: ${aliyun:-}
-      # Create this token in the platform UI after first boot, then restart ai.
-      KADA_API_TOKEN: ${KADA_API_TOKEN:-}
+      # Must match the backend's AI_INTERNAL_SECRET; empty disables the check.
+      AI_INTERNAL_SECRET: ${AI_INTERNAL_SECRET:-}
+      # No long-lived API token here on purpose: the tools that read link
+      # statistics or create short links run as the signed-in user, using the
+      # JWT the Go gateway forwards on every chat request.
     depends_on:
       postgres:
         condition: service_healthy

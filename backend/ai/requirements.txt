@@ -20,10 +20,11 @@ langchain==1.4.0
 langchain-core==1.6.2
 langchain-openai==1.6.2
 langchain-community==0.4.2
+dashscope==1.27.5         # DashScopeEmbeddings 的运行时依赖，langchain-community 不会自动带上
 langchain-postgres==0.0.18
 langchain-text-splitters==1.1.2
 langchain-mcp-adapters==0.3.2
 
-# MCP 子服务与回调 Go 后端
+# MCP 子服务（stdio）与业务工具回调 Go 后端用的 HTTP 客户端
 mcp==1.24.0
 httpx==0.28.1
