@@ -17,17 +17,10 @@
 # safe to run on a host that was configured by hand before the secrets existed - and --require is what
 # stops "empty means skip" from quietly passing when nothing is there at all.
 #
-# --require and --warn draw the line between the two kinds of missing value, which is a decision about the
-# product rather than about this script:
-#
-#   --require  the deployment cannot produce a working system without it, so fail. The AI keys are in this
-#              group: a service that starts, passes /healthz and then fails every question is worse to
-#              diagnose than a refused deploy.
-#   --warn     the deployment is still meaningful without it, but the gap must be impossible to miss. The
-#              SMS credentials are in this group: the signing name and template have to be approved in the
-#              Aliyun console, which takes days, and blocking every deploy until then would stop unrelated
-#              fixes from shipping. The warning says exactly what is broken, in the log and - from CI's own
-#              check on the runner - as an annotation and a job-summary entry.
+# --require also decides *where* the check belongs. It reads the file as it will be after the sync, rather
+# than testing whether a repository secret happens to be set, and that is deliberate: a host configured by
+# hand keeps deploying normally, because the value only has to reach this file by some route. A check that
+# looked at the secrets instead would fail a deployment that was going to work.
 #
 # The value is never passed through sed: an API key can contain `/`, `&` or `\`, every one of which sed
 # would treat as part of its own syntax. The line is removed with grep and appended with printf instead.
@@ -35,19 +28,17 @@ set -euo pipefail
 
 usage() {
   cat >&2 <<'EOF'
-usage: upsert-env.sh FILE [--set KEY=VALUE]... [--require KEY]... [--warn KEY]...
+usage: upsert-env.sh FILE [--set KEY=VALUE]... [--require KEY]...
 
   --set KEY=VALUE   Write KEY=VALUE into FILE, replacing any existing KEY= line.
                     An empty VALUE leaves the current line untouched.
   --require KEY     Fail unless FILE ends up containing a non-empty KEY=.
-  --warn KEY        Warn loudly, but continue, when KEY ends up empty.
 EOF
 }
 
 file=""
 sets=()
 requires=()
-warns=()
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -61,14 +52,17 @@ while [ $# -gt 0 ]; do
       requires+=("$2")
       shift 2
       ;;
-    --warn)
-      [ $# -ge 2 ] || { echo "--warn needs KEY" >&2; usage; exit 2; }
-      warns+=("$2")
-      shift 2
-      ;;
     -h|--help)
       usage
       exit 0
+      ;;
+    -*)
+      # Without this, a mistyped option (`--requrie`) is taken for the file path and the script silently
+      # creates a file by that name, then checks nothing - the exact shape of failure this whole script
+      # exists to remove.
+      echo "unknown option: $1" >&2
+      usage
+      exit 2
       ;;
     *)
       if [ -z "$file" ]; then
@@ -137,41 +131,18 @@ missing required value(s) in $file:$missing
 
 Add them as repository secrets (Settings -> Secrets and variables -> Actions): the
 deployment refuses to continue rather than start a service that cannot work, and it
-refuses before touching anything on this host.
+refuses before touching anything on this host. A value already present in this file
+also satisfies the check - --set with an empty value leaves it alone, so a host that
+was configured by hand keeps deploying without the secret being set here.
 
 Expected secrets:
   DEEPSEEK_API_KEY    chat model key           -> DEEPSEEK_API_KEY in ai.env
   DASHSCOPE_API_KEY   Bailian embedding key    -> aliyun in ai.env
-  AI_INTERNAL_SECRET  gateway shared secret    -> both ai.env and backend/.env (host side generated)
+  AI_INTERNAL_SECRET  gateway shared secret    -> both ai.env and backend/.env
   SMS_ACCESS_KEY_ID, SMS_ACCESS_KEY_SECRET, SMS_SIGN_NAME, SMS_TEMPLATE_CODE -> backend/.env
-      (warned about rather than required, but without them NOBODY CAN SIGN IN:
-       phone + SMS code is the only sign-in method)
+      (phone + SMS code is the only sign-in method, so without these NOBODY CAN SIGN IN)
 EOF
   exit 1
-fi
-
-# Advisory keys: the deployment proceeds, and says out loud what will not work.
-empty=""
-for key in ${warns[@]+"${warns[@]}"}; do
-  if ! grep -qE "^[[:space:]]*${key}=[^[:space:]]" "$file"; then
-    empty="$empty $key"
-  fi
-done
-
-if [ -n "$empty" ]; then
-  # The ::warning:: form is a GitHub Actions workflow command; parsed when this runs inside a job, and
-  # harmless plain text otherwise (a hand-run deploy on the host). The same message is repeated as
-  # ordinary output because the annotation is best-effort once the text has travelled back over SSH.
-  echo "::warning title=$file has empty values::$empty is empty in $file"
-  cat >&2 <<EOF
-================================================================================
-WARNING: empty value(s) in $file:$empty
-
-The deployment continues, but whatever needs these will fail at request time.
-For the SMS credentials that means NOBODY CAN SIGN IN: phone + SMS code is the
-only sign-in method, and in release mode the code is not written to the log.
-================================================================================
-EOF
 fi
 
 exit 0

@@ -43,21 +43,21 @@
    | `DEEPSEEK_API_KEY` | 对话模型密钥 | `ai.env` 的 `DEEPSEEK_API_KEY` | **部署失败** |
    | `DASHSCOPE_API_KEY` | 阿里云百炼 Embedding 密钥 | `ai.env` 的 `aliyun` | **部署失败** |
    | `AI_INTERNAL_SECRET` | 网关共享密钥，`openssl rand -hex 32` 生成 | **两边都写**：`ai.env` 与 `backend/.env` | **部署失败** |
-   | `SMS_ACCESS_KEY_ID` / `SMS_ACCESS_KEY_SECRET` / `SMS_SIGN_NAME` / `SMS_TEMPLATE_CODE` | 阿里云短信 | `backend/.env` | 部署继续，但**没人能登录**，每次部署都会告警 |
+   | `SMS_ACCESS_KEY_ID` / `SMS_ACCESS_KEY_SECRET` / `SMS_SIGN_NAME` / `SMS_TEMPLATE_CODE` | 阿里云短信 | `backend/.env` | **部署失败**（这四个是唯一的登录方式） |
 
    部署作业的第 0 步用 `deploy/upsert-env.sh` 把这些值幂等写入上面两个文件，**在替换任何服务之前**。
-   缺 `--require` 的键（AI 那三个）就在这一步失败并打印是哪一个，旧版本继续对外服务——比"服务起来了、
-   健康检查过了、然后每个请求都失败"好排查得多。
+   缺任一个就在这一步失败并打印是哪一个，旧版本继续对外服务——比"服务起来了、健康检查过了、然后每个
+   请求都失败"好排查得多。
 
-   **SMS 那四个是 `--warn` 而不是 `--require`，这是个取舍**：签名的模板都要在阿里云 PNVS 控制台审核，
-   通常要等几天，在那之前卡死部署会让无关的修复也发不出去。但"不阻塞"不等于"能忽略"：
+   关键：**`--require` 检查的是服务器上的文件，不是 Secret 是否存在**。因为 `--set` 遇空值会保留文件里
+   已有的值，所以：
 
-   - runner 上有一个单独的检查步骤（部署前），缺哪个就在 GitHub Actions 上打**黄色告警**并在
-     Job Summary 里列出补哪个 Secret；
-   - 服务器侧的部署日志里也会打一遍同样的告警；
-   - 但对产品来说它们仍然不是可选项——**短信验证码是唯一的登录方式**，缺了它们站点就是"服务正常但
-     没人能登录"，而且 release 模式下验证码不会打到日志里。**阿里云签名/模板一批下来，把四个 Secret
-     填上重跑一次部署即可，不需要登服务器。**
+   - 手工在 `/opt/kada/backend/.env` 里配好的值，**不需要**同时加进 Secret 也能正常部署；
+   - 反过来，只要这四个值在服务器上齐了，部署就不会因为 Secret 没配而失败。
+
+   runner 上另有一个**永不失败**的提示步骤：如果这四个 Secret 没配，它会打一条 notice 并在 Job Summary
+   里说明"CI 目前不管理这四个值"。这不是故障告警（服务器上可能有），但它值得看——只存在于服务器上的
+   配置，在机器重建或密钥轮换时会丢。**把它们加进 Secret 后提示自动消失，之后 CI 全权接管。**
 
    另外两项检查（不属于阻塞项，但会导致体验降级）：
 
@@ -117,8 +117,8 @@ git push -u origin feat/ai-per-user-identity
 合并（普通合并 / squash 都行）后流水线会多出 `deploy` 作业，部署步骤如下：
 
 0. **同步密钥**：从 GitHub Secrets 把 `DEEPSEEK_API_KEY` / `DASHSCOPE_API_KEY` / `AI_INTERNAL_SECRET`
-   与四个 `SMS_*` 写入服务器上的 `ai.env` 与 `backend/.env`。AI 那三个缺任一就立刻失败退出；
-   SMS 缺失只告警（部署前有一个 runner 侧检查会打告警并在 Job Summary 里列出缺哪个）。
+   与四个 `SMS_*` 写入服务器上的 `ai.env` 与 `backend/.env`。任一必填项在写入后仍为空就立刻失败退出；
+   注意检查的是**服务器上的文件**，所以手工配在 `.env` 里的值同样能满足检查。
    这一步放在最前面，所以密钥缺失时旧版本仍在服务，站点不受影响。
 1. 备份 `kada-api` 二进制 → 应用数据库迁移 → 重启 `kada-api` → 健康检查（失败则回滚二进制）
 2. 替换并重启前端
@@ -133,9 +133,10 @@ git push -u origin feat/ai-per-user-identity
 
 **必须新增 GitHub Secret**：除了已有的 `SERVER_HOST`、`SERVER_USER`、`SSH_PRIVATE_KEY`、
 `DATABASE_URL`（`SITE_URL` 变量可选），还要加上第 1 节表格里的七个（`DEEPSEEK_API_KEY`、
-`DASHSCOPE_API_KEY`、`AI_INTERNAL_SECRET`、四个 `SMS_*`）。其中**前三个必须先配**，否则部署会失败；
-四个 `SMS_*` 缺失只告警。它们都由流水线写进服务器的 `ai.env` 与 `backend/.env`，所以以后改密钥只需要
-改 Secret 再重跑部署，不用再登服务器。
+`DASHSCOPE_API_KEY`、`AI_INTERNAL_SECRET`、四个 `SMS_*`）。它们都由流水线写进服务器的 `ai.env` 与
+`backend/.env`，所以以后改密钥只需要改 Secret 再重跑部署，不用再登服务器。
+（唯一的例外：这些值已经手工写在服务器 `.env` 里时，不加 Secret 也能正常部署——部署检查的是那个文件。
+但只存在于服务器上的配置，在机器重建时会丢，所以还是建议补上。）
 
 ---
 

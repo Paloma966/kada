@@ -8,9 +8,10 @@
 // the verify step never fails the job, that it records the right status, and that the report step warns
 // only when the smoke test genuinely did not pass.
 //
-// The SMS cases assert the property that makes that step safe to ship: a missing SMS credential warns and
-// still exits 0, because the Aliyun signature and template have to be approved in the console before they
-// exist at all, and the point of the warning is that a site nobody can sign into must not be quiet.
+// The SMS cases assert the property that makes that step safe to ship: it reports that CI does not manage
+// the credentials, and still exits 0. It must not fail the job, because the value only has to reach the
+// host's .env by some route and a hand-configured host deploys perfectly well - a step that failed here
+// would reject a deployment that was going to work, which is worse than saying nothing.
 //
 // Generates scripts/.verify-deploy-out/ and runs it with bash. Git Bash cannot run under the default
 // sandbox (it needs a signal pipe), so this looks for WSL bash first and falls back to Git Bash.
@@ -168,10 +169,11 @@ echo
 
 echo "--- the SMS advisory step ---"
 
-# A missing SMS credential must warn without failing the deploy, must name every missing key, and must say
-# what actually breaks; with all four set it must be completely silent.
+# A missing SMS secret must be reported without failing the deploy, and must name every key that is not
+# managed here; with all four set it must be completely silent. It must never dress this up as a failure,
+# because whether the deployment really breaks depends on the host's own .env, which this step cannot see.
 run_sms_case() {
-  mode="$1"; want_warning="$2"; want_summary="$3"; label="$4"
+  mode="$1"; want_notice="$2"; want_summary="$3"; label="$4"
   dir="$HERE/case-sms-$mode"
   rm -rf "$dir"; mkdir -p "$dir"
   : > "$dir/summary.md"
@@ -188,23 +190,26 @@ run_sms_case() {
   fi
   rc=$?
 
-  warned=no
-  grep -q '::warning' "$dir/out.txt" && warned=yes
+  noted=no
+  grep -q '::notice' "$dir/out.txt" && noted=yes
+  # An annotation that cries failure where there is none is how the annotations that matter stop being read.
+  alarmed=no
+  grep -qE '::(warning|error)' "$dir/out.txt" && alarmed=yes
   summary=no
   [ -s "$dir/summary.md" ] && summary=yes
 
   problems=""
   [ "$rc" = "0" ] || problems="$problems exit=$rc(want 0)"
-  [ "$warned" = "$want_warning" ] || problems="$problems warning=$warned(want $want_warning)"
+  [ "$noted" = "$want_notice" ] || problems="$problems notice=$noted(want $want_notice)"
+  [ "$alarmed" = "no" ] || problems="$problems emitted-a-warning-or-error"
   [ "$summary" = "$want_summary" ] || problems="$problems summary=$summary(want $want_summary)"
 
-  if [ "$want_warning" = "yes" ]; then
+  if [ "$want_notice" = "yes" ]; then
     for key in SMS_ACCESS_KEY_ID SMS_ACCESS_KEY_SECRET SMS_SIGN_NAME SMS_TEMPLATE_CODE; do
       grep -q "$key" "$dir/out.txt" || problems="$problems does-not-name-$key"
+      grep -q "$key" "$dir/summary.md" || problems="$problems summary-missing-$key"
     done
-    grep -qi 'nobody can sign in' "$dir/out.txt" || problems="$problems does-not-say-what-breaks"
-    grep -q 'SMS_ACCESS_KEY_ID' "$dir/summary.md" || problems="$problems summary-missing-keys"
-    grep -q '| Secret |' "$dir/summary.md" || problems="$problems summary-missing-table"
+    grep -q '| Secret |' "$dir/summary.md" || problems="$problems summary-missing-the-table"
   fi
 
   if [ -z "$problems" ]; then
@@ -214,12 +219,12 @@ run_sms_case() {
     printf '        reason:%s\n' "$problems"
     fails=$((fails + 1))
   fi
-  printf '        exit=%s warning=%s summary=%s\n' "$rc" "$warned" "$summary"
+  printf '        exit=%s notice=%s summary=%s\n' "$rc" "$noted" "$summary"
   printf '        out: %s\n' "$(head -c 300 "$dir/out.txt")"
 }
 
-run_sms_case missing yes yes "SMS credentials missing: warns loudly, still exits 0"
-run_sms_case present no  no  "SMS credentials present: says nothing at all"
+run_sms_case missing yes yes "SMS secrets unset: says so, without failing the deploy"
+run_sms_case present no  no  "SMS secrets set: says nothing at all"
 echo
 
 if [ "$fails" = "0" ]; then
