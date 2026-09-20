@@ -577,6 +577,12 @@ separate SMS product (`dysmsapi`). That distinction decides the configuration:
 - The console describes the granted pair as being for **API 联调** and requires test phone numbers to be
   bound before 联调 starts (up to five), so the granted pair is what makes the flow testable for free;
   sending to arbitrary numbers needs a signature and a template of its own.
+- The provider enforces a send interval of its own and reports it as a business code on an HTTP 200
+  (`biz.FREQUENCY` here, `isv.BUSINESS_LIMIT_CONTROL` on the SMS product). That is a wait, not a
+  misconfiguration, and it is not reported as one: the sender flags it, the service turns it into the same
+  quota it uses for its own limits, and the client gets a 429 with a retry-after rather than a 400 carrying
+  an English provider code into a Chinese form. The codes are matched on the substrings `FREQUENCY` and
+  `LIMIT`, because a fixed list would quietly stop matching the next variant.
 - The PNVS console, its data, and its package are all separate from the SMS product: sending is billed
   against a PNVS "SMS verification" package, which the SMS product's free trial does not cover.
 

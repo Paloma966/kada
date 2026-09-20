@@ -4,10 +4,13 @@ import (
 	"context"
 	"encoding/hex"
 	"errors"
+	"fmt"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/chun/kada-backend/internal/domain"
+	"github.com/chun/kada-backend/internal/infra/sms"
 )
 
 func TestPhonePattern(t *testing.T) {
@@ -43,6 +46,40 @@ func (s *recordingSender) SendVerificationCode(string) (string, error) {
 }
 
 func (s *recordingSender) CheckVerificationCode(string, string) (bool, error) { return true, nil }
+
+// A provider throttle is a wait, not a mistake: it has to leave the service as a quota so the handler
+// answers 429 with a retry-after, and the provider's own code must not travel with it, because that is what
+// put "biz.FREQUENCY" in front of a user.
+func TestSMSSendErrorMapsAProviderThrottleToAQuota(t *testing.T) {
+	throttled := fmt.Errorf("%w: biz.FREQUENCY", sms.ErrProviderThrottled)
+
+	err := smsSendError(throttled)
+	var limited *domain.RateLimitError
+	if !errors.As(err, &limited) {
+		t.Fatalf("a throttled send must become a RateLimitError, got %T: %v", err, err)
+	}
+	if limited.RetryAfterSeconds != smsProviderThrottleWait {
+		t.Errorf("retry after = %d, want %d", limited.RetryAfterSeconds, smsProviderThrottleWait)
+	}
+	if strings.Contains(limited.Message, "FREQUENCY") || strings.Contains(limited.Message, "provider code") {
+		t.Errorf("the provider code must not reach the user: %q", limited.Message)
+	}
+}
+
+// Everything else has to keep its cause: the provider code is what identifies an unapproved signature or
+// template, and nobody can debug a failed sign-up without it.
+func TestSMSSendErrorKeepsTheCauseOfARejection(t *testing.T) {
+	rejected := errors.New("failed to send SMS, please try again later (provider code: isv.SMS_SIGNATURE_ILLEGAL)")
+
+	err := smsSendError(rejected)
+	if !errors.Is(err, rejected) {
+		t.Errorf("the cause must stay in the chain, got: %v", err)
+	}
+	var limited *domain.RateLimitError
+	if errors.As(err, &limited) {
+		t.Error("a rejected signature must not be reported as a quota")
+	}
+}
 
 // A malformed number must be rejected before anything is read or written. A nil *gorm.DB is the sharpest
 // way to say so: if the check moved below the first query, this test would panic instead of passing.

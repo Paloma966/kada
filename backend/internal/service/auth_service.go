@@ -18,6 +18,7 @@ import (
 	"github.com/chun/kada-backend/internal/domain"
 	"github.com/chun/kada-backend/internal/domain/entity"
 	"github.com/chun/kada-backend/internal/infra/captcha"
+	"github.com/chun/kada-backend/internal/infra/sms"
 	"github.com/chun/kada-backend/internal/middleware"
 )
 
@@ -42,6 +43,11 @@ const (
 	smsPhoneDailyMax = 10
 	smsIPHourlyMax   = 10
 	smsIPDailyMax    = 30
+
+	// smsProviderThrottleWait is how long a user is told to wait when the provider itself refuses a send.
+	// Aliyun's send interval defaults to 60 seconds, which is also this service's per-phone cooldown, so
+	// both sides agree on the window that has to be sat out.
+	smsProviderThrottleWait = 60
 )
 
 // Graphical challenge lifetime and tolerance. Five minutes is long enough to read a distorted code and
@@ -204,10 +210,7 @@ func (s *AuthService) SendSMSCode(ctx context.Context, phone, ip, captchaID, cap
 		code, err = s.sms.SendVerificationCode(phone)
 		if err != nil {
 			log.Printf("send sms code to %s failed: %v", phone, err)
-			// Keep the sender's cause in the error chain instead of flattening every failure into one
-			// opaque message: the provider code is what identifies an unapproved signature/template or a
-			// disabled AccessKey, and without it a failed sign-up is undebuggable.
-			return fmt.Errorf("failed to send SMS: %w", err)
+			return smsSendError(err)
 		}
 	} else {
 		code = generateSMSCode()
@@ -227,6 +230,26 @@ func (s *AuthService) SendSMSCode(ctx context.Context, phone, ip, captchaID, cap
 	}
 
 	return nil
+}
+
+// smsSendError turns a sender failure into the error the API should report.
+//
+// The provider's own rate limit is a wait, not a mistake, and its error code is not something a user can
+// act on: answering 400 with "biz.FREQUENCY" buried in the message is how an English provider code ended up
+// on a Chinese sign-in form. A throttle becomes a quota instead, which the handler already answers as a 429
+// with a retry-after the client can count down.
+//
+// Every other failure keeps its cause in the chain. The provider code is what identifies an unapproved
+// signature or template, and without it a failed sign-up is undebuggable; the user still only ever sees the
+// flat "failed to send SMS" text unless the service runs outside release mode.
+func smsSendError(err error) error {
+	if errors.Is(err, sms.ErrProviderThrottled) {
+		return &domain.RateLimitError{
+			Message:           "verification codes are being requested too often, please try again in 60 seconds",
+			RetryAfterSeconds: smsProviderThrottleWait,
+		}
+	}
+	return fmt.Errorf("failed to send SMS: %w", err)
 }
 
 // LoginByPhone logs in with phone number + verification code
