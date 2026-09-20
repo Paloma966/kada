@@ -122,3 +122,63 @@ func ReconcileLegacyConstraints(db *gorm.DB) error {
 	log.Println("Legacy schema constraints reconciled")
 	return nil
 }
+
+// legacyColumn is a column the original raw-SQL schema created with a rule the current models no longer
+// satisfy. AutoMigrate is additive: it adds what the models declare and never relaxes or removes what they
+// left behind, so a stale NOT NULL stays in the database and rejects every insert.
+type legacyColumn struct {
+	Table     string
+	Column    string
+	LegacySQL string
+}
+
+// legacyColumns lists the columns to remove for that reason.
+//
+// sms_codes.code is the one that broke a live deployment. It held the plaintext verification code back
+// when codes were stored as text; the service now stores only sha256(code) and never writes this column,
+// so the leftover NOT NULL rejected every insert with SQLSTATE 23502. That insert happens *after* the SMS
+// has been sent, which is what made the failure so confusing: the recipient got a code, the page answered
+// with an error, and because no row was written the per-phone cooldown could never match one, so every
+// retry went straight to the provider until it answered biz.FREQUENCY. Dropping the column rather than
+// relaxing it to nullable also makes the table match what the privacy page promises: no plaintext code is
+// persisted.
+var legacyColumns = []legacyColumn{
+	{Table: "sms_codes", Column: "code", LegacySQL: "ALTER TABLE sms_codes DROP COLUMN IF EXISTS code"},
+}
+
+// LegacyColumnStatements returns the idempotent DDL that removes the columns the models no longer write.
+//
+// It is exported so it can be asserted in tests without a database, and it is safe to run repeatedly.
+func LegacyColumnStatements() []string {
+	statements := make([]string, 0, len(legacyColumns))
+	for _, c := range legacyColumns {
+		statements = append(statements, c.LegacySQL)
+	}
+	return statements
+}
+
+// ReconcileLegacyColumns drops columns whose leftover rules reject the inserts the models perform.
+//
+// It must run BEFORE AutoMigrate, so that the table matches its model by the time AutoMigrate compares the
+// two. Every statement is guarded with IF EXISTS, so a database that never had the legacy schema is left
+// untouched.
+func ReconcileLegacyColumns(db *gorm.DB) error {
+	if db.Name() != "postgres" {
+		// SQLite cannot drop a column at all, so these statements are PostgreSQL-only.
+		return nil
+	}
+
+	// Only touch a table that exists, for the same reason as the constraint reconciliation.
+	migrator := db.Migrator()
+	for _, c := range legacyColumns {
+		if !migrator.HasTable(c.Table) {
+			continue
+		}
+		if err := db.Exec(c.LegacySQL).Error; err != nil {
+			return fmt.Errorf("failed to drop legacy column %s.%s: %w", c.Table, c.Column, err)
+		}
+	}
+
+	log.Println("Legacy schema columns reconciled")
+	return nil
+}
