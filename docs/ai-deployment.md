@@ -273,7 +273,7 @@ cd /opt/kada/ai && docker compose build && docker compose up -d   # 用现存源
 | 回答总是"知识库中没有相关资料"，日志有 `[RAG] 检索失败` | 没跑入库脚本、`aliyun` 密钥错、或 pgvector 未启用 |
 | 工具报 HTTP 401/403，聊天正常 | 用户的登录已过期，重新登录即可（**不需要重启服务**） |
 | 工具回"无法执行：本次请求没有携带登录凭据" | 请求绕过了网关直连 Python（本地调试才会出现） |
-| **没人能登录**（验证码收不到），日志有 `❌ SMS service disabled, NOBODY CAN SIGN IN: missing SMS …` | `backend/.env` 里少 `SMS_SIGN_NAME` 或 `SMS_TEMPLATE_CODE`。**这两个值不在仓库里**，去阿里云 PNVS 控制台取；本账号的签名是 `kada`。它们曾经被硬编码在源码里、也曾在 `backend/.env.example` 里，都在重构中被清掉了——完整经过见 `docs/design.md` §9.1 |
+| **没人能登录**（验证码收不到），日志有 `❌ SMS service disabled, NOBODY CAN SIGN IN: missing SMS …` | `backend/.env` 里少 `SMS_SIGN_NAME` 或 `SMS_TEMPLATE_CODE`。**这两个值不在仓库里**，去阿里云 PNVS 控制台（号码认证服务 → 短信认证 → 概览）取系统赠送的那一对；本账号是签名 `恒创联众`、模板 Code `100001`。它们曾经被硬编码在源码里，也在重构中被清掉过——完整经过见 `docs/design.md` §9.1 |
 | 验证码接口返回 `failed to send SMS: … (provider code: …)` | 签名/模板没通过、AccessKey 被停用或欠费。日志里那一行带 `sign_name=` / `template_code=`，两者必须来自同一个账号且成对使用 |
 
 更完整的说明见 `backend/ai/README.md`（架构、环境变量、接口契约、工具能力）。
