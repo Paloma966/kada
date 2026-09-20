@@ -46,19 +46,23 @@ type Config struct {
 
 func Load() *Config {
 	return &Config{
-		Port:               getEnv("PORT", "8080"),
-		DatabaseURL:        getEnv("DATABASE_URL", "postgres://kada:kada123@localhost:5432/kada?sslmode=disable"),
-		RedisURL:           getEnv("REDIS_URL", "redis://localhost:6379"),
-		JWTSecret:          getEnv("JWT_SECRET", "kada-dev-secret-change-in-production"),
-		JWTExpires:         getEnv("JWT_EXPIRES_IN", "720h"),
-		BaseURL:            getEnv("API_BASE_URL", "https://kada.click"),
-		FrontendURL:        getEnv("FRONTEND_URL", "http://localhost:3000"),
-		AIBaseURL:          getEnv("AI_BASE_URL", "http://127.0.0.1:8000"),
-		AIInternalSecret:   getEnv("AI_INTERNAL_SECRET", ""),
-		AutoMigrate:        getEnvBool("DB_AUTO_MIGRATE", true),
+		Port:             getEnv("PORT", "8080"),
+		DatabaseURL:      getEnv("DATABASE_URL", "postgres://kada:kada123@localhost:5432/kada?sslmode=disable"),
+		RedisURL:         getEnv("REDIS_URL", "redis://localhost:6379"),
+		JWTSecret:        getEnv("JWT_SECRET", "kada-dev-secret-change-in-production"),
+		JWTExpires:       getEnv("JWT_EXPIRES_IN", "720h"),
+		BaseURL:          getEnv("API_BASE_URL", "https://kada.click"),
+		FrontendURL:      getEnv("FRONTEND_URL", "http://localhost:3000"),
+		AIBaseURL:        getEnv("AI_BASE_URL", "http://127.0.0.1:8000"),
+		AIInternalSecret: getEnv("AI_INTERNAL_SECRET", ""),
+		AutoMigrate:      getEnvBool("DB_AUTO_MIGRATE", true),
+		// SMS_SIGN_NAME has no default. A placeholder signature such as "kada" is not a value this account
+		// holds, and it turned "nobody configured SMS" into an Aliyun rejection that reads like a broken
+		// account: the startup guard in sms.NewAliyunSender never fired, and the failure only appeared when
+		// a real user tried to sign in. Empty means "not configured", which is what the startup log says.
 		SMSAccessKeyID:     getEnv("SMS_ACCESS_KEY_ID", ""),
 		SMSAccessKeySecret: getEnv("SMS_ACCESS_KEY_SECRET", ""),
-		SMSSignName:        getEnv("SMS_SIGN_NAME", "kada"),
+		SMSSignName:        getEnv("SMS_SIGN_NAME", ""),
 		SMSTemplateCode:    getEnv("SMS_TEMPLATE_CODE", ""),
 		WechatAppID:        getEnv("WECHAT_APP_ID", ""),
 		WechatAppSecret:    getEnv("WECHAT_APP_SECRET", ""),

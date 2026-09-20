@@ -7,28 +7,42 @@ import (
 
 var ErrLinkNotFound = errors.New("link not found")
 
-// ErrEmailTaken marks a sign-up that collided with an existing account.
+// RateLimitError is a refusal caused by a quota rather than by anything wrong with the request.
 //
-// It lives in domain (not service) so the HTTP handler can map it to 409 without importing the service
-// package, which would create an import cycle.
-var ErrEmailTaken = errors.New("registration failed, the email may already be in use")
+// It is a type rather than a sentinel because the caller needs two things a bare error cannot carry: the
+// message to show the user, and how long to wait. The HTTP handler maps it to 429 + Retry-After; every
+// other failure from the auth service is the caller's fault and stays a 400.
+type RateLimitError struct {
+	Message           string
+	RetryAfterSeconds int
+}
+
+func (e *RateLimitError) Error() string { return e.Message }
 
 // ==================== Request/Response models ====================
 
 // ---- Auth ----
 
+// SendSMSRequest asks for a login code.
+//
+// The captcha fields are required, not optional: the point of the challenge is that no SMS can be
+// triggered without a human having solved one, and an optional challenge is one an attacker simply omits.
 type SendSMSRequest struct {
-	Phone string `json:"phone" binding:"required"`
+	Phone       string `json:"phone" binding:"required"`
+	CaptchaID   string `json:"captcha_id" binding:"required"`
+	CaptchaCode string `json:"captcha_code" binding:"required"`
+}
+
+// CaptchaResponse is the graphical challenge: an opaque id to send back with the answer, and the image
+// as a data URI so the client needs no second request and no separate image endpoint.
+type CaptchaResponse struct {
+	ID    string `json:"captcha_id"`
+	Image string `json:"image"`
 }
 
 type LoginByPhoneRequest struct {
 	Phone string `json:"phone" binding:"required"`
 	Code  string `json:"code" binding:"required"`
-}
-
-type LoginByEmailRequest struct {
-	Email    string `json:"email" binding:"required,email"`
-	Password string `json:"password" binding:"required"`
 }
 
 type AuthResponse struct {

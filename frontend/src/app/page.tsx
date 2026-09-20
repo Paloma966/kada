@@ -23,17 +23,14 @@ export default function HomePage() {
             <span className="text-lg font-semibold tracking-wider">KADA</span>
           </div>
           <div className="flex items-center gap-2">
+            {/* One call to action, not two: a phone number that has never been seen is registered on the
+                spot, so "sign in" and "sign up" are the same page. Two buttons pointing at /login with
+                different labels would only suggest a distinction that no longer exists. */}
             <Link
               href="/login"
-              className="rounded-lg px-4 py-2 text-sm font-medium text-indigo-100 transition hover:bg-white/10 hover:text-white"
-            >
-              {t("登录")}
-            </Link>
-            <Link
-              href="/register"
               className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-indigo-500"
             >
-              {t("免费注册")}
+              {t("登录 / 注册")}
             </Link>
             <LanguageSwitcher onDark />
           </div>

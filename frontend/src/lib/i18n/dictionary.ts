@@ -439,6 +439,22 @@ export const zh = {
   "Token 已删除": "Token 已删除",
   "UTM 参数": "UTM 参数",
   "UTM 模板": "UTM 模板",
+  // Added with phone-only sign-in: the graphical challenge, the consent line and the policy page.
+  "《隐私政策》": "《隐私政策》",
+  "切换到浅色模式": "切换到浅色模式",
+  "切换到深色模式": "切换到深色模式",
+  "图形验证码": "图形验证码",
+  "输入图中字符": "输入图中字符",
+  "看不清？换一张": "看不清？换一张",
+  "图形验证码加载失败，请点击刷新": "图形验证码加载失败，请点击刷新",
+  "请输入图形验证码": "请输入图形验证码",
+  "请先阅读并同意隐私政策": "请先阅读并同意隐私政策",
+  "我已阅读并同意": "我已阅读并同意",
+  "未注册的手机号将自动创建账号": "未注册的手机号将自动创建账号",
+  "登录 / 注册": "登录 / 注册",
+  "隐私政策": "隐私政策",
+  "最近更新：2026 年 1 月": "最近更新：2026 年 1 月",
+  "返回登录": "返回登录",
 } as const;
 
 export type MessageKey = keyof typeof zh;
@@ -881,4 +897,20 @@ export const en: Messages = {
   "Token 已删除": "Token deleted",
   "UTM 参数": "UTM parameters",
   "UTM 模板": "UTM templates",
+  // Added with phone-only sign-in: the graphical challenge, the consent line and the policy page.
+  "《隐私政策》": "Privacy Policy",
+  "切换到浅色模式": "Switch to light mode",
+  "切换到深色模式": "Switch to dark mode",
+  "图形验证码": "Verification image",
+  "输入图中字符": "Type the characters shown",
+  "看不清？换一张": "Can't read it? Get a new one",
+  "图形验证码加载失败，请点击刷新": "Could not load the verification image — tap it to retry",
+  "请输入图形验证码": "Enter the characters from the image",
+  "请先阅读并同意隐私政策": "Please read and accept the privacy policy first",
+  "我已阅读并同意": "I have read and accept the ",
+  "未注册的手机号将自动创建账号": "An unregistered phone number creates an account automatically",
+  "登录 / 注册": "Sign in / Sign up",
+  "隐私政策": "Privacy Policy",
+  "最近更新：2026 年 1 月": "Last updated: January 2026",
+  "返回登录": "Back to sign in",
 };
