@@ -116,3 +116,35 @@ func TestEnumTypeStatementsAreIdempotent(t *testing.T) {
 		}
 	}
 }
+
+// The column reconciliation runs on every deploy too, so it has to survive being run twice.
+func TestLegacyColumnStatementsAreIdempotent(t *testing.T) {
+	statements := LegacyColumnStatements()
+	if len(statements) == 0 {
+		t.Fatal("expected at least one legacy column statement")
+	}
+	for _, stmt := range statements {
+		if !strings.Contains(stmt, "IF EXISTS") {
+			t.Errorf("statement is not idempotent, missing IF EXISTS: %s", stmt)
+		}
+		if !strings.HasPrefix(stmt, "ALTER TABLE ") || !strings.Contains(stmt, "DROP COLUMN") {
+			t.Errorf("unexpected statement shape: %s", stmt)
+		}
+	}
+}
+
+// sms_codes.code is the column that failed a live deployment: its leftover NOT NULL rejected every insert
+// of a verification code, after the SMS had already been sent. Losing the statement silently would put the
+// login flow straight back into "the code arrives and the page says error".
+func TestLegacyColumnStatementsCoverTheSmsCodeColumn(t *testing.T) {
+	want := []struct{ table, column string }{
+		{"sms_codes", "code"},
+	}
+
+	joined := strings.Join(LegacyColumnStatements(), "\n")
+	for _, w := range want {
+		if !strings.Contains(joined, "TABLE "+w.table) || !strings.Contains(joined, "COLUMN IF EXISTS "+w.column) {
+			t.Errorf("no statement drops the legacy column %s.%s", w.table, w.column)
+		}
+	}
+}
