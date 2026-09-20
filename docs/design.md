@@ -11,7 +11,7 @@ watch how they are clicked. This document explains how the system is put togethe
 - [6. Frontend](#6-frontend)
 - [7. Key flows](#7-key-flows)
 - [8. Cross-cutting decisions](#8-cross-cutting-decisions)
-- [9. Configuration](#9-configuration)
+- [9. Configuration](#9-configuration) 
 - [10. Deployment](#10-deployment)
 - [11. Testing](#11-testing)
 - [12. Known limitations](#12-known-limitations)
@@ -155,6 +155,13 @@ package and one line in `main.go`, not editing a central route list.
 
 Public endpoints that do not require a session (`/api/auth/*`, `/r/:code`) are registered inside the
 handler without the auth middleware; everything else is grouped behind it.
+
+The Python AI service is the one exception, and it is not registered here at all: `/api/ai/*` is a
+reverse proxy (`internal/handler/ai`) that authenticates the caller, injects the user id, and forwards
+to the AI service with its own mount prefix stripped (`/api/ai/conversations/current` ->
+`/conversations/current`). The Python service owns its own paths and knows nothing about `/api/ai`, so
+the two surfaces can move independently - and, as everywhere else in this project, no `/v1` appears in a
+URL: the `v1` in the snippet above is a variable name.
 
 ### 4.3 Short-link resolution
 
@@ -395,6 +402,32 @@ configuration impossible to diagnose. Internal details are suppressed in release
 - CSV export: fields are escaped and formula-injection prefixes are neutralised.
 - Error responses never echo internal errors.
 - Containers run as a non-root user; nginx sets the usual response security headers.
+- The AI service refuses its own paths (`/chat`, `/conversations/*`) unless the request carries the
+  gateway's shared secret, so being able to reach `127.0.0.1:8000` is not the same as being allowed to
+  use it (see 8.6).
+
+### 8.6 AI tools act as the signed-in user
+
+The AI service holds no credential of its own. The Go gateway already forwards the caller's
+`Authorization` header, and the tools that read link statistics or create short links pass it on to the
+existing `/api/*` routes. Four consequences decide the shape of that:
+
+- **Permission checks live in exactly one place.** Python neither parses nor validates the JWT, it only
+  forwards it. A disabled account or an expired token fails a tool call exactly as it fails the user's own
+  call, and nothing has to be restarted when that happens.
+- **The user id is an assertion by the gateway, and only because of the secret.** The gateway drops any
+  client-supplied `X-Kada-User-ID` and sets it from the verified JWT; the service trusts that header only
+  while the same request also carries `AI_INTERNAL_SECRET`, a value no other local process knows. Without
+  that second half, any process on the host could read or delete another user's conversations - which is
+  why the header itself was never the weak point worth changing.
+- **The credential is per request, not per process.** It travels in a `ContextVar` that the chat route
+  binds before generating, so two users served by the same worker cannot see each other's token. That is
+  also why these tools cannot live in the MCP subprocess: stdio is a single long-lived session shared by
+  every request, and `langchain-mcp-adapters` supports per-call headers only on HTTP transports. MCP stays
+  for tools that need no user identity.
+- **A failed tool degrades the answer, not the request.** Tools return their failure as text (an HTTP
+  status, a missing credential) so the model can explain it, in the same spirit as RAG retrieval falling
+  over to "no reference material".
 
 ## 9. Configuration
 
@@ -414,6 +447,27 @@ configuration impossible to diagnose. Internal details are suppressed in release
 | `KAFKA_BROKERS` | empty | Comma-separated brokers; empty disables Kafka (clicks are written directly) |
 | `KAFKA_TOPIC` | `clicks` | Click event topic |
 | `NEXT_PUBLIC_API_URL` | `""` (same origin) | API base for the browser |
+| `AI_BASE_URL` | `http://127.0.0.1:8000` | Internal Python AI service the gateway proxies `/api/ai/*` to |
+| `AI_INTERNAL_SECRET` | empty | Injected as `X-Internal-Secret`; the AI service accepts only requests carrying it |
+
+The Python AI service reads its own environment (`backend/ai/app/config.py`), and in production those
+values live in `/opt/kada/ai/ai.env` rather than in the repository's `.env`:
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `DEEPSEEK_API_KEY` | empty | Chat model key (DeepSeek, OpenAI-compatible API) |
+| `aliyun` | empty | DashScope key for the RAG embeddings; the variable name is literally `aliyun` |
+| `POSTGRES_URL` | `...@127.0.0.1:5432/kada_ai` | AI database: conversations plus the pgvector knowledge base |
+| `REDIS_URL` | `redis://127.0.0.1:6379/0` | Session hot cache; optional, the service falls back to PostgreSQL |
+| `KADA_API_BASE` | `http://localhost:8080` | Go API the business tools call back into |
+| `AI_INTERNAL_SECRET` | empty | The same value as the gateway's; empty disables the inbound check |
+
+> There is no AI service token. The business tools act as the signed-in user, with the JWT the gateway
+> forwards on each chat request (see 8.6); the long-lived token this service used to hold, and the
+> hardcoded fallback it carried, are both gone. `AI_INTERNAL_SECRET` is a different kind of value: it
+> authenticates the *hop*, not a person. Leaking it is not enough to act on a user's links (that still
+> needs their JWT), but it is enough to forge `X-Kada-User-ID` and read their conversations, so it is
+> still a secret.
 
 ### 9.1 SMS verification
 
@@ -434,14 +488,30 @@ separate SMS product (`dysmsapi`). That distinction decides the configuration:
 
 ## 10. Deployment
 
-Two supported shapes:
+Three supported shapes:
 
-1. **Docker Compose** (`docker compose up -d`): nginx, API, worker, frontend, PostgreSQL, Redis and
+1. **Docker Compose** (`docker compose up -d`): nginx, API, worker, AI, frontend, PostgreSQL, Redis and
    Kafka on one host. Suitable for a single server or local development.
 2. **systemd + released binaries** (`deploy/`): the API and worker run as native processes, with
    PostgreSQL, Redis and Kafka provided separately. This is what the GitHub Actions deploy job uses:
    it builds the binaries, applies the schema with `bin/migrate`, restarts `kada-api`, and verifies
    the health endpoint, rolling back to the previous binary if the service does not come up.
+3. **The AI service as a container of its own** (`deploy/docker-compose.ai.yml`), which is how it joins
+   shape 2 on a host that already runs PostgreSQL and Redis. The root `docker-compose.yml` cannot be used
+   for that: its `ai` service declares `depends_on`, so starting it would also start compose's own
+   postgres and collide on `127.0.0.1:5432`. The dedicated file contains that one service and no
+   dependencies at all. It runs with `network_mode: host` and binds `127.0.0.1:8000` - exactly where
+   `AI_BASE_URL` already points - so the Go gateway reaches it without new wiring, and ufw keeps
+   governing the port because it never enters Docker's iptables chains.
+
+   The image is built **on the host**: a Python service is not a binary to copy, and only the source
+   changes between deploys, so the pip layers stay cached. `deploy/deploy-ai.sh` is the only
+   implementation of that step - the deploy job syncs `backend/ai`, `deploy/docker-compose.ai.yml` and
+   the script, then runs it, and `make deploy-ai` runs the same script by hand. It refuses to deploy
+   without `/opt/kada/ai/ai.env` (a service that starts and then fails every request is worse than a
+   refused deploy), waits for `/healthz`, and rolls back to the previous image otherwise.
+   `deploy/setup-ai-db.sh` creates `kada_ai` and enables the vector extension on a database that already
+   exists, which `docker-entrypoint-initdb.d` can no longer do on an existing volume.
 
 The deploy job applies the schema **before** replacing the binary, so a failed migration leaves the
 previous version running.
@@ -485,9 +555,13 @@ step that requires manual setup is a failure mode of its own.
 | Schema | `internal/domain/entity` asserts table names, columns, unique indexes and delete rules against the GORM schema |
 | Query shapes | Dry-run GORM sessions assert the generated SQL for the dynamic and bulk statements |
 | Frontend | Vitest for pure helpers (starfield geometry, ophiuchus lines, utilities) |
+| AI service | CI builds `backend/ai`, asserts the DashScope SDK is importable and boots the container against a real PostgreSQL to hit `/healthz` |
 
 Run everything with `make test` and `make test-fe`; CI additionally runs `go vet`, `golangci-lint`,
-`tsc --noEmit` and the production build on every pull request.
+`tsc --noEmit` and the production build on every pull request. The AI service gets a job of its own
+(`ai-build`) because its failures show up at request time rather than at import time: a requirements.txt
+missing the embedding SDK, or an image that cannot start, passes every startup check and only breaks when
+a user asks a question.
 
 ## 12. Known limitations
 

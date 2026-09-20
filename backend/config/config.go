@@ -15,6 +15,16 @@ type Config struct {
 	BaseURL     string
 	FrontendURL string
 
+	// AIBaseURL is the internal Python AI service that the gateway proxies to.
+	// It must never be exposed to the public internet.
+	AIBaseURL string
+
+	// AIInternalSecret is injected as X-Internal-Secret on every proxied request
+	// so the AI service can tell a gateway request from a direct one, which is
+	// what makes the X-Kada-User-ID header it also carries worth trusting.
+	// Empty disables the check on both sides (local development).
+	AIInternalSecret string
+
 	// AutoMigrate controls whether the process is allowed to create/update the schema at startup.
 	// Disable it (DB_AUTO_MIGRATE=false) once the schema is managed out of band.
 	AutoMigrate bool
@@ -43,6 +53,8 @@ func Load() *Config {
 		JWTExpires:         getEnv("JWT_EXPIRES_IN", "720h"),
 		BaseURL:            getEnv("API_BASE_URL", "https://kada.click"),
 		FrontendURL:        getEnv("FRONTEND_URL", "http://localhost:3000"),
+		AIBaseURL:          getEnv("AI_BASE_URL", "http://127.0.0.1:8000"),
+		AIInternalSecret:   getEnv("AI_INTERNAL_SECRET", ""),
 		AutoMigrate:        getEnvBool("DB_AUTO_MIGRATE", true),
 		SMSAccessKeyID:     getEnv("SMS_ACCESS_KEY_ID", ""),
 		SMSAccessKeySecret: getEnv("SMS_ACCESS_KEY_SECRET", ""),

@@ -153,11 +153,122 @@ jobs:
           NEXT_PUBLIC_API_URL: "same-origin"
         run: npm run build
 
+  # ----- AI service (Python) -----
+  # The Python service fails at request time, not at import time: a missing
+  # embedding SDK or an image that cannot run passes every startup check and then
+  # breaks when a user asks a question. So this job builds the real image,
+  # asserts the SDK is inside it, and boots the service against a real PostgreSQL
+  # to hit /healthz.
+  ai-build:
+    name: AI Service Build & Smoke Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build the AI image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./backend/ai
+          push: false
+          load: true
+          tags: kada-ai:ci
+          # The Dockerfile defaults to the Tsinghua mirror for domestic servers;
+          # the runner is outside China, so install from PyPI directly.
+          build-args: |
+            PIP_INDEX_URL=https://pypi.org/simple
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Check the embedding SDK is installed
+        # DashScopeEmbeddings imports the `dashscope` package lazily, on the
+        # first retrieval, so a requirements.txt that forgot it passes every
+        # startup check and then fails every chat request. Constructing the
+        # client is what catches it.
+        run: |
+          docker run --rm kada-ai:ci python -c "from langchain_community.embeddings import DashScopeEmbeddings; DashScopeEmbeddings(model='text-embedding-v3', dashscope_api_key='ci-placeholder'); print('dashscope SDK is importable')"
+
+      - name: Check the per-user tool credential
+        # The tools that call the Go API must run as the caller, refuse to run
+        # without a credential, and never leak one request's token into another's.
+        run: |
+          docker run --rm -i kada-ai:ci python - <<'PY'
+          import asyncio
+
+          from app.service import kada_tools
+
+
+          async def main():
+              refused = await kada_tools.get_link_overview.ainvoke({})
+              assert refused == kada_tools._NO_CREDENTIAL, refused
+
+              kada_tools.set_request_token("token-a")
+              assert kada_tools._headers()["Authorization"] == "Bearer token-a"
+
+              async def who(token):
+                  kada_tools.set_request_token(token)
+                  await asyncio.sleep(0)
+                  return kada_tools._request_token.get()
+
+              seen = await asyncio.gather(who("a"), who("b"))
+              assert seen == ["a", "b"], f"credential leaked across tasks: {seen}"
+              print("per-user tool credentials behave")
+
+
+          asyncio.run(main())
+          PY
+
+      - name: Smoke test the service against a real database
+        run: |
+          set -euo pipefail
+
+          docker network create kada-ai-ci
+          docker run -d --name kada-ci-pg --network kada-ai-ci \
+            -e POSTGRES_USER=kada -e POSTGRES_PASSWORD=kada123 -e POSTGRES_DB=kada_ai \
+            pgvector/pgvector:pg16
+
+          # init_db() runs in the lifespan hook, so the database has to answer first.
+          ready=""
+          for _ in $(seq 1 30); do
+            if docker exec kada-ci-pg pg_isready -U kada -d kada_ai >/dev/null 2>&1; then ready=1; break; fi
+            sleep 2
+          done
+          if [ -z "$ready" ]; then docker logs kada-ci-pg; exit 1; fi
+
+          # No Redis and no provider keys: Redis is fail-open and the keys are
+          # only needed once a question arrives, so /healthz must answer anyway.
+          docker run -d --name kada-ci-ai --network kada-ai-ci -p 127.0.0.1:8000:8000 \
+            -e POSTGRES_URL=postgresql+asyncpg://kada:kada123@kada-ci-pg:5432/kada_ai \
+            -e AI_INTERNAL_SECRET=ci-internal-secret \
+            kada-ai:ci
+
+          up=""
+          for _ in $(seq 1 30); do
+            if curl -fsS --max-time 3 http://127.0.0.1:8000/healthz; then up=1; break; fi
+            sleep 2
+          done
+          if [ -z "$up" ]; then docker logs kada-ci-ai; exit 1; fi
+
+          # The gateway guard: /healthz stays open (compose and the deploy script
+          # call it), while a business route must refuse a caller that cannot
+          # prove it came through the gateway - and answer one that can.
+          code=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8000/conversations/current)
+          if [ "$code" != "401" ]; then echo "no internal secret: HTTP $code, want 401"; exit 1; fi
+
+          code=$(curl -s -o /dev/null -w '%{http_code}' -H 'X-Internal-Secret: wrong' http://127.0.0.1:8000/conversations/current)
+          if [ "$code" != "401" ]; then echo "wrong internal secret: HTTP $code, want 401"; exit 1; fi
+
+          code=$(curl -s -o /dev/null -w '%{http_code}' -H 'X-Internal-Secret: ci-internal-secret' -H 'X-Kada-User-ID: 1' http://127.0.0.1:8000/conversations/current)
+          if [ "$code" != "200" ]; then echo "valid internal secret: HTTP $code, want 200"; exit 1; fi
+          echo "gateway guard behaves"
+
   # ----- Deploy to production -----
   deploy:
     name: Deploy to Production
     runs-on: ubuntu-latest
-    needs: [backend-lint, backend-test, frontend-lint, frontend-build]
+    needs: [backend-lint, backend-test, frontend-lint, frontend-build, ai-build]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     steps:
       - uses: actions/checkout@v7
@@ -195,6 +306,14 @@ jobs:
           tar czf ../deploy-pkg/kada-fe-standalone.tar.gz -C .next/standalone .
           tar czf ../deploy-pkg/kada-fe-static.tar.gz -C .next static/
 
+      # The AI service is built into an image on the host, so the deploy ships
+      # its source rather than a binary; see deploy/deploy-ai.sh.
+      - name: Package the AI service
+        run: |
+          mkdir -p deploy-pkg
+          tar czf deploy-pkg/kada-ai-src.tar.gz -C backend/ai \
+            --exclude='*__pycache__*' --exclude='*.pyc' .
+
       - name: Create deploy marker
         run: |
           echo "${{ github.sha }}" > deploy-version.txt
@@ -207,7 +326,7 @@ jobs:
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: 22
-          source: "backend/bin/server,backend/bin/migrate,deploy-pkg/*,deploy-version.txt"
+          source: "backend/bin/server,backend/bin/migrate,deploy-pkg/*,deploy-version.txt,deploy/deploy-ai.sh,deploy/docker-compose.ai.yml"
           target: /tmp/kada-deploy/
           strip_components: 0
 
@@ -220,6 +339,11 @@ jobs:
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: 22
+          # This step builds the AI image on the host, and pip installing the LangChain
+          # stack takes minutes on a small server. The action's default is 10m, which a
+          # first build can exceed - and it would fail the deploy after the API and the
+          # frontend had already been replaced.
+          command_timeout: 30m
           envs: DATABASE_URL
           script: |
             set -euo pipefail
@@ -291,8 +415,23 @@ jobs:
             fi
             echo "API answered on the host"
 
-            # 7. Clean up.
-            rm -rf "$DEPLOY_DIR"
+            # 7. Deploy the Python AI service. A Python service is not a binary to
+            #    copy: the source is synced and the image is built here on the
+            #    host. deploy/deploy-ai.sh is the same script `make deploy-ai`
+            #    runs; it ends by waiting for /healthz and rolls back to the
+            #    previous image when the new one does not come up.
+            #    It needs /opt/kada/ai/ai.env and the kada_ai database to already
+            #    exist - see deploy/ai.env.example and deploy/setup-ai-db.sh.
+            echo "Deploying the AI service"
+            mkdir -p /opt/kada/ai
+            cp -f "$DEPLOY_DIR/deploy/docker-compose.ai.yml" /opt/kada/ai/docker-compose.yml
+            cp -f "$DEPLOY_DIR/deploy/deploy-ai.sh" /opt/kada/ai/deploy-ai.sh
+            cp -f "$DEPLOY_DIR/deploy-pkg/kada-ai-src.tar.gz" /tmp/kada-ai-src.tar.gz
+            bash /opt/kada/ai/deploy-ai.sh
+            echo "the AI service is running"
+
+            # 8. Clean up.
+            rm -rf "$DEPLOY_DIR" /tmp/kada-ai-src.tar.gz
             echo "Deploy finished at $(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
       # A reachability smoke test from the runner, covering DNS, TLS and nginx as a visitor sees them.
@@ -430,7 +569,7 @@ jobs:
   pipeline-summary:
     name: Pipeline Summary
     runs-on: ubuntu-latest
-    needs: [backend-lint, backend-test, frontend-lint, frontend-build, deploy]
+    needs: [backend-lint, backend-test, frontend-lint, frontend-build, ai-build, deploy]
     if: always()
     steps:
       - name: Report status
@@ -440,12 +579,13 @@ jobs:
             echo ""
             echo "| Job | Result |"
             echo "|-----|--------|"
-            for job in backend-lint backend-test frontend-lint frontend-build deploy; do
+            for job in backend-lint backend-test frontend-lint frontend-build ai-build deploy; do
               case "$job" in
                 backend-lint) result="${{ needs.backend-lint.result }}" ;;
                 backend-test) result="${{ needs.backend-test.result }}" ;;
                 frontend-lint) result="${{ needs.frontend-lint.result }}" ;;
                 frontend-build) result="${{ needs.frontend-build.result }}" ;;
+                ai-build) result="${{ needs.ai-build.result }}" ;;
                 deploy) result="${{ needs.deploy.result }}" ;;
               esac
               echo "| $job | $result |"

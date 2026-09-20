@@ -13,6 +13,7 @@ import (
 	"github.com/joho/godotenv"
 
 	"github.com/chun/kada-backend/config"
+	aiHandler "github.com/chun/kada-backend/internal/handler/ai"
 	analyticsHandler "github.com/chun/kada-backend/internal/handler/analytics"
 	authHandler "github.com/chun/kada-backend/internal/handler/auth"
 	domainHandler "github.com/chun/kada-backend/internal/handler/domain"
@@ -124,6 +125,12 @@ func main() {
 	workspaceH := workspaceHandler.NewHandler(workspaceSvc)
 	analyticsH := analyticsHandler.NewHandler(db)
 
+	// AI gateway: proxies /api/ai/* to the internal Python AI service
+	aiH, err := aiHandler.NewHandler(cfg.AIBaseURL, cfg.AIInternalSecret)
+	if err != nil {
+		log.Fatalf("Failed to initialize AI gateway: %v", err)
+	}
+
 	// JWT + API Token middleware
 	authMW := middleware.JWTAuth(cfg.JWTSecret, tokenSvc)
 
@@ -181,6 +188,7 @@ func main() {
 		tokenH.RegisterRoutes(v1, authMW)
 		workspaceH.RegisterRoutes(v1, authMW)
 		analyticsH.RegisterRoutes(v1, authMW)
+		aiH.RegisterRoutes(v1, authMW)
 	}
 
 	// Start the server (http.Server for graceful shutdown)
