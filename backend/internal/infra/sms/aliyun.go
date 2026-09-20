@@ -19,6 +19,17 @@ type AliyunSender struct {
 	templateCode string
 }
 
+// The shapes Aliyun issues: a 24-character AccessKey id (LTAI...) and a 30-character secret.
+//
+// They are used only to warn. A value that is present, non-empty and the wrong size is the mistake that
+// hides best - it passes every emptiness check, the process starts, and the provider answers
+// "SignatureDoesNotMatch" only when somebody finally asks for a code, which reads like a broken account
+// or a code bug. A 12-character secret did exactly that in production.
+const (
+	accessKeyIDLength     = 24
+	accessKeySecretLength = 30
+)
+
 func NewAliyunSender(accessKeyID, accessKeySecret, signName, templateCode string) (*AliyunSender, error) {
 	if accessKeyID == "" || accessKeySecret == "" {
 		return nil, errors.New("missing Aliyun AccessKey pair: set SMS_ACCESS_KEY_ID and SMS_ACCESS_KEY_SECRET")
@@ -34,6 +45,16 @@ func NewAliyunSender(accessKeyID, accessKeySecret, signName, templateCode string
 	}
 	if templateCode == "" {
 		return nil, errors.New("missing SMS template: copy the system-granted template code from the PNVS console into SMS_TEMPLATE_CODE")
+	}
+
+	// Warn, do not refuse to start: the misconfiguration only blocks sign-in, while refusing would also
+	// take down short-link redirection, which is the part of the product that has to keep working.
+	if len(accessKeyID) < accessKeyIDLength || len(accessKeySecret) < accessKeySecretLength {
+		log.Printf("⚠️  SMS credentials do not look like an Aliyun AccessKey pair: "+
+			"SMS_ACCESS_KEY_ID is %d characters (expected %d) and SMS_ACCESS_KEY_SECRET is %d (expected %d). "+
+			"Aliyun will reject every send with SignatureDoesNotMatch, so NOBODY CAN SIGN IN until the real "+
+			"secret from the console is set",
+			len(accessKeyID), accessKeyIDLength, len(accessKeySecret), accessKeySecretLength)
 	}
 
 	config := &openapi.Config{
