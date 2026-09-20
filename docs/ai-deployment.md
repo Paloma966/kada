@@ -265,6 +265,7 @@ cd /opt/kada/ai && docker compose build && docker compose up -d   # 用现存源
 
 | 现象 | 原因 |
 | --- | --- |
+| 部署在第 7 步失败并打印 `POSTGRES_URL is empty in /opt/kada/ai/ai.env` | 连接串没配。这条检查**故意放在构建镜像之前**：否则容器会拿 `app/config.py` 里带猜测密码的默认 DSN 启动，在 `init_db()` 里崩溃，白白跑完十几分钟镜像构建再回滚。填法见 `deploy/ai.env.example`（密码从 `backend/.env` 的 `DATABASE_URL` 抄，库名换成 `kada_ai`） |
 | `/api/ai/*` 返回 502 | AI 容器没起来或没监听 8000。`docker logs kada-ai`；`kada_ai` 库缺失会让启动阶段就崩 |
 | 返回 401 `only the Go gateway may call this service` | `ai.env` 与 `backend/.env` 里的 `AI_INTERNAL_SECRET` 不一致。现在两边都由同一个 GitHub Secret 写入，重跑一次部署即可对齐 |
 | 日志有 `[AUTH] 未配置 AI_INTERNAL_SECRET` | 密钥为空，来源校验被关闭，仅限本机开发，生产必须配上 |

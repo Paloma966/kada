@@ -80,8 +80,11 @@ nginx 已为 `/api/ai/` 关闭缓冲以保证 SSE 逐字输出。
    填入 `POSTGRES_URL` / `REDIS_URL` / `KADA_API_BASE` 这三个连接串即可。
    三个密钥（`DEEPSEEK_API_KEY` / `aliyun` / `AI_INTERNAL_SECRET`）不用手填：部署作业用
    `deploy/upsert-env.sh` 从 GitHub Secrets 写进去，缺任何一个都会让部署失败并说明是哪一个。
-   `deploy/deploy-ai.sh` 在构建镜像前也会再校验一次 `DEEPSEEK_API_KEY` 与 `aliyun`：
+   `deploy/deploy-ai.sh` 在构建镜像前会再校验一次 `POSTGRES_URL`、`DEEPSEEK_API_KEY` 与 `aliyun`：
    否则会起一个启动正常、健康检查通过、但每个对话请求都在模型侧报错的空壳服务，比拒绝部署难查得多。
+   其中 `POSTGRES_URL` 最不能省——`app/config.py` 的回退值是带猜测密码的开发 DSN，缺了它容器会在
+   `init_db()` 里崩，而那时镜像已经构建完了。`REDIS_URL` / `KADA_API_BASE` 不校验：它们的默认值
+   （`redis://127.0.0.1:6379/0`、`http://localhost:8080`）正是本机的实际情况，Redis 本身也是可选的。
 3. **网关侧同一个密钥**：同样由 GitHub Secret 写进 `/opt/kada/backend/.env`，不需要手动对齐。
    两边不一致时本服务会对网关的请求回 401，AI 页面整体不可用——现在两边出自同一个值，不会再不一致。
 4. **启动**：推 `main` 后 CI 自动部署（同步密钥 → 构建镜像 → 重启容器 → 探活 → 失败回滚到上一个镜像）；
