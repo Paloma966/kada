@@ -6,8 +6,8 @@
 // container, and the whole image is a few hundred bytes.
 //
 // The SVG carries no script and no external reference, so serving it as a data URI is safe: the markup
-// is generated here from a fixed template, and only the per-character transform numbers and colours are
-// randomised.
+// is generated here from a fixed template, and only the per-character transform numbers and colors are
+// randomized.
 package captcha
 
 import (

@@ -24,8 +24,9 @@ import (
 )
 
 // userIDCtxKey carries the authenticated user id from the gin handler into the
-// reverse-proxy Director. The Director only sees a *http.Request, not the
-// gin.Context, so we smuggle the value through the request context.
+// reverse-proxy rewrite step. The rewrite function only sees *http.Request
+// values, not the gin.Context, so we smuggle the value through the request
+// context.
 type userIDCtxKey struct{}
 
 // internalAuthHeader is the header that tells the Python service this request
@@ -48,11 +49,53 @@ func NewHandler(aiBaseURL, internalSecret string) (*Handler, error) {
 		return nil, err
 	}
 
-	proxy := httputil.NewSingleHostReverseProxy(target)
-	// SSE must reach the client token by token; -1 = flush after every write
-	// instead of buffering. Without this, the streaming reply arrives in
-	// chunks rather than word by word.
-	proxy.FlushInterval = -1
+	// Rewrite is used instead of the deprecated Director (deprecated in Go 1.26):
+	// it receives the inbound and outbound requests as a pair, so it stays
+	// explicit which one is read (In, never trusted) and which one is written
+	// (Out). A ReverseProxy accepts exactly one of Director and Rewrite, so the
+	// proxy is constructed here rather than through NewSingleHostReverseProxy,
+	// which installs a Director.
+	proxy := &httputil.ReverseProxy{
+		// SSE must reach the client token by token; -1 = flush after every write
+		// instead of buffering. Without this, the streaming reply arrives in
+		// chunks rather than word by word.
+		FlushInterval: -1,
+		Rewrite: func(pr *httputil.ProxyRequest) {
+			pr.SetURL(target) // scheme/host/path/query from the target URL
+			// Rewrite strips the client's Forwarded / X-Forwarded-* headers
+			// before this runs, so what lands here is the gateway's own
+			// observation of the peer, not a claim the caller chose.
+			pr.SetXForwarded()
+
+			// Map the public path to the Python path by dropping this gateway's
+			// mount prefix: /api/ai/chat -> /chat, /api/ai/conversations/current
+			// -> /conversations/current. The AI service owns its own paths and
+			// knows nothing about /api/ai, so the two surfaces can move
+			// independently.
+			pr.Out.URL.Path = strings.TrimPrefix(pr.Out.URL.Path, "/api/ai")
+			if pr.Out.URL.Path == "" {
+				pr.Out.URL.Path = "/"
+			}
+
+			// Security: never trust a client-supplied X-Kada-User-ID. The
+			// gateway always overwrites it with the authenticated user id from
+			// the JWT, so a caller can never read or write another user's
+			// conversations.
+			pr.Out.Header.Del("X-Kada-User-ID")
+			if userID, ok := pr.In.Context().Value(userIDCtxKey{}).(int64); ok && userID > 0 {
+				pr.Out.Header.Set("X-Kada-User-ID", strconv.FormatInt(userID, 10))
+			}
+
+			// Same rule for the service secret. Deleting matters even when no
+			// secret is configured: the AI service must never see a header the
+			// gateway did not send, or a caller could smuggle one in and make a
+			// direct request look like it came through the gateway.
+			pr.Out.Header.Del(internalAuthHeader)
+			if internalSecret != "" {
+				pr.Out.Header.Set(internalAuthHeader, internalSecret)
+			}
+		},
+	}
 	proxy.ErrorHandler = func(w http.ResponseWriter, _ *http.Request, err error) {
 		// If the SSE stream already started, headers are written and we can no
 		// longer change the status code; just log and stop the stream.
@@ -65,38 +108,7 @@ func NewHandler(aiBaseURL, internalSecret string) (*Handler, error) {
 		_ = json.NewEncoder(w).Encode(gin.H{"error": "AI service unavailable: " + err.Error()})
 	}
 
-	h := &Handler{proxy: proxy}
-	baseDirector := proxy.Director
-	proxy.Director = func(req *http.Request) {
-		baseDirector(req) // sets scheme/host/query from the target URL
-
-		// Map the public path to the Python path by dropping this gateway's mount
-		// prefix: /api/ai/chat -> /chat, /api/ai/conversations/current ->
-		// /conversations/current. The AI service owns its own paths and knows
-		// nothing about /api/ai, so the two surfaces can move independently.
-		req.URL.Path = strings.TrimPrefix(req.URL.Path, "/api/ai")
-		if req.URL.Path == "" {
-			req.URL.Path = "/"
-		}
-
-		// Security: never trust a client-supplied X-Kada-User-ID. The gateway
-		// always overwrites it with the authenticated user id from the JWT,
-		// so a caller can never read or write another user's conversations.
-		req.Header.Del("X-Kada-User-ID")
-		if userID, ok := req.Context().Value(userIDCtxKey{}).(int64); ok && userID > 0 {
-			req.Header.Set("X-Kada-User-ID", strconv.FormatInt(userID, 10))
-		}
-
-		// Same rule for the service secret. Deleting matters even when no secret
-		// is configured: the AI service must never see a header the gateway did
-		// not send, or a caller could smuggle one in and make a direct request
-		// look like it came through the gateway.
-		req.Header.Del(internalAuthHeader)
-		if internalSecret != "" {
-			req.Header.Set(internalAuthHeader, internalSecret)
-		}
-	}
-	return h, nil
+	return &Handler{proxy: proxy}, nil
 }
 
 // RegisterRoutes mounts the AI gateway on the /api router group.
