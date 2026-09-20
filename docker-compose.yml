@@ -1,6 +1,8 @@
 services:
   postgres:
-    image: postgres:16-alpine
+    # pgvector image = the official postgres 16 image plus the vector extension
+    # the AI RAG knowledge base requires.
+    image: pgvector/pgvector:pg16
     environment:
       POSTGRES_USER: kada
       # Must be overridden via .env in production (see .env.example)
@@ -8,6 +10,8 @@ services:
       POSTGRES_DB: kada
     volumes:
       - pgdata:/var/lib/postgresql/data
+      # Runs on first volume init only: creates the kada_ai database + vector extension
+      - ./deploy/postgres/initdb:/docker-entrypoint-initdb.d:ro
     ports:
       - "127.0.0.1:5432:5432"
     healthcheck:
@@ -44,9 +48,49 @@ services:
       # Production normally runs the migration explicitly (backend/cmd/migrate) and starts the API with
       # this disabled, so a restart can never change the database. In Compose the API applies it first.
       DB_AUTO_MIGRATE: "true"
+      # Internal Python AI service reached over the compose network
+      AI_BASE_URL: http://ai:8000
+      # Shared secret so the AI service accepts only requests from this gateway
+      AI_INTERNAL_SECRET: ${AI_INTERNAL_SECRET:-}
     depends_on:
       postgres:
         condition: service_healthy
+    restart: unless-stopped
+
+  # Python AI assistant. Internal only (no host port): the Go gateway proxies
+  # /api/ai/* to it after JWT authentication. MCP callbacks go back to Go.
+  #
+  # This is the one-host stack (everything on one machine, as in local
+  # development). On a server that already runs its own PostgreSQL and Redis,
+  # the depends_on below would try to start compose's postgres too and collide
+  # on 127.0.0.1:5432, so either start it with `--no-deps` or, better, use the
+  # production file deploy/docker-compose.ai.yml, which can only start this one
+  # service. See backend/ai/README.md.
+  ai:
+    build: ./backend/ai
+    environment:
+      POSTGRES_URL: postgresql+asyncpg://kada:${POSTGRES_PASSWORD:-kada123}@postgres:5432/kada_ai
+      REDIS_URL: redis://redis:6379/0
+      KADA_API_BASE: http://backend:8080
+      # Keys come from .env; empty values let the container start so a missing
+      # AI key never blocks the rest of the stack.
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      aliyun: ${aliyun:-}
+      # Must match the backend's AI_INTERNAL_SECRET; empty disables the check.
+      AI_INTERNAL_SECRET: ${AI_INTERNAL_SECRET:-}
+      # No long-lived API token here on purpose: the tools that read link
+      # statistics or create short links run as the signed-in user, using the
+      # JWT the Go gateway forwards on every chat request.
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     restart: unless-stopped
 
   frontend:

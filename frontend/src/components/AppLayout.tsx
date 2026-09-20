@@ -72,6 +72,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     if (pathname.match(/^\/dashboard\/links\/\d+$/)) return t("链接详情");
     if (pathname === "/dashboard/analytics") return t("分析");
     if (pathname === "/dashboard/domains") return t("域名");
+    if (pathname === "/dashboard/ai") return t("AI 助手");
     if (pathname === "/dashboard/events") return t("事件");
     if (pathname === "/dashboard/customers") return t("客户");
     if (pathname === "/dashboard/folders") return t("文件夹");
@@ -169,6 +170,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
 
         {/* Content */}
         <main className="flex-1 overflow-y-auto">
+          {/* 所有页面统一布局：居中 + 边距（AI 页也遵循，不再贴满） */}
           <div className="mx-auto max-w-5xl px-4 sm:px-6 py-4 sm:py-6">
             {children}
           </div>

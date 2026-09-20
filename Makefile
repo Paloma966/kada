@@ -104,7 +104,22 @@ deploy-nginx: check-host  ## Update the nginx configuration
 	scp nginx/nginx-prod.conf $(DEPLOY_HOST):/opt/kada/nginx/
 	ssh $(DEPLOY_HOST) "docker restart kada-nginx"
 
-deploy-all: deploy deploy-fe  ## Deploy both the API and the frontend
+# One-time preparation of the AI database on the server: creates kada_ai and enables pgvector in it.
+# Safe to re-run. Needs the server's PostgreSQL to have pgvector available first.
+setup-ai-db: check-host  ## Create the AI database + pgvector on the server (one-time)
+	scp deploy/setup-ai-db.sh $(DEPLOY_HOST):/tmp/kada-setup-ai-db.sh
+	ssh $(DEPLOY_HOST) "bash /tmp/kada-setup-ai-db.sh"
+
+# The AI service is a Python environment rather than a binary: the source is shipped and the image is
+# built on the host by deploy/deploy-ai.sh - the same script CI runs, so the two paths cannot drift.
+# It needs /opt/kada/ai/ai.env and the kada_ai database to exist; see backend/ai/README.md.
+deploy-ai: check-host  ## Deploy the Python AI service (image built on the server)
+	cd backend/ai && tar czf /tmp/kada-ai-src.tar.gz --exclude='*__pycache__*' --exclude='*.pyc' .
+	scp /tmp/kada-ai-src.tar.gz deploy/docker-compose.ai.yml deploy/deploy-ai.sh $(DEPLOY_HOST):/tmp/
+	ssh $(DEPLOY_HOST) "mkdir -p /opt/kada/ai && cp /tmp/docker-compose.ai.yml /opt/kada/ai/docker-compose.yml && cp /tmp/deploy-ai.sh /opt/kada/ai/deploy-ai.sh && bash /opt/kada/ai/deploy-ai.sh"
+	@echo "AI service deployed"
+
+deploy-all: deploy deploy-fe deploy-ai  ## Deploy the API, the frontend and the AI service
 
 # ========== CI helpers ==========
 
