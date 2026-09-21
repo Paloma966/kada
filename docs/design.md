@@ -187,17 +187,32 @@ remains the source of truth and a cold cache only costs latency.
 
 ### 4.4 Schema ownership
 
-The schema is defined by the GORM models in `internal/domain/entity` and applied with
-`AutoMigrate`. There are no SQL migration files.
+The schema is defined by the GORM models in `internal/domain/entity` and applied with `AutoMigrate`; the
+migration SQL files are gone. `cmd/migrate` applies the models (`cd backend && go run ./cmd/migrate/`), and
+the API server applies them on startup **only** when `DB_AUTO_MIGRATE=true`, so in production a restart
+cannot change the database as a side effect.
 
-- `cmd/migrate` applies the schema (`cd backend && go run ./cmd/migrate/`).
-- The API server applies it on startup **only** when `DB_AUTO_MIGRATE=true`, so that in production a
-  restart cannot change the database as a side effect.
-- AutoMigrate is additive: it creates missing tables, columns, indexes and constraints, and never
-  drops anything. That makes it safe on an existing installation, and it means a rollback to an
-  older binary leaves the newer columns in place.
-- Because the models are the only definition, a column that exists in code but not in the database
-  (or the reverse) cannot happen.
+AutoMigrate is additive: it creates missing tables, columns, indexes and constraints, and never drops
+anything. That makes it safe on an existing installation, and it means a rollback to an older binary leaves
+the newer columns in place. It also means the models are **not** the whole truth about a database that
+predates them: whatever the original raw-SQL schema declared and the models no longer mention stays exactly
+as it was, constraints included. Two rounds of that have cost real time:
+
+- A UNIQUE constraint under PostgreSQL's generated name (`users_phone_key`) aborted the whole migration,
+  because AutoMigrate tried to drop a constraint derived from the model that did not exist yet. Hence
+  `ReconcileLegacyConstraints`.
+- `sms_codes.code` was declared NOT NULL back when codes were stored as text. The service stores only
+  `sha256(code)` and never writes that column, so the leftover rule rejected every insert with
+  `SQLSTATE 23502` - and that insert runs *after* the SMS has been sent. The recipient got a code, the form
+  answered "failed to store verification code", and because no row was written the per-phone cooldown could
+  never match one, so every retry reached the provider until it answered with a rate limit. Hence
+  `ReconcileLegacyColumns`.
+
+Both run inside `infra.Migrate` before `AutoMigrate`, both are written as idempotent DDL, and neither
+touches a table that does not exist, so a fresh database is unaffected. The old golang-migrate bookkeeping
+table `schema_migrations` may still sit in a database created before the switch; nothing reads or writes it.
+The lesson the code keeps: an existing database is a second source of truth, and the only way to reconcile
+it is explicitly.
 
 Raw SQL is still used where a single statement is the point — the atomic verification-code consume,
 the idempotent click insert, bulk insert-selects — and each of those sites is commented as such.
