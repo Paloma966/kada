@@ -26,7 +26,7 @@ func NewRedis(redisURL string) (*redis.Client, error) {
 		return client, fmt.Errorf("failed to ping Redis: %w", err)
 	}
 
-	log.Println("✅ Redis connected")
+	log.Println("Redis connected")
 	return client, nil
 }
 

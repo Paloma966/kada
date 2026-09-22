@@ -54,7 +54,7 @@ func NewDB(databaseURL string) (*gorm.DB, error) {
 		return nil, fmt.Errorf("failed to ping database: %w", err)
 	}
 
-	log.Println("✅ Database connected")
+	log.Println("Database connected")
 	return db, nil
 }
 
