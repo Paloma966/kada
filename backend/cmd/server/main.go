@@ -40,7 +40,7 @@ func main() {
 
 	// Security: release mode forbids the default/weak JWT secret, otherwise anyone could forge login tokens
 	if os.Getenv("GIN_MODE") == "release" && config.IsWeakJWTSecret(cfg.JWTSecret) {
-		log.Fatal("❌ refusing to use the default JWT_SECRET in production; set a strong random secret (e.g. openssl rand -hex 32)")
+		log.Fatal("refusing to use the default JWT_SECRET in production; set a strong random secret (e.g. openssl rand -hex 32)")
 	}
 
 	// Connect to the database
@@ -65,7 +65,7 @@ func main() {
 	// Rate limiting fails open until Redis recovers, then works again with no process restart.
 	redisClient, err := infra.NewRedis(cfg.RedisURL)
 	if err != nil {
-		log.Printf("⚠️  Redis temporarily unavailable (rate limiting will fail open until it recovers): %v", err)
+		log.Printf("Redis temporarily unavailable (rate limiting will fail open until it recovers): %v", err)
 	}
 	if redisClient != nil {
 		defer infra.CloseRedis(redisClient)
@@ -82,16 +82,16 @@ func main() {
 		if err != nil {
 			// Not fatal: every other feature still works. But nobody can sign in, and the reason is
 			// printed now rather than deferred to a request that would only report a provider error.
-			log.Printf("❌ SMS service disabled, NOBODY CAN SIGN IN: %v", err)
+			log.Printf("SMS service disabled, NOBODY CAN SIGN IN: %v", err)
 		}
 	} else {
 		// Distinguish "not configured" from "configured with the .env.example placeholders": both end in the
 		// same warning, but the second one is the common cause of sign-in failing with a provider error.
 		if cfg.SMSAccessKeyID != "" || cfg.SMSAccessKeySecret != "" {
-			log.Println("❌ SMS_ACCESS_KEY_ID/SMS_ACCESS_KEY_SECRET still hold the .env.example placeholder values; " +
+			log.Println("SMS_ACCESS_KEY_ID/SMS_ACCESS_KEY_SECRET still hold the .env.example placeholder values; " +
 				"NOBODY CAN SIGN IN until real Aliyun credentials are set")
 		} else {
-			log.Println("⚠️  SMS not configured: NOBODY CAN SIGN IN. Verification codes are printed to this log " +
+			log.Println("SMS not configured: NOBODY CAN SIGN IN. Verification codes are printed to this log " +
 				"instead (development only); set SMS_ACCESS_KEY_ID/SMS_ACCESS_KEY_SECRET/SMS_SIGN_NAME/SMS_TEMPLATE_CODE " +
 				"to enable real sending")
 		}
@@ -207,7 +207,7 @@ func main() {
 		IdleTimeout:       60 * time.Second,
 	}
 	go func() {
-		log.Printf("🚀 Kada API server starting on :%s", cfg.Port)
+		log.Printf("Kada API server starting on :%s", cfg.Port)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("Failed to start server: %v", err)
 		}
@@ -217,7 +217,7 @@ func main() {
 	sigCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	<-sigCtx.Done()
-	log.Println("🔻 shutdown signal received, starting graceful shutdown...")
+	log.Println("shutdown signal received, starting graceful shutdown...")
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()

@@ -65,7 +65,7 @@ func NewAliyunSender(accessKeyID, accessKeySecret, signName, templateCode string
 	// Warn, do not refuse to start: the misconfiguration only blocks sign-in, while refusing would also
 	// take down short-link redirection, which is the part of the product that has to keep working.
 	if len(accessKeyID) < accessKeyIDLength || len(accessKeySecret) < accessKeySecretLength {
-		log.Printf("⚠️  SMS credentials do not look like an Aliyun AccessKey pair: "+
+		log.Printf("SMS credentials do not look like an Aliyun AccessKey pair: "+
 			"SMS_ACCESS_KEY_ID is %d characters (expected %d) and SMS_ACCESS_KEY_SECRET is %d (expected %d). "+
 			"Aliyun will reject every send with SignatureDoesNotMatch, so NOBODY CAN SIGN IN until the real "+
 			"secret from the console is set",
@@ -85,7 +85,7 @@ func NewAliyunSender(accessKeyID, accessKeySecret, signName, templateCode string
 
 	// Logged because the pair is the first thing to check when a send is rejected: the signature and the
 	// template have to come from the same account and be used together.
-	log.Printf("✅ Aliyun SMS verification service initialized (sign_name=%q template_code=%q)", signName, templateCode)
+	log.Printf("Aliyun SMS verification service initialized (sign_name=%q template_code=%q)", signName, templateCode)
 	return &AliyunSender{client: client, signName: signName, templateCode: templateCode}, nil
 }
 
@@ -163,7 +163,7 @@ func (s *AliyunSender) SendVerificationCode(phone string) (code string, err erro
 	}
 	code = tea.StringValue(response.Body.Model.VerifyCode)
 
-	log.Printf("📱 verification code sent to %s", maskPhone(phone))
+	log.Printf("verification code sent to %s", maskPhone(phone))
 	return code, nil
 }
 

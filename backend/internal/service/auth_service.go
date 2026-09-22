@@ -216,7 +216,7 @@ func (s *AuthService) SendSMSCode(ctx context.Context, phone, ip, captchaID, cap
 		code = generateSMSCode()
 		// security: the plaintext code is only printed outside release mode; production logs never contain the code
 		if os.Getenv("GIN_MODE") != "release" {
-			fmt.Printf("📱 [DEV] Phone: %s, Code: %s\n", phone, code)
+			fmt.Printf("[DEV] Phone: %s, Code: %s\n", phone, code)
 		}
 	}
 

@@ -131,7 +131,7 @@ func main() {
 			break
 		}
 		// #nosec G706 -- topic comes from environment config and topicErr is an internal connection error, not user input
-		log.Printf("⚠️ ensure kafka topic %q failed (attempt %d/10): %v", topic, attempt, topicErr)
+		log.Printf("ensure kafka topic %q failed (attempt %d/10): %v", topic, attempt, topicErr)
 		time.Sleep(2 * time.Second)
 	}
 	if topicErr != nil {
@@ -160,7 +160,7 @@ func main() {
 	defer stop()
 
 	// #nosec G706 -- topic/brokers come from environment config, not user input
-	log.Printf("🧵 click-worker consuming topic %q from %s", topic, brokers)
+	log.Printf("click-worker consuming topic %q from %s", topic, brokers)
 	tracker := newAttemptTracker()
 	for {
 		// Use FetchMessage instead of ReadMessage: ReadMessage commits offsets automatically,
