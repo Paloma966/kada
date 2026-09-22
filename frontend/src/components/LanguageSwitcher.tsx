@@ -1,20 +1,41 @@
 "use client";
 
 import { useEffect } from "react";
-import { useI18n, LOCALE_LABELS } from "@/lib/i18n";
-import { Flag } from "@/components/Flags";
+import { LOCALE_LABELS, LOCALES, useI18n, type Locale } from "@/lib/i18n";
 
 /**
- * Language switcher.
+ * Two-letter marks for the capsule's segments.
  *
- * Shows the language you would switch to, so it reads as an action rather than a state. The flag
- * identifies it at a glance and the two-letter code keeps it unambiguous: a flag names a country, not a
- * language, and English is not owned by the United Kingdom - so the code is what states the target, and
- * the accessible name spells it out in full.
+ * Language codes rather than names ("中文" / "English"): a code is the same two characters in both locales,
+ * so the segments stay the same width and the thumb's travel never has to be recomputed when the language
+ * changes. The full name is still what a screen reader announces, because "ZH" alone is a code, not a word.
+ */
+const SEGMENT_LABELS: Record<Locale, string> = { zh: "ZH", en: "EN" };
+
+/**
+ * Language switcher: a capsule with one segment per locale and a thumb that slides to the active one.
  *
- * `onDark` is for the landing and sign-in screens, which are dark in both themes. There the control has to
- * stay a light chip with dark type; a themed surface would follow the page into black and disappear into
- * it, which is what happened when the sign-in screen's selected segment became a themed surface.
+ * It shows the language you are *in*, not the one you would switch to. A single button has to name its
+ * target to read as an action; a segmented control shows both options at once, and there the highlighted
+ * segment is the state - which is what everyone already expects it to mean.
+ *
+ * No flags. A flag names a country, not a language: English is not owned by the United Kingdom, and the
+ * marks this replaces had to be hand-drawn SVG to survive Windows, where emoji flags degrade to letters.
+ * "ZH"/"EN" says the same thing in less space, in no country's colors, and is the one thing both locales
+ * can read.
+ *
+ * The thumb is the app's existing "selected" idiom - `bg-indigo-600 text-white shadow-sm`, the same fixed
+ * pair the pagination and the AI tabs use. It is deliberately not a themed surface: brand fills are not
+ * re-themed (see globals.css), so this keeps its contrast in both themes with no `dark:` variant. Only the
+ * track follows the theme.
+ *
+ * `onDark` is for the landing and sign-in screens, which are dark in both themes. There the track has to be
+ * a light wash over the page rather than a themed chip: a themed surface follows the page into black and
+ * takes the control with it, which is what happened when the sign-in screen's selected segment became one.
+ *
+ * Two segments, deliberately. The thumb is half the track and parks at one end or the other, and Tailwind
+ * only emits the translate utilities it can read literally - so a third locale means rewriting this, not
+ * just adding to LOCALES.
  */
 export function LanguageSwitcher({
   className = "",
@@ -24,24 +45,41 @@ export function LanguageSwitcher({
   onDark?: boolean;
 }) {
   const { locale, setLocale } = useI18n();
-  const next = locale === "en" ? "zh" : "en";
-  const label = `Switch language to ${LOCALE_LABELS[next]}`;
+  const activeIndex = Math.max(0, LOCALES.indexOf(locale));
 
-  const tone = onDark
-    ? "border-white/20 bg-white/10 text-white hover:bg-white/20"
-    : "border-line bg-canvas text-muted hover:bg-muted-surface hover:text-strong";
+  const track = onDark ? "border-white/20 bg-white/10" : "border-line bg-muted-surface";
+  const segment = (active: boolean) =>
+    active ? "text-white" : onDark ? "text-white/70 hover:text-white" : "text-muted hover:text-strong";
 
   return (
-    <button
-      type="button"
-      onClick={() => setLocale(next)}
-      title={label}
-      aria-label={label}
-      className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-sm font-medium transition-colors ${tone} ${className}`}
+    <div
+      role="group"
+      aria-label="Language"
+      className={`relative inline-grid grid-cols-2 items-center rounded-full border p-0.5 ${track} ${className}`}
     >
-      <Flag locale={next} />
-      <span className="uppercase">{next}</span>
-    </button>
+      {/* Half the track minus one padding step per side, so the thumb is flush at either end. */}
+      <span
+        aria-hidden="true"
+        className={`pointer-events-none absolute inset-y-0.5 left-0.5 w-[calc(50%-0.125rem)] rounded-full bg-indigo-600 shadow-sm transition-transform duration-200 ease-out motion-reduce:transition-none ${
+          activeIndex === 1 ? "translate-x-full" : "translate-x-0"
+        }`}
+      />
+      {LOCALES.map((loc) => (
+        <button
+          key={loc}
+          type="button"
+          onClick={() => setLocale(loc)}
+          aria-pressed={locale === loc}
+          aria-label={`${SEGMENT_LABELS[loc]} ${LOCALE_LABELS[loc]}`}
+          title={LOCALE_LABELS[loc]}
+          className={`relative min-w-9 rounded-full px-2.5 py-1.5 text-xs font-semibold transition-colors ${segment(
+            locale === loc
+          )}`}
+        >
+          {SEGMENT_LABELS[loc]}
+        </button>
+      ))}
+    </div>
   );
 }
 
