@@ -1,15 +1,17 @@
 "use client";
 
 import { useState } from "react";
-import { User, Mail, Phone, Pencil, Check, X, Shield, Calendar, Key, Copy, Trash2, Plus, Building2, Globe, Monitor, Moon, Sun } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { User, Phone, LogOut, Key, Copy, Trash2, Plus, Building2, Globe, Monitor, Moon, Sun } from "lucide-react";
 import { toast } from "sonner";
 import useSWR from "swr";
-import { authAPI, tokensAPI, workspacesAPI } from "@/lib/api";
-import { getToken, getUser, setUser } from "@/lib/auth";
+import { tokensAPI, workspacesAPI } from "@/lib/api";
+import { getToken, getUser, removeToken } from "@/lib/auth";
 import { useT, useI18n } from "@/lib/i18n";
 import { useTheme } from "@/lib/theme";
 
 export default function SettingsPage() {
+  const router = useRouter();
   const token = getToken();
   const savedUser = getUser();
   const t = useT();
@@ -17,10 +19,13 @@ export default function SettingsPage() {
   const localeTag = locale === "en" ? "en-US" : "zh-CN";
   const { theme, followsSystem, setTheme, useSystemTheme } = useTheme();
 
-  const [editingName, setEditingName] = useState(false);
-  // The initial value comes straight from the locally stored user profile, so no effect is needed to sync it
-  const [name, setName] = useState(savedUser?.name ?? "");
-  const [saving, setSaving] = useState(false);
+  // Signing out is here rather than in the top bar: with phone-only sign-in there is no profile to hang a
+  // menu on, and the menu that used to hold this button had no other entry to justify itself.
+  const handleLogout = () => {
+    removeToken();
+    toast.success(t("已退出"));
+    router.push("/login");
+  };
 
   // API Tokens
   const { data: tokenData, mutate: mutateTokens } = useSWR(
@@ -31,23 +36,6 @@ export default function SettingsPage() {
   const [newTokenName, setNewTokenName] = useState("");
   const [creating, setCreating] = useState(false);
   const [newToken, setNewToken] = useState<string | null>(null);
-
-  const handleSaveName = async () => {
-    if (!token || !name.trim()) return;
-    setSaving(true);
-    try {
-      const data = await authAPI.updateMe(token, { name: name.trim() });
-      if (data.user) {
-        setUser(data.user);
-      }
-      setEditingName(false);
-      toast.success(t("姓名已更新"));
-    } catch {
-      toast.error(t("更新失败"));
-    } finally {
-      setSaving(false);
-    }
-  };
 
   const handleCreateToken = async () => {
     if (!token || !newTokenName.trim()) return;
@@ -120,7 +108,10 @@ export default function SettingsPage() {
         <p className="text-sm text-muted mt-1">{t("管理你的个人信息")}</p>
       </div>
 
-      {/* Profile Card */}
+      {/* Profile Card. The phone number and nothing else: it is the account - the sign-in method, the
+          unique key, and the only field the API still publishes. The name, the email and the avatar that
+          stood here were editable fields nothing reads any more (PATCH /me went with them), and a field
+          that can be edited but changes nothing is worse than no field at all. */}
       <div className="rounded-xl border border-line bg-canvas shadow-sm overflow-hidden">
         <div className="border-b border-line px-6 py-4">
           <div className="flex items-center gap-2">
@@ -129,67 +120,15 @@ export default function SettingsPage() {
           </div>
         </div>
 
-        <div className="px-6 py-5 space-y-5">
-          <div className="flex items-center gap-4">
-            <div className="flex size-14 items-center justify-center rounded-full bg-brand-soft text-xl font-bold text-brand-ink">
-              {(savedUser?.name || savedUser?.email || "U")[0].toUpperCase()}
-            </div>
-            <div>
-              <p className="text-sm font-medium text-strong">
-                {savedUser?.name || savedUser?.email || t("用户")}
-              </p>
-              <p className="text-xs text-muted">ID: {savedUser?.id}</p>
-            </div>
-          </div>
-
-          {/* Name */}
-          <div className="flex items-center justify-between py-2">
-            <div className="flex items-center gap-3 min-w-0">
-              <User className="size-4 text-faint shrink-0" />
-              <div className="min-w-0">
-                <p className="text-xs text-muted">{t("姓名")}</p>
-                {editingName ? (
-                  <div className="flex items-center gap-2 mt-1">
-                    <input
-                      type="text" value={name}
-                      onChange={(e) => setName(e.target.value)}
-                      className="border border-line rounded-lg px-2 py-1 text-sm text-strong focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent w-48"
-                      autoFocus
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") handleSaveName();
-                        if (e.key === "Escape") { setEditingName(false); setName(savedUser?.name || ""); }
-                      }}
-                    />
-                    <button onClick={handleSaveName} disabled={saving} className="p-1 rounded text-emerald-600 hover:bg-emerald-50 transition">
-                      <Check className="size-3.5" />
-                    </button>
-                    <button onClick={() => { setEditingName(false); setName(savedUser?.name || ""); }}
-                      className="p-1 rounded text-faint hover:bg-muted-surface transition">
-                      <X className="size-3.5" />
-                    </button>
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-2 mt-1">
-                    <p className="text-sm text-strong">
-                      {savedUser?.name || <span className="text-faint italic">{t("未设置")}</span>}
-                    </p>
-                    <button onClick={() => { setEditingName(true); setName(savedUser?.name || ""); }}
-                      className="p-1 rounded text-faint hover:text-muted hover:bg-muted-surface transition">
-                      <Pencil className="size-3" />
-                    </button>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-3 py-2">
-            <Mail className="size-4 text-faint shrink-0" />
-            <div><p className="text-xs text-muted">{t("邮箱")}</p><p className="text-sm text-strong">{savedUser?.email || <span className="text-faint italic">{t("未绑定")}</span>}</p></div>
-          </div>
+        <div className="px-6 py-5">
           <div className="flex items-center gap-3 py-2">
             <Phone className="size-4 text-faint shrink-0" />
-            <div><p className="text-xs text-muted">{t("手机号")}</p><p className="text-sm text-strong">{savedUser?.phone || <span className="text-faint italic">{t("未绑定")}</span>}</p></div>
+            <div>
+              <p className="text-xs text-muted">{t("手机号")}</p>
+              <p className="text-sm text-strong">
+                {savedUser?.phone || <span className="text-faint italic">{t("未绑定")}</span>}
+              </p>
+            </div>
           </div>
         </div>
       </div>
@@ -375,25 +314,25 @@ export default function SettingsPage() {
         </div>
       </div>
 
-      {/* Account Info Card */}
+      {/* Sign-out Card. It replaced the account-information card, whose two rows said nothing worth a
+          card: "registered at" was never sent by the API (the field is not in the payload, so it always
+          rendered a dash) and "sign-in method" is the same sentence for every account on this page. */}
       <div className="rounded-xl border border-line bg-canvas shadow-sm overflow-hidden">
         <div className="border-b border-line px-6 py-4">
           <div className="flex items-center gap-2">
-            <Shield className="size-4 text-muted" />
-            <h2 className="font-semibold text-strong">{t("账号信息")}</h2>
+            <LogOut className="size-4 text-muted" />
+            <h2 className="font-semibold text-strong">{t("退出登录")}</h2>
           </div>
         </div>
-        <div className="px-6 py-5 space-y-4">
-          <div className="flex items-center gap-3 py-2">
-            <Calendar className="size-4 text-faint shrink-0" />
-            <div><p className="text-xs text-muted">{t("注册时间")}</p><p className="text-sm text-strong">{savedUser?.created_at ? new Date(savedUser.created_at).toLocaleDateString(localeTag, { year: "numeric", month: "long", day: "numeric" }) : "—"}</p></div>
-          </div>
-          <div className="flex items-center gap-3 py-2">
-            <Shield className="size-4 text-faint shrink-0" />
-            {/* Sign-in is phone-only now: every account has a phone number and none can be reached by email
-                or password any more, so this line no longer branches. */}
-            <div><p className="text-xs text-muted">{t("登录方式")}</p><p className="text-sm text-strong">{t("手机号验证码")}</p></div>
-          </div>
+        <div className="px-6 py-5 space-y-3">
+          <p className="text-sm text-muted">{t("退出后需要重新用手机号验证码登录。")}</p>
+          <button
+            onClick={handleLogout}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm font-medium text-red-600 transition hover:bg-red-100"
+          >
+            <LogOut className="size-3.5" />
+            {t("退出登录")}
+          </button>
         </div>
       </div>
     </div>

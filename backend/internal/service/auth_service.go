@@ -9,7 +9,6 @@ import (
 	"math/big"
 	"os"
 	"regexp"
-	"strings"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -71,12 +70,6 @@ func NewAuthService(db *gorm.DB, jwtSecret, jwtExpire string, sms SMSSender) *Au
 
 // phonePattern matches mainland China mobile numbers: leading 1 + 3-9 + 9 digits
 var phonePattern = regexp.MustCompile(`^1[3-9]\d{9}$`)
-
-// normalizeEmail lower-cases the email and trims whitespace so the same canonical form is stored and
-// queried. Email is no longer a sign-in method, but it is still an optional profile field.
-func normalizeEmail(email string) string {
-	return strings.ToLower(strings.TrimSpace(email))
-}
 
 // GenerateCaptcha issues a graphical challenge for the client to solve before it may request an SMS.
 //
@@ -317,7 +310,8 @@ func (s *AuthService) LoginByPhone(ctx context.Context, phone, code string) (*do
 }
 
 // LoginByEmail and RegisterByEmail used to live here. They are gone: signing in happens by phone number
-// only (see entity.User), and `PATCH /api/me` remains the way an email is attached to a profile.
+// only (see entity.User), and nothing writes an email onto an account any more either - the profile is the
+// phone number, so there is no second field for a caller to edit.
 
 // GetUserByID gets user info
 func (s *AuthService) GetUserByID(ctx context.Context, userID int64) (*domain.UserInfo, error) {
@@ -325,41 +319,6 @@ func (s *AuthService) GetUserByID(ctx context.Context, userID int64) (*domain.Us
 	if err := s.db.WithContext(ctx).Where("id = ?", userID).First(&row).Error; err != nil {
 		return nil, errors.New("user not found")
 	}
-	return toUserInfo(row), nil
-}
-
-// UpdateUser updates user info
-func (s *AuthService) UpdateUser(ctx context.Context, userID int64, name *string, email *string) (*domain.UserInfo, error) {
-	// only handle non-empty fields
-	updates := map[string]any{"updated_at": gorm.Expr("NOW()")}
-	if name != nil && *name != "" {
-		updates["name"] = *name
-	}
-	if email != nil && *email != "" {
-		updates["email"] = normalizeEmail(*email)
-	}
-
-	// return the current user when there is nothing to update
-	// (previously, when both fields were empty strings, the code neither ran the UPDATE nor took this branch and returned a zero-value struct)
-	if len(updates) == 1 {
-		return s.GetUserByID(ctx, userID)
-	}
-
-	var row entity.User
-	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		res := tx.Model(&entity.User{}).Where("id = ?", userID).Updates(updates)
-		if res.Error != nil {
-			return res.Error
-		}
-		if res.RowsAffected == 0 {
-			return gorm.ErrRecordNotFound
-		}
-		return tx.Where("id = ?", userID).First(&row).Error
-	}); err != nil {
-		log.Printf("update user %d failed: %v", userID, err)
-		return nil, errors.New("failed to update user info")
-	}
-
 	return toUserInfo(row), nil
 }
 
@@ -375,16 +334,11 @@ func (s *AuthService) userByPhone(ctx context.Context, phone string) (*domain.Us
 }
 
 // toUserInfo maps the persistence model onto the API model.
-// UserInfo only exposes phone/email/name/avatar, so the password hash can never leak through it.
+//
+// The mapping is deliberately thin: UserInfo carries the phone number, so password_hash and the legacy
+// email/wechat columns have nowhere to go even by accident.
 func toUserInfo(row entity.User) *domain.UserInfo {
-	return &domain.UserInfo{
-		ID:           row.ID,
-		Phone:        row.Phone,
-		Email:        row.Email,
-		Name:         row.Name,
-		Avatar:       row.Avatar,
-		WechatOpenID: row.WechatOpenID,
-	}
+	return &domain.UserInfo{ID: row.ID, Phone: row.Phone}
 }
 
 // generateToken generates a JWT
@@ -392,7 +346,6 @@ func (s *AuthService) generateToken(user domain.UserInfo) (string, error) {
 	claims := middleware.Claims{
 		UserID: user.ID,
 		Phone:  user.Phone,
-		Email:  user.Email,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(s.jwtExpire)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),

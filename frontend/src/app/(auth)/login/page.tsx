@@ -11,6 +11,7 @@ import { setToken, setUser } from "@/lib/auth";
 import { AuthCard } from "@/components/auth/AuthCard";
 import { FormField, inputBase, fieldState } from "@/components/auth/FormField";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
+import { TOP_BAR_CONTROLS_PINNED } from "@/components/topBar";
 import { useT } from "@/lib/i18n";
 
 /**
@@ -180,7 +181,9 @@ export default function LoginPage() {
 
   return (
     <>
-      <div className="fixed right-4 top-4 z-50">
+      {/* Pinned to the corner the app shell's top bar puts these controls in, so the switcher does not
+          move as you sign in: the position is shared rather than copied. */}
+      <div className={TOP_BAR_CONTROLS_PINNED}>
         <LanguageSwitcher onDark />
       </div>
       <AuthCard

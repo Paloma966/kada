@@ -121,9 +121,10 @@ func (LoginCaptcha) TableName() string { return "login_captchas" }
 // and WeChat sign-in were both removed (see docs/design.md - an individual cannot register a WeChat Open
 // Platform application, and an email+password path nobody could be bothered to verify was a liability).
 //
-// The email, password_hash, wechat_openid and wechat_unionid columns are kept so that accounts created
-// before that decision keep their data; nothing reads password_hash any more, and email is only an
-// optional contact field on the profile. Dropping them would be a destructive migration with no
+// The email, name, avatar, password_hash, wechat_openid and wechat_unionid columns are kept so that
+// accounts created before that decision keep their data. Nothing reads them any more: the API publishes the
+// phone number and nothing else (domain.UserInfo), and the route that used to write a name or an email -
+// PATCH /api/me - is gone with them. Dropping the columns would be a destructive migration with no
 // functional gain, so the schema stays additive.
 //
 // The WeChat column names are declared explicitly because GORM shortens acronyms mid-name:

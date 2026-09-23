@@ -50,13 +50,14 @@ type AuthResponse struct {
 	User  UserInfo `json:"user"`
 }
 
+// UserInfo is what a caller learns about an account: the phone number and nothing else.
+//
+// The phone is the whole of sign-in - the identifier, the second factor and the unique key - so there is
+// no name to display, no email to edit and no avatar to render. Everything in this struct is published to
+// every client and cached in localStorage, which is why its shape is pinned by a test.
 type UserInfo struct {
-	ID           int64   `json:"id"`
-	Phone        *string `json:"phone"`
-	Email        *string `json:"email"`
-	Name         *string `json:"name"`
-	Avatar       *string `json:"avatar"`
-	WechatOpenID *string `json:"wechat_openid,omitempty"`
+	ID    int64   `json:"id"`
+	Phone *string `json:"phone"`
 }
 
 // ---- Links ----

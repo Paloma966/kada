@@ -275,7 +275,7 @@ The UI is bilingual and the dictionary is keyed by the Chinese source string:
 
 ```tsx
 const t = useT();
-<label>{t("邮箱")}</label>
+<label>{t("手机号")}</label>
 ```
 
 - Every user-facing string goes through `t()`.

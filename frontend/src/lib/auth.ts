@@ -3,14 +3,16 @@
 const TOKEN_KEY = "kada_token";
 const USER_KEY = "kada_user";
 
+/**
+ * The signed-in account, as the API publishes it.
+ *
+ * The phone number and nothing else: it is the sign-in method, the unique key, and the only field
+ * `/api/me` returns (see domain.UserInfo on the backend). What is kept in localStorage is a copy of the
+ * last login response - something immutable, cached, rather than state that can drift.
+ */
 export interface User {
   id: number;
   phone?: string;
-  email?: string;
-  name?: string;
-  avatar?: string;
-  wechat_openid?: string;
-  created_at?: string;
 }
 
 export function getToken(): string | null {

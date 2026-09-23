@@ -109,30 +109,6 @@ func TestNullableColumnResetRendersNull(t *testing.T) {
 	}
 }
 
-// UpdateUser has to distinguish "field not sent" (absent from the map) from "field sent as empty";
-// the map form is what makes that possible, so assert the generated SET list.
-func TestUpdateUserOnlySetsProvidedFields(t *testing.T) {
-	db := newDryRunDB(t)
-
-	updates := map[string]any{"updated_at": gorm.Expr("NOW()"), "name": "paloma"}
-	stmt := db.Session(&gorm.Session{DryRun: true}).
-		Model(&struct{}{}).
-		Where("id = ?", int64(5)).
-		Updates(updates).
-		Statement
-
-	sql := stmt.SQL.String()
-	if !strings.Contains(sql, `"updated_at"=NOW()`) {
-		t.Errorf("expected updated_at=NOW(), got: %s", sql)
-	}
-	if !strings.Contains(sql, `"name"=`) {
-		t.Errorf("expected name to be updated, got: %s", sql)
-	}
-	if strings.Contains(sql, "email") {
-		t.Errorf("email must not be touched when it was not provided, got: %s", sql)
-	}
-}
-
 // AutoMigrate must be told about every table; a model that is missing from entity.Models() would be
 // silently left out of the schema.
 func TestDryRunDBIsUsable(t *testing.T) {

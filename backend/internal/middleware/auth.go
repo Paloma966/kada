@@ -9,10 +9,13 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
+// Claims is the JWT payload: the account identity, and nothing about the profile.
+//
+// The email claim that used to sit here outlived email sign-in - it was read by nobody - and the profile
+// is the phone number now, so there is nothing else to carry.
 type Claims struct {
 	UserID int64   `json:"user_id"`
 	Phone  *string `json:"phone"`
-	Email  *string `json:"email"`
 	jwt.RegisteredClaims
 }
 
@@ -78,7 +81,6 @@ func JWTAuth(secret string, tokenValidator TokenValidator) gin.HandlerFunc {
 
 		c.Set("user_id", claims.UserID)
 		c.Set("user_phone", claims.Phone)
-		c.Set("user_email", claims.Email)
 		c.Next()
 	}
 }

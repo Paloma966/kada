@@ -250,7 +250,7 @@ login_captchas  (standalone, keyed by id)
 
 | Table | Purpose | Notable columns |
 |---|---|---|
-| `users` | Accounts | `phone` (unique); `email`, `password_hash`, `wechat_openid` are retained legacy columns that no sign-in path reads |
+| `users` | Accounts | `phone` (unique, and the whole profile); `email`, `name`, `avatar`, `password_hash`, `wechat_openid` are retained legacy columns nothing reads |
 | `links` | Short links | `short_code` (unique), `original_url`, `domain`, `password_hash`, `expires_at`, `is_active`, `click_count` |
 | `click_logs` | One row per click | `platform`, `ip`, `referer`, `event_id` (unique, idempotency) |
 | `folders`, `tags`, `link_tags` | Organisation | `link_tags` is a plain junction table |
@@ -368,7 +368,9 @@ Two other sign-in paths were removed rather than hidden, and the reason is worth
 - **Email + password.** It duplicated what the phone path already did, added a second credential to
   police, and after the phone flow was hardened it was the only endpoint left that could be attacked
   without an SMS cost. `users.email` and `users.password_hash` remain in the schema so old rows keep
-  their data; `email` is now an optional contact field on the profile and nothing reads `password_hash`.
+  their data; the API publishes neither, and the route that used to write a name or an email onto the
+  profile (`PATCH /api/me`) went with them - the account is the phone number, so there is nothing left
+  for a caller to edit.
 
 ### 7.2 Login by phone
 
