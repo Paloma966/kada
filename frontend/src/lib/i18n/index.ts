@@ -9,7 +9,10 @@ export { I18nProvider } from "./context";
 export type { Locale };
 export const LOCALES: Locale[] = ["zh", "en"];
 
-/** Human-readable name of each locale, shown in the language switcher. */
+/**
+ * Full name of each locale. The language capsule prints the short marks instead; these are its accessible
+ * name and its tooltip, where the full name has room.
+ */
 export const LOCALE_LABELS: Record<Locale, string> = {
   zh: "中文",
   en: "English",

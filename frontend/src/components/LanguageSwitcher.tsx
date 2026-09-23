@@ -4,13 +4,22 @@ import { useEffect } from "react";
 import { LOCALE_LABELS, LOCALES, useI18n, type Locale } from "@/lib/i18n";
 
 /**
- * Two-letter marks for the capsule's segments.
+ * The marks the capsule prints: "中" and "EN".
  *
- * Language codes rather than names ("中文" / "English"): a code is the same two characters in both locales,
- * so the segments stay the same width and the thumb's travel never has to be recomputed when the language
- * changes. The full name is still what a screen reader announces, because "ZH" alone is a code, not a word.
+ * Short marks rather than the locale's own name ("中文" / "English"): a name is several glyphs wide, and this
+ * control lives in a top bar next to a 32px icon button, so it has to stay a chip. Both columns are equal
+ * whatever the two labels measure, so the thumb's half-track travel holds either way.
+ *
+ * "中" rather than "ZH", which is the point of the pair: it is the character its reader is scanning for, and
+ * it is what Chinese input methods already print in the space of a letter - the Windows and macOS IME
+ * indicator is 中 against 英. The other slot stays a Latin code because "EN" is what its reader is scanning
+ * for too - the two are not inconsistent, they are each written in the script that side reads fastest.
+ *
+ * Neither mark follows the active locale. The capsule shows both options at once, so a translated label
+ * would only ever rename one option in front of the reader who is not using it. The full names are still
+ * what a screen reader announces and what hovering shows, and those do not have to fit.
  */
-const SEGMENT_LABELS: Record<Locale, string> = { zh: "ZH", en: "EN" };
+const SEGMENT_LABELS: Record<Locale, string> = { zh: "中", en: "EN" };
 
 /**
  * Language switcher: a capsule with one segment per locale and a thumb that slides to the active one.
@@ -21,7 +30,7 @@ const SEGMENT_LABELS: Record<Locale, string> = { zh: "ZH", en: "EN" };
  *
  * No flags. A flag names a country, not a language: English is not owned by the United Kingdom, and the
  * marks this replaces had to be hand-drawn SVG to survive Windows, where emoji flags degrade to letters.
- * "ZH"/"EN" says the same thing in less space, in no country's colors, and is the one thing both locales
+ * "中"/"EN" says the same thing in less space, in no country's colors, and is the one pair both locales
  * can read.
  *
  * The thumb is the app's existing "selected" idiom - `bg-indigo-600 text-white shadow-sm`, the same fixed
@@ -70,7 +79,7 @@ export function LanguageSwitcher({
           type="button"
           onClick={() => setLocale(loc)}
           aria-pressed={locale === loc}
-          aria-label={`${SEGMENT_LABELS[loc]} ${LOCALE_LABELS[loc]}`}
+          aria-label={LOCALE_LABELS[loc]}
           title={LOCALE_LABELS[loc]}
           className={`relative min-w-9 rounded-full px-2.5 py-1.5 text-xs font-semibold transition-colors ${segment(
             locale === loc
