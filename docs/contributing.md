@@ -217,6 +217,12 @@ in its own commit so the meaningful part stays readable.
 The CI pipeline must be green before merge: `go vet`, `golangci-lint`, Go tests, ESLint,
 `tsc --noEmit`, and the frontend production build.
 
+That green pipeline is also the deploy. The same jobs run again on the push to `main`, and the `deploy`
+job they gate - which a pull request never starts - writes the runtime env files from repository
+secrets, applies the schema with the uploaded `cmd/migrate` binary, and only then restarts the API and
+the frontend. A required secret that is missing stops the deployment before any service on the host is
+touched, so the build already running keeps serving.
+
 ### Reporting a bug
 
 Include what you did, what you expected, what happened, and the relevant log lines. For backend
@@ -293,6 +299,7 @@ as deliberate operations with a backup, not as part of a normal change.
 | Document | Owns |
 |---|---|
 | `README.md` | What the project is, how to run it |
+| `README.zh-CN.md` | The same README in Chinese; `README.md` is the source, so the two change together |
 | `docs/design.md` | Architecture, data model, flows, decisions, limitations |
 | `docs/contributing.md` | This file: workflow, commits, pull requests |
 | `docs/code-style.md` | Conventions for Go, TypeScript and SQL |
