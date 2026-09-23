@@ -2,15 +2,14 @@
 
 import { useEffect, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
-import { LogOut, Menu } from "lucide-react";
-import { toast } from "sonner";
+import { Menu } from "lucide-react";
 import { Sidebar } from "./Sidebar";
 import { LanguageSwitcher } from "./LanguageSwitcher";
 import { ThemeToggle } from "./ThemeToggle";
-import { getToken, getUser, removeToken } from "@/lib/auth";
+import { TOP_BAR_GUTTER, TOP_BAR_HEIGHT } from "./topBar";
+import { getToken } from "@/lib/auth";
 import { useT } from "@/lib/i18n";
 import { useHydrated } from "@/lib/useHydrated";
-import type { User as UserType } from "@/lib/auth";
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -18,14 +17,13 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const t = useT();
   // The token lives in localStorage, which does not exist while the server renders. Reading it directly
   // would make the server's output (the spinner) disagree with the client's first render (the shell), and
-  // React would throw the tree away as a hydration mismatch. Gating on `hydrated` keeps the two in step;
-  // `user` is read through the same gate, since it comes from localStorage too.
+  // React would throw the tree away as a hydration mismatch. Gating on `hydrated` keeps the two in step.
   const hydrated = useHydrated();
-  const user: UserType | null = hydrated ? getUser() : null;
-  const [showDropdown, setShowDropdown] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
-  const ready = hydrated && !!getToken() && !!user;
+  // The stored profile is not read here any more: the avatar menu that printed the name and the email is
+  // gone, and the settings page reads its own copy. A valid token is the whole of what "signed in" means.
+  const ready = hydrated && !!getToken();
 
   useEffect(() => {
     if (hydrated && !ready) {
@@ -40,21 +38,6 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     setPrevPath(pathname);
     setSidebarOpen(false);
   }
-
-  // Close dropdown when clicking outside
-  useEffect(() => {
-    const handler = () => setShowDropdown(false);
-    if (showDropdown) {
-      document.addEventListener("click", handler);
-      return () => document.removeEventListener("click", handler);
-    }
-  }, [showDropdown]);
-
-  const handleLogout = () => {
-    removeToken();
-    toast.success(t("已退出"));
-    router.push("/login");
-  };
 
   if (!ready) {
     return (
@@ -108,7 +91,9 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       {/* Right: Top bar + Content */}
       <div className="flex flex-1 flex-col min-w-0">
         {/* Top Bar */}
-        <header className="flex h-14 items-center justify-between border-b border-line bg-canvas px-4 sm:px-6 shrink-0">
+        <header
+          className={`flex ${TOP_BAR_HEIGHT} items-center justify-between border-b border-line bg-canvas ${TOP_BAR_GUTTER} shrink-0`}
+        >
           <div className="flex items-center gap-3">
             {/* Mobile menu button */}
             <button
@@ -120,53 +105,13 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             <h2 className="text-sm font-medium text-body">{pageTitle}</h2>
           </div>
 
-          {/* Right: theme + language switcher + user */}
+          {/* Right: theme + language. The avatar menu that used to sit here went with the profile fields it
+              displayed, and signing out now lives on the settings page - the one page that is about the
+              account. The switcher stays flush against the bar's gutter, which is what puts it on the same
+              pixel as the sign-in page's pinned copy. */}
           <div className="flex items-center gap-2">
             <ThemeToggle />
             <LanguageSwitcher />
-            <div className="relative">
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setShowDropdown(!showDropdown);
-                }}
-                className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm transition-colors hover:bg-muted-surface"
-              >
-                <div className="flex size-8 items-center justify-center rounded-full bg-brand-soft text-sm font-medium text-brand-ink shrink-0">
-                  {(user?.name || user?.email || "U")[0].toUpperCase()}
-                </div>
-                <span className="hidden sm:block text-sm font-medium text-body max-w-[120px] truncate">
-                  {user?.name || user?.email || t("用户")}
-                </span>
-              </button>
-
-              {/* Dropdown */}
-              {showDropdown && (
-                <div
-                  className="absolute right-0 top-full mt-1 w-48 rounded-lg border border-line bg-canvas py-1 shadow-lg z-50"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <div className="px-3 py-2 border-b border-line">
-                    <p className="text-sm font-medium text-strong truncate">
-                      {user?.name || t("用户")}
-                    </p>
-                    {user?.email && (
-                      <p className="text-xs text-muted truncate">{user.email}</p>
-                    )}
-                    {user?.phone && (
-                      <p className="text-xs text-muted">{user.phone}</p>
-                    )}
-                  </div>
-                  <button
-                    onClick={handleLogout}
-                    className="flex w-full items-center gap-2 px-3 py-2 text-sm text-muted hover:bg-muted-surface transition-colors"
-                  >
-                    <LogOut className="size-4" />
-                    {t("退出登录")}
-                  </button>
-                </div>
-              )}
-            </div>
           </div>
         </header>
 

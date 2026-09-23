@@ -18,7 +18,6 @@ type AuthService interface {
 	SendSMSCode(ctx context.Context, phone, ip, captchaID, captchaAnswer string) error
 	LoginByPhone(ctx context.Context, phone, code string) (*domain.AuthResponse, error)
 	GetUserByID(ctx context.Context, userID int64) (*domain.UserInfo, error)
-	UpdateUser(ctx context.Context, userID int64, name *string, email *string) (*domain.UserInfo, error)
 }
 
 type Handler struct {
@@ -34,6 +33,10 @@ func NewHandler(svc AuthService) *Handler {
 // Signing in is phone-only. The email/password and WeChat routes are gone, not merely hidden in the UI:
 // an endpoint nobody uses is still an endpoint that can be attacked, and leaving `/auth/login-by-email`
 // reachable would keep a password path alive that no page links to and no test covers.
+//
+// `PATCH /me` went the same way once the profile became the phone number. A phone cannot be changed
+// without verifying the new one (a flow this app does not have) and there is no other field left to write,
+// so the route would have accepted a body and changed nothing.
 func (h *Handler) RegisterRoutes(r *gin.RouterGroup, authMW gin.HandlerFunc, strictMW ...gin.HandlerFunc) {
 	// Public routes (strict rate limiting can be applied).
 	public := r.Group("")
@@ -47,7 +50,6 @@ func (h *Handler) RegisterRoutes(r *gin.RouterGroup, authMW gin.HandlerFunc, str
 	// Routes that require authentication.
 	auth := r.Group("").Use(authMW)
 	auth.GET("/me", h.GetMe)
-	auth.PATCH("/me", h.UpdateMe)
 }
 
 // Captcha issues the graphical challenge that SendSMSCode requires.
@@ -118,26 +120,6 @@ func (h *Handler) LoginByPhone(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"token": resp.Token, "user": resp.User})
-}
-
-// UpdateMe updates the current user's profile.
-func (h *Handler) UpdateMe(c *gin.Context) {
-	var req struct {
-		Name  *string `json:"name"`
-		Email *string `json:"email" binding:"omitempty,email"`
-	}
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "valid update details are required"})
-		return
-	}
-
-	user, err := h.svc.UpdateUser(c.Request.Context(), middleware.GetUserID(c), req.Name, req.Email)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{"user": user})
 }
 
 // GetMe returns the current user's profile.

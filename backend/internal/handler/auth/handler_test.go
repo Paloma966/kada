@@ -20,7 +20,6 @@ type mockAuthService struct {
 	sendSMSCode     func(ctx context.Context, phone, ip, captchaID, captchaAnswer string) error
 	loginByPhone    func(ctx context.Context, phone, code string) (*domain.AuthResponse, error)
 	getUserByID     func(ctx context.Context, userID int64) (*domain.UserInfo, error)
-	updateUser      func(ctx context.Context, userID int64, name *string, email *string) (*domain.UserInfo, error)
 }
 
 func (m *mockAuthService) GenerateCaptcha(ctx context.Context, ip string) (*domain.CaptchaResponse, error) {
@@ -49,13 +48,6 @@ func (m *mockAuthService) GetUserByID(ctx context.Context, userID int64) (*domai
 		return m.getUserByID(ctx, userID)
 	}
 	return &domain.UserInfo{ID: userID, Phone: strPtr("13800138000")}, nil
-}
-
-func (m *mockAuthService) UpdateUser(ctx context.Context, userID int64, name *string, email *string) (*domain.UserInfo, error) {
-	if m.updateUser != nil {
-		return m.updateUser(ctx, userID, name, email)
-	}
-	return &domain.UserInfo{ID: userID, Name: name, Email: email}, nil
 }
 
 func strPtr(s string) *string { return &s }
@@ -357,5 +349,37 @@ func TestGetMe_ReturnsUser(t *testing.T) {
 
 	if w.Code != http.StatusOK {
 		t.Errorf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+// ========== Profile ==========
+
+// The account payload is published to every client and cached in localStorage, so its shape is asserted
+// rather than assumed: the profile is the phone number and nothing else (see domain.UserInfo).
+func TestUserInfoPublishesOnlyThePhone(t *testing.T) {
+	body, err := json.Marshal(domain.UserInfo{ID: 7, Phone: strPtr("13800138000")})
+	if err != nil {
+		t.Fatalf("marshal failed: %v", err)
+	}
+	if got, want := string(body), `{"id":7,"phone":"13800138000"}`; got != want {
+		t.Errorf("user payload = %s, want %s", got, want)
+	}
+}
+
+// PATCH /me is removed, not merely unused. It accepted a name and an email - fields the account no longer
+// has - so it would now answer 200 to a request that changes nothing, which is worse than a 404.
+func TestRegisterRoutes_ProfileUpdateIsGone(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	v1 := r.Group("/api")
+	NewHandler(&mockAuthService{}).RegisterRoutes(v1, func(c *gin.Context) { c.Next() })
+
+	req := httptest.NewRequest("PATCH", "/api/me", bytes.NewReader([]byte(`{"name":"paloma"}`)))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Errorf("PATCH /api/me answered %d; the profile-update route must be removed", w.Code)
 	}
 }
