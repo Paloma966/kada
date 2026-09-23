@@ -6,7 +6,7 @@ import { Menu } from "lucide-react";
 import { Sidebar } from "./Sidebar";
 import { LanguageSwitcher } from "./LanguageSwitcher";
 import { ThemeToggle } from "./ThemeToggle";
-import { TOP_BAR_GUTTER, TOP_BAR_HEIGHT } from "./topBar";
+import { TOP_BAR_CAPSULE_OVERHANG, TOP_BAR_GUTTER, TOP_BAR_HEIGHT } from "./topBar";
 import { getToken } from "@/lib/auth";
 import { useT } from "@/lib/i18n";
 import { useHydrated } from "@/lib/useHydrated";
@@ -107,11 +107,11 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
 
           {/* Right: theme + language. The avatar menu that used to sit here went with the profile fields it
               displayed, and signing out now lives on the settings page - the one page that is about the
-              account. The switcher stays flush against the bar's gutter, which is what puts it on the same
-              pixel as the sign-in page's pinned copy. */}
+              account. The capsule overhangs the bar's gutter by the shared step, which is what puts it on
+              the same pixel as the sign-in page's pinned copy. */}
           <div className="flex items-center gap-2">
             <ThemeToggle />
-            <LanguageSwitcher />
+            <LanguageSwitcher className={TOP_BAR_CAPSULE_OVERHANG} />
           </div>
         </header>
 
