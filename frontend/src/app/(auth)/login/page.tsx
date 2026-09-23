@@ -11,7 +11,7 @@ import { setToken, setUser } from "@/lib/auth";
 import { AuthCard } from "@/components/auth/AuthCard";
 import { FormField, inputBase, fieldState } from "@/components/auth/FormField";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
-import { TOP_BAR_CONTROLS_PINNED } from "@/components/topBar";
+import { TOP_BAR_CAPSULE_OVERHANG, TOP_BAR_CONTROLS_PINNED } from "@/components/topBar";
 import { useT } from "@/lib/i18n";
 
 /**
@@ -184,7 +184,7 @@ export default function LoginPage() {
       {/* Pinned to the corner the app shell's top bar puts these controls in, so the switcher does not
           move as you sign in: the position is shared rather than copied. */}
       <div className={TOP_BAR_CONTROLS_PINNED}>
-        <LanguageSwitcher onDark />
+        <LanguageSwitcher onDark className={TOP_BAR_CAPSULE_OVERHANG} />
       </div>
       <AuthCard
         title={t("登录 Kada")}
