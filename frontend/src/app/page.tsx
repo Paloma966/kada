@@ -4,6 +4,7 @@ import Link from "next/link";
 import { Link2 } from "lucide-react";
 import StarfieldCanvas from "@/components/StarfieldCanvas";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
+import { TOP_BAR_GUTTER, TOP_BAR_HEIGHT } from "@/components/topBar";
 import { useT } from "@/lib/i18n";
 
 export default function HomePage() {
@@ -15,7 +16,11 @@ export default function HomePage() {
       <StarfieldCanvas className="absolute inset-0 h-full w-full" />
 
       <div className="absolute inset-0 z-10 flex flex-col">
-        <header className="flex items-center justify-between px-6 py-5 sm:px-8">
+        {/* Height and gutter are the app shell's, because the language capsule is centred in this row: the
+            row height is what decides which pixel it lands on. On the hero's own py-5 rhythm it sat 10px
+            lower and 8px further from the edge than the capsule on the sign-in and dashboard screens. Only
+            the geometry is shared - no border and no background, since this header floats on the starfield. */}
+        <header className={`flex ${TOP_BAR_HEIGHT} items-center justify-between ${TOP_BAR_GUTTER}`}>
           <div className="flex items-center gap-2.5">
             <div className="flex size-8 items-center justify-center rounded-lg bg-indigo-600">
               <Link2 className="size-4 text-white" />
