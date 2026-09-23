@@ -1,5 +1,7 @@
 # Kada
 
+**English** | [简体中文](README.zh-CN.md)
+
 A short link management and analytics platform. Supports link folders and tags, custom domains, access passwords, expiry times, UTM templates, a click analytics dashboard, and an AI assistant that answers questions about your own links.
 
 The backend is written in Go, the frontend in Next.js, click events are processed asynchronously through Kafka, and the AI assistant is a separate Python service behind the Go gateway.
@@ -48,21 +50,16 @@ and [docs/ai-deployment.md](docs/ai-deployment.md).
 Requirements: Go 1.26+, Node 22+, Docker.
 
 ```bash
-# 1. Prepare environment variables and set a strong random JWT_SECRET
 cp .env.example .env
-
-# 2. Start all services (the API applies the schema on startup)
 docker compose up -d
-
-# 3. Apply the schema only (also runs on every deploy, before the API restarts)
-cd backend && go run ./cmd/migrate/
 ```
 
 Local development:
 
 ```bash
-cd backend && go run ./cmd/server/main.go   # backend on :8080
-cd frontend && npm run dev                  # frontend on :3000
+cd backend && go run ./cmd/migrate/         # schema only - the API applies it on startup
+cd backend && go run ./cmd/server/main.go   # 8080
+cd frontend && npm run dev                  # 3000
 ```
 
 ## Environment variables
@@ -79,35 +76,6 @@ cd frontend && npm run dev                  # frontend on :3000
 
 In production these come from GitHub repository secrets and are written into `/opt/kada/ai/ai.env` and
 `/opt/kada/backend/.env` by the deploy job; see [docs/ai-deployment.md](docs/ai-deployment.md).
-
-## Common commands
-
-```bash
-cd backend && go test ./... -v        # backend tests
-cd backend && go vet ./...            # backend vet
-cd frontend && npm run lint           # ESLint
-cd frontend && npx tsc --noEmit       # type check
-cd backend && go run ./cmd/migrate/   # apply the schema
-docker compose up -d                  # start the dev stack
-docker compose logs -f                # follow the logs
-```
-
-## Documentation
-
-| Document | Contents |
-|----------|----------|
-| [docs/design.md](docs/design.md) | Architecture, data model, request flows, design decisions, known limitations |
-| [docs/contributing.md](docs/contributing.md) | Local setup, workflow, commit conventions, pull requests |
-| [docs/code-style.md](docs/code-style.md) | Go, TypeScript and database conventions used in this repository |
-| [docs/ai-deployment.md](docs/ai-deployment.md) | Pushing the AI feature and what the server needs |
-| [backend/ai/README.md](backend/ai/README.md) | AI service architecture, environment variables, API contracts, tools |
-
-## Deployment
-
-GitHub Actions runs lint, tests, builds, and the deployment itself on every push to `main`: the Go
-binaries and the frontend build are uploaded, the AI image is built on the host, and the runtime env
-files are written from repository secrets by `deploy/upsert-env.sh` before any service is touched. A
-missing required secret fails the deployment while the previous build is still serving.
 
 ## Layout
 
