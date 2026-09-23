@@ -1,293 +1,206 @@
-# Kada AI 功能：提交推送与服务器部署
+# Deploying the AI service
 
-本文覆盖两件事：**你把代码推到 GitHub**（第一部分），以及**合并后同学在服务器上要做什么**（第二
-部分）。两者是连着的——合并到 `main` 就会自动部署，所以第一部分里"合并前必须完成的准备"不能跳过。
+The AI assistant is the Go gateway plus a Python service in the `kada-ai` container (see
+[`backend/ai/README.md`](../backend/ai/README.md)). This document is the handover for it: what has to exist
+on the host once, what a deploy does, how to verify it, and how to recover.
 
-改动范围：AI 助手（Go 网关 + Python 服务 + 前端 AI 页面）。短链、统计等原有功能的接口未改动。
+Merging to `main` deploys it. The work left for the host is the one-time setup below and the verification
+afterwards.
 
----
+## One-time setup (on the host, before the first deploy)
 
-## 一、推送到 GitHub（你来做）
+### 1. The `kada_ai` database and the vector extension
 
-### 1. 合并前必须先完成的三件事
-
-合并到 `main` = 立即部署。**没有下面三项，部署会在第 0 步就停下**（第 0 步同步密钥，失败时旧版本仍在
-运行，站点不受影响，只是这次部署不会完成）：
-
-1. **建 AI 数据库**（只需一次）：
-
-   ```bash
-   scp deploy/setup-ai-db.sh root@<服务器IP>:/tmp/
-   ssh root@<服务器IP> "bash /tmp/setup-ai-db.sh"
-   ```
-
-   它创建 `kada_ai` 库并在该库内启用 `vector` 扩展，可重复执行。
-   报 `pgvector is not available` → 原生 PostgreSQL 装 `postgresql-16-pgvector` 并重启，
-   Docker 则换成 `pgvector/pgvector:pg16` 镜像。
-
-2. **配 `/opt/kada/ai/ai.env` 里的连接串**（服务器上，只需一次）：
-
-   ```bash
-   mkdir -p /opt/kada/ai
-   scp deploy/ai.env.example root@<服务器IP>:/opt/kada/ai/ai.env
-   ssh root@<服务器IP> "chmod 600 /opt/kada/ai/ai.env && vi /opt/kada/ai/ai.env"
-   ```
-
-   只需要填三个**非密钥**的连接串：`POSTGRES_URL`、`REDIS_URL`、`KADA_API_BASE`。
-   `DEEPSEEK_API_KEY`、`aliyun`、`AI_INTERNAL_SECRET` 不用手填——第 3 步配好后，部署时会自动写进去。
-
-3. **在 GitHub 仓库加密钥**（Settings → Secrets and variables → Actions）：
-
-   | Secret | 用途 | 写到哪 | 缺失时 |
-   | --- | --- | --- | --- |
-   | `DEEPSEEK_API_KEY` | 对话模型密钥 | `ai.env` 的 `DEEPSEEK_API_KEY` | **部署失败** |
-   | `DASHSCOPE_API_KEY` | 阿里云百炼 Embedding 密钥 | `ai.env` 的 `aliyun` | **部署失败** |
-   | `AI_INTERNAL_SECRET` | 网关共享密钥，`openssl rand -hex 32` 生成 | **两边都写**：`ai.env` 与 `backend/.env` | **部署失败** |
-   | `SMS_ACCESS_KEY_ID` / `SMS_ACCESS_KEY_SECRET` / `SMS_SIGN_NAME` / `SMS_TEMPLATE_CODE` | 阿里云短信 | `backend/.env` | **部署失败**（这四个是唯一的登录方式） |
-
-   部署作业的第 0 步用 `deploy/upsert-env.sh` 把这些值幂等写入上面两个文件，**在替换任何服务之前**。
-   缺任一个就在这一步失败并打印是哪一个，旧版本继续对外服务——比"服务起来了、健康检查过了、然后每个
-   请求都失败"好排查得多。
-
-   关键：**`--require` 检查的是服务器上的文件，不是 Secret 是否存在**。因为 `--set` 遇空值会保留文件里
-   已有的值，所以：
-
-   - 手工在 `/opt/kada/backend/.env` 里配好的值，**不需要**同时加进 Secret 也能正常部署；
-   - 反过来，只要这四个值在服务器上齐了，部署就不会因为 Secret 没配而失败。
-
-   runner 上另有一个**永不失败**的提示步骤：如果这四个 Secret 没配，它会打一条 notice 并在 Job Summary
-   里说明"CI 目前不管理这四个值"。这不是故障告警（服务器上可能有），但它值得看——只存在于服务器上的
-   配置，在机器重建或密钥轮换时会丢。**把它们加进 Secret 后提示自动消失，之后 CI 全权接管。**
-
-   另外两项检查（不属于阻塞项，但会导致体验降级）：
-
-   - 服务器 nginx 要有 `/api/ai/` 的 location（关闭缓冲，SSE 才能逐字输出）。没有就按第二部分里的
-     nginx 步骤更新。
-   - 平台「设置 → API Token」里**吊销旧的长效令牌**。代码已经不用它了，但它仍在 git 历史中，是一把真令牌。
-
-### 2. 提交
+`deploy/setup-ai-db.sh` creates the database and enables `vector` in it. It is idempotent, keeps existing
+data, and works out for itself whether PostgreSQL is a container or a native process:
 
 ```bash
-cd <本仓库>
-git switch -c feat/ai-per-user-identity
-git reset                      # 清空暂存区（含 session.py→conversation.py 的重命名），便于分组提交
-git status --short             # 确认列表里没有 .env / ai.env / 临时产物
+scp deploy/setup-ai-db.sh root@<host>:/tmp/
+ssh root@<host> "bash /tmp/setup-ai-db.sh"
 ```
 
-按主题分三次提交（提交信息用英文、conventional 前缀、冒号后小写、不加署名尾注）：
-
-```bash
-# ① 行为改动：工具以登录用户身份执行 + 服务只认网关 + 路由去版本段
-git add backend/ai/app backend/ai/requirements.txt \
-        backend/internal/handler/ai backend/config/config.go backend/cmd/server/main.go \
-        frontend/src
-git commit -m "feat(ai): act as the signed-in user and accept only gateway requests"
-
-# ② CI 与部署：镜像构建、冒烟测试、自动部署
-git add .github/workflows/ci.yml deploy docker-compose.yml .env.example backend/.env.example
-git commit -m "ci: build, smoke-test and deploy the AI service"
-
-# ③ 文档
-git add backend/ai/README.md docs/design.md docs/ai-deployment.md "backend/ai/docs/Kada项目知识库.md"
-git commit -m "docs(ai): document the deployment, routes and credentials"
-```
-
-不想拆就一句 `git add -A && git commit -m "feat(ai): ..."`，功能上没区别。
-
-### 3. 推分支、看 CI
-
-```bash
-git push -u origin feat/ai-per-user-identity
-```
-
-然后在 GitHub 开一个到 `main` 的 Pull Request。**PR 不会触发部署**（deploy 作业有
-`if: github.ref == 'refs/heads/main'`），只会跑六个检查作业：
-
-| 作业 | 检查内容 | 预期耗时 |
-| --- | --- | --- |
-| backend-lint | `golangci-lint`（本次动了 Go 网关） | 1–2 分钟 |
-| backend-test | Go 单测（含网关的 5 个用例） | 1–2 分钟 |
-| frontend-lint / frontend-build | ESLint、`tsc --noEmit`、`next build` | 2–3 分钟 |
-| ai-build | 真的构建 AI 镜像 → 校验 DashScope SDK → 起 PostgreSQL 冒烟测 `/healthz`、网关守卫三类状态码 | 3–6 分钟 |
-
-全绿再合并；有红的先修（这一步是零成本的预检，不碰生产）。
-
-### 4. 合并到 main
-
-合并（普通合并 / squash 都行）后流水线会多出 `deploy` 作业，部署步骤如下：
-
-0. **同步密钥**：从 GitHub Secrets 把 `DEEPSEEK_API_KEY` / `DASHSCOPE_API_KEY` / `AI_INTERNAL_SECRET`
-   与四个 `SMS_*` 写入服务器上的 `ai.env` 与 `backend/.env`。任一必填项在写入后仍为空就立刻失败退出；
-   注意检查的是**服务器上的文件**，所以手工配在 `.env` 里的值同样能满足检查。
-   这一步放在最前面，所以密钥缺失时旧版本仍在服务，站点不受影响。
-1. 备份 `kada-api` 二进制 → 应用数据库迁移 → 重启 `kada-api` → 健康检查（失败则回滚二进制）
-2. 替换并重启前端
-3. **同步 `backend/ai` 源码到服务器 → 在服务器上构建 AI 镜像 → 重启 `kada-ai` 容器 → 探活 →
-   失败自动回滚到上一个镜像**
-
-整个 deploy 作业约 5–15 分钟，大部分时间在第 3 步首次构建镜像（拉 `python:3.11-slim` + 装依赖）。
-
-> **注意：第 1 步之后到第 3 步完成之间，AI 页面会返回 404。** 因为这次路由改名是"三端一起改"，
-> 新 Go 二进制只认新路径，而旧 AI 容器只认旧路径。窗口只有几分钟，第 3 步成功后自愈，用户重新
-> 发一条消息即可。短链主站不受影响。
-
-**必须新增 GitHub Secret**：除了已有的 `SERVER_HOST`、`SERVER_USER`、`SSH_PRIVATE_KEY`、
-`DATABASE_URL`（`SITE_URL` 变量可选），还要加上第 1 节表格里的七个（`DEEPSEEK_API_KEY`、
-`DASHSCOPE_API_KEY`、`AI_INTERNAL_SECRET`、四个 `SMS_*`）。它们都由流水线写进服务器的 `ai.env` 与
-`backend/.env`，所以以后改密钥只需要改 Secret 再重跑部署，不用再登服务器。
-（唯一的例外：这些值已经手工写在服务器 `.env` 里时，不加 Secret 也能正常部署——部署检查的是那个文件。
-但只存在于服务器上的配置，在机器重建时会丢，所以还是建议补上。）
-
----
-
-## 二、服务器部署（同学来做）
-
-如果你拿到的是一台**已经在跑 Kada** 的服务器（Go API / 前端是 systemd，nginx 是 Docker 容器，
-PostgreSQL 与 Redis 已在本机运行），按下面的顺序做即可。
-
-### 准备阶段（合并前，三件）
-
-**① 建 AI 数据库**
-
-把仓库里的 `deploy/setup-ai-db.sh` 拷到服务器执行（可重复执行，不会覆盖已有数据）：
-
-```bash
-scp deploy/setup-ai-db.sh root@<服务器>:/tmp/
-ssh root@<服务器> "bash /tmp/setup-ai-db.sh"
-```
-
-脚本会自己判断 PostgreSQL 是容器还是原生进程，并给出下一步提示。它做的其实就是：
+Which amounts to:
 
 ```sql
-CREATE DATABASE kada_ai;                      -- 已存在时会报错，属正常
+CREATE DATABASE kada_ai;                      -- errors if it already exists, which is fine
 \connect kada_ai
 CREATE EXTENSION IF NOT EXISTS vector;
 ```
 
-> 注意扩展要装在 **`kada_ai`** 库里，不是 Go 业务库 `kada`。
-> `deploy/postgres/initdb/01-create-ai-db.sql` 只在数据卷**首次初始化**时生效，已有数据的服务器
-> 必须用上面的脚本。
+- `pgvector is not available` means the extension is not installed: on native PostgreSQL install
+  `postgresql-16-pgvector` and restart it, on Docker switch to the `pgvector/pgvector:pg16` image.
+- The extension belongs in `kada_ai`, not in the Go business database `kada`. The init script
+  (`deploy/postgres/initdb/01-create-ai-db.sql`) only runs when the data volume is created for the first
+  time, so a host that already holds data has to use the script above.
 
-**② 配 AI 的连接串（密钥交给流水线）**
+### 2. `/opt/kada/ai/ai.env`
 
 ```bash
 mkdir -p /opt/kada/ai
-cp /path/to/deploy/ai.env.example /opt/kada/ai/ai.env
-chmod 600 /opt/kada/ai/ai.env
-vi /opt/kada/ai/ai.env
+scp deploy/ai.env.example root@<host>:/opt/kada/ai/ai.env
+ssh root@<host> "chmod 600 /opt/kada/ai/ai.env && vi /opt/kada/ai/ai.env"
 ```
 
-| 变量 | 填什么 |
+(or, on the host with the repository checked out: `cp deploy/ai.env.example /opt/kada/ai/ai.env`)
+
+Three connection strings, none of them secret:
+
+| Variable | Value |
 | --- | --- |
-| `POSTGRES_URL` | `postgresql+asyncpg://kada:<数据库密码>@127.0.0.1:5432/kada_ai` |
+| `POSTGRES_URL` | `postgresql+asyncpg://kada:<database password>@127.0.0.1:5432/kada_ai` |
 | `REDIS_URL` | `redis://127.0.0.1:6379/0` |
 | `KADA_API_BASE` | `http://127.0.0.1:8080` |
 
-另外三个（`DEEPSEEK_API_KEY`、`aliyun`、`AI_INTERNAL_SECRET`）**留空即可**：部署作业会用
-`deploy/upsert-env.sh` 从 GitHub Secrets 写进去，`--set` 遇到空值不会覆盖已有内容，
-`--require` 会在值仍然缺失时让部署失败并说明缺哪个。
+Take the password from `DATABASE_URL` in `/opt/kada/backend/.env`, with the database name changed from
+`kada` to `kada_ai`.
 
-**③ 网关侧的同名密钥：不用手配**
+Leave `DEEPSEEK_API_KEY`, `aliyun` and `AI_INTERNAL_SECRET` empty: the deploy job writes them from GitHub
+Secrets, and `--set` with an empty value never overwrites what is already in the file.
 
-`AI_INTERNAL_SECRET` 也由同一个 Secret 写进 `/opt/kada/backend/.env`。以前它需要在两个文件里各填一遍、
-值还必须完全一致，不一致时 AI 页面整体返回 401 `only the Go gateway may call this service`——现在两边
-出自同一个 Secret，不可能再对不上。
+`POSTGRES_URL` is the one value that must not be left to a default: `backend/ai/app/config.py` falls back
+to a development DSN with a guessed password, so an empty one would produce a container that starts and
+then crash-loops inside `init_db()` - after the image had been built. `deploy/deploy-ai.sh` closes that
+hole by refusing to build unless the file exists and `POSTGRES_URL`, `DEEPSEEK_API_KEY` and `aliyun` are
+filled in, and warns rather than refuses when `AI_INTERNAL_SECRET` is empty. `REDIS_URL` and
+`KADA_API_BASE` are deliberately not required: their defaults are what this host already runs.
 
-`deploy-ai.sh` 在构建镜像前会再校验一次：`/opt/kada/ai/ai.env` 不存在、或 `DEEPSEEK_API_KEY` / `aliyun`
-为空，就直接拒绝构建——服务"能起来、健康检查能过、然后每个请求都失败"是最难排查的一种坏法。
+### 3. GitHub repository secrets
 
-另外确认 nginx 配置里有 `/api/ai/` 段（关闭缓冲，否则 SSE 打字效果消失、60 秒断流）：
+Settings -> Secrets and variables -> Actions:
+
+| Secret | Purpose | Written to | If missing |
+| --- | --- | --- | --- |
+| `DEEPSEEK_API_KEY` | chat model key | `ai.env` | deploy fails |
+| `DASHSCOPE_API_KEY` | Aliyun Bailian embedding key | `ai.env`, as `aliyun` | deploy fails |
+| `AI_INTERNAL_SECRET` | gateway shared secret, `openssl rand -hex 32` | `ai.env` **and** `backend/.env` | deploy fails |
+| `SMS_ACCESS_KEY_ID` / `SMS_ACCESS_KEY_SECRET` / `SMS_SIGN_NAME` / `SMS_TEMPLATE_CODE` | Aliyun SMS | `backend/.env` | deploy fails - these four are the only way anyone signs in |
+
+The deploy job syncs them from GitHub Secrets with `deploy/upsert-env.sh` before it replaces any service,
+and stops with the name of the missing key if one is still empty afterwards. That is deliberately louder
+than the alternative: a service that starts, passes its health check and then fails every request is the
+worst way to find out that a key never arrived.
+
+`--require` checks the file on the host, not whether the secret exists, which has two consequences:
+
+- a value configured by hand in the host's `.env` satisfies it, so a host that was set up before the
+  secrets existed keeps deploying;
+- a value that exists only on the host is lost when the machine is rebuilt - which is the reason to add the
+  secret anyway. A non-fatal notice in the job summary says so while any of the four SMS credentials is
+  unmanaged, and disappears once they are set.
+
+### 4. nginx, and the old API token
+
+The `/api/ai/` location in `nginx/nginx-prod.conf` turns proxy buffering off. Without it the SSE answer
+arrives in one piece instead of streaming, or the connection dies at 60 seconds:
 
 ```bash
-docker exec kada-nginx nginx -T 2>/dev/null | grep -c 'location /api/ai/'   # 应为 1
+docker exec kada-nginx nginx -T 2>/dev/null | grep -c 'location /api/ai/'   # expect 1
 ```
 
-没有就在服务器上更新配置并重启 nginx 容器：
+If it is missing, copy the configuration over and restart the container:
 
 ```bash
-scp nginx/nginx-prod.conf root@<服务器>:/opt/kada/nginx/
-ssh root@<服务器> "docker restart kada-nginx"
+scp nginx/nginx-prod.conf root@<host>:/opt/kada/nginx/
+ssh root@<host> "docker restart kada-nginx"
 ```
 
-### 合并后
+Also revoke the old long-lived API token in the platform's settings (Settings -> API Token). Nothing reads
+it any more - the tools act as the signed-in user - but it is a real token, and it stays in the git history.
 
-不需要你在服务器上做任何操作，流水线会自动完成：构建镜像 → 重启容器 → 探活（失败回滚到上一个
-镜像）。你只需要看 GitHub Actions 的 `deploy` 作业是否变绿。
+## What a deploy does
 
-### 验收（5 项）
+A pull request runs the checks and never the deploy job (`if: github.ref == 'refs/heads/main' &&
+github.event_name == 'push'`). Merging to `main` runs, in order:
+
+1. **Sync secrets** from GitHub Secrets into `ai.env` and `backend/.env`. A required value that is still
+   empty fails the deploy here, while the previous build keeps serving.
+2. **Go API**: back the running binary up, apply the schema, restart `kada-api`, health-check it and roll
+   the binary back on failure - then replace and restart the frontend.
+3. **AI service**: copy `backend/ai` to the host, build the image there, restart the `kada-ai` container,
+   probe it, and roll back to `kada-ai:previous` if it never becomes healthy.
+
+5-15 minutes; most of it step 3 on a cold cache (`python:3.11-slim` plus the dependencies).
+
+> Between step 2 and the end of step 3 the AI page returns 404. The route rename dropped `/v1` on all three
+> tiers at once, so the new Go binary and the old AI container disagree about paths for those few minutes.
+> It heals itself when step 3 finishes and the user sends one more message. Short links are unaffected.
+
+## After the deploy: verify
 
 ```bash
-# ① 容器在跑，端口只绑本机
+# 1. the container is up, bound to loopback only
 docker ps --filter name=kada-ai
-ss -ltnp | grep 8000                      # 应显示 127.0.0.1:8000
+ss -ltnp | grep 8000                      # 127.0.0.1:8000
 
-# ② 健康检查（不需要密钥）
+# 2. health check, no secret needed
 curl -s http://127.0.0.1:8000/healthz     # {"status":"ok","service":"kada-ai","model":"deepseek-flash"}
 
-# ③ 网关守卫生效：没有密钥必须被拒
+# 3. the gateway guard: no secret, no entry
 curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8000/conversations/current   # 401
 
-# ④ 短链主站没受影响
+# 4. the link site is untouched
 curl -s http://127.0.0.1:8080/api/health
 ```
 
-⑤ 浏览器登录平台 → 打开 AI 页面 → 发一句"我有多少条短链"，应逐字流式回答并能引用真实数据；
-点"重新开始"能清空并新建会话。
+5. In a browser: sign in, open the AI page, ask how many short links there are. The answer should stream a
+   character at a time and cite real data, and "start over" should clear the conversation and open a new one.
 
-### 部署后：知识库入库（一次）
+## Knowledge base (once, and after the documentation changes)
 
 ```bash
 docker exec kada-ai python -m app.scripts.ingest_docs
 ```
 
-不跑也能正常对话，只是回答里没有平台资料（检索失败会降级为"知识库中没有相关资料"并写日志）。
-文档更新后需要重跑，每次都会重建同名 collection。
+Chat works without it: retrieval then degrades to the answer that the knowledge base holds nothing relevant
+(`知识库中没有相关资料`) and logs `[RAG] 检索失败`. Re-running rebuilds the collection.
 
-### 日常维护命令
+## Maintenance
 
 ```bash
-docker logs -f kada-ai                                   # 看日志
-docker restart kada-ai                                   # 只重启
-cd /opt/kada/ai && docker compose build && docker compose up -d   # 用现存源码重建
+docker logs -f kada-ai                                            # logs
+docker restart kada-ai                                            # restart only
+cd /opt/kada/ai && docker compose build && docker compose up -d   # rebuild from the source on the host
 ```
 
-### 回滚
+## Rollback
 
-| 组件 | 做法 |
+| Component | How |
 | --- | --- |
-| AI 容器 | `docker tag kada-ai:previous kada-ai:deploy && docker compose -f /opt/kada/ai/docker-compose.yml up -d --force-recreate` |
-| Go API | 流水线每次部署前会把旧二进制备份到 `/opt/kada/backend/backups/server.<时间戳>`：`cp /opt/kada/backend/backups/server.<最新> /opt/kada/backend/bin/server && systemctl restart kada-api` |
-| 前端 | 无自动备份：在本地 `git revert` 后重跑流水线（推荐），或在服务器上重新解包上一版构建 |
+| AI container | `docker tag kada-ai:previous kada-ai:deploy && docker compose -f /opt/kada/ai/docker-compose.yml up -d --force-recreate` |
+| Go API | Every deploy backs the running binary up to `/opt/kada/backend/backups/server.<timestamp>`: `cp /opt/kada/backend/backups/server.<newest> /opt/kada/backend/bin/server && systemctl restart kada-api` |
+| Frontend | Nothing is kept on the host: `git revert` locally and re-run the pipeline, or unpack the previous build on the server |
 
-> 这次的路由改名让三端互相绑定：只回滚其中一端会让 AI 页面 404。要回滚就整体回到上一个 commit。
+The route rename ties the three tiers to each other, so rolling one of them back on its own leaves the AI
+page at 404. Roll the whole thing back to the previous commit.
 
-### 排障速查
+## Troubleshooting
 
-| 现象 | 原因 |
+| Symptom | Cause |
 | --- | --- |
-| 部署在第 7 步失败并打印 `POSTGRES_URL is empty in /opt/kada/ai/ai.env` | 连接串没配。这条检查**故意放在构建镜像之前**：否则容器会拿 `app/config.py` 里带猜测密码的默认 DSN 启动，在 `init_db()` 里崩溃，白白跑完十几分钟镜像构建再回滚。填法见 `deploy/ai.env.example`（密码从 `backend/.env` 的 `DATABASE_URL` 抄，库名换成 `kada_ai`） |
-| `/api/ai/*` 返回 502 | AI 容器没起来或没监听 8000。`docker logs kada-ai`；`kada_ai` 库缺失会让启动阶段就崩 |
-| 返回 401 `only the Go gateway may call this service` | `ai.env` 与 `backend/.env` 里的 `AI_INTERNAL_SECRET` 不一致。现在两边都由同一个 GitHub Secret 写入，重跑一次部署即可对齐 |
-| 日志有 `[AUTH] 未配置 AI_INTERNAL_SECRET` | 密钥为空，来源校验被关闭，仅限本机开发，生产必须配上 |
-| AI 页面能打开但每次提问都失败 | `ai.env` 里的 `DEEPSEEK_API_KEY` / `aliyun` 为空或写错。部署时 `deploy-ai.sh` 会先拒绝这种状态；已经跑起来的话，改 GitHub Secret 后重跑部署 |
-| 回答总是"知识库中没有相关资料"，日志有 `[RAG] 检索失败` | 没跑入库脚本、`aliyun` 密钥错、或 pgvector 未启用 |
-| 工具报 HTTP 401/403，聊天正常 | 用户的登录已过期，重新登录即可（**不需要重启服务**） |
-| 工具回"无法执行：本次请求没有携带登录凭据" | 请求绕过了网关直连 Python（本地调试才会出现） |
-| **没人能登录**（验证码收不到），日志有 `SMS service disabled, NOBODY CAN SIGN IN: missing SMS …` | `backend/.env` 里少 `SMS_SIGN_NAME` 或 `SMS_TEMPLATE_CODE`。**这两个值不在仓库里**，去阿里云 PNVS 控制台（号码认证服务 → 短信认证 → 概览）取系统赠送的那一对；本账号是签名 `恒创联众`、模板 Code `100001`。它们曾经被硬编码在源码里，也在重构中被清掉过——完整经过见 `docs/design.md` §9.1 |
-| 验证码接口返回 `failed to send SMS: … (provider code: …)` | 签名/模板没通过、AccessKey 被停用或欠费。日志里那一行带 `sign_name=` / `template_code=`，两者必须来自同一个账号且成对使用 |
+| The deploy stops at `POSTGRES_URL is empty in /opt/kada/ai/ai.env` | The connection string was never filled in. That check sits before the image build on purpose: otherwise the container starts on the guessed development DSN and dies in `init_db()`, ten minutes into the build. `deploy/ai.env.example` has the shape, and the password is `DATABASE_URL` from `backend/.env` with the database name changed to `kada_ai`. |
+| `/api/ai/*` returns 502 | The container is not up, or not listening on 8000 (`docker logs kada-ai`). A missing `kada_ai` database crashes it during startup. |
+| 401 `only the Go gateway may call this service` | `AI_INTERNAL_SECRET` differs between `ai.env` and `backend/.env`, or the gateway side is empty. Both now come from one GitHub Secret, so re-running the deploy aligns them. |
+| The log has `[AUTH] 未配置 AI_INTERNAL_SECRET` | The origin check is off, and any process on the host can forge `X-Kada-User-ID`. Local development only; production must set it. |
+| The AI page opens but every question fails | `DEEPSEEK_API_KEY` or `aliyun` is empty or wrong. `deploy-ai.sh` refuses to build in that state; on an already running service, correct the secret and re-run the deploy. |
+| Answers always say the knowledge base holds nothing relevant, and the log has `[RAG] 检索失败` | The ingest script was never run, the `aliyun` key is wrong, or pgvector is not enabled. |
+| A tool returns HTTP 401/403 while chat itself works | The user's sign-in expired; they sign in again. No service restart. |
+| A tool answers that the request carried no credentials | The request reached Python directly instead of through the gateway. Local debugging only. |
+| **Nobody can sign in** (no code arrives), and the log has `SMS service disabled, NOBODY CAN SIGN IN: missing SMS ...` | `SMS_SIGN_NAME` or `SMS_TEMPLATE_CODE` is missing from `backend/.env`. Neither value is in the repository: they are the pair the Aliyun PNVS console grants (Phone Number Verification Service -> SMS verification -> Overview). On this account the signature is `恒创联众` and the template code `100001`. Both were once hard-coded in the source and were removed by a refactor; the history is in `docs/design.md` §9.1. |
+| The captcha endpoint returns `failed to send SMS: ... (provider code: ...)` | The signature or the template was not approved, or the AccessKey is disabled or out of credit. The log line carries `sign_name=` and `template_code=`, which have to come from the same account and be used as a pair. |
 
-更完整的说明见 `backend/ai/README.md`（架构、环境变量、接口契约、工具能力）。
+Architecture, environment variables, API contracts and tool capabilities are in
+[`backend/ai/README.md`](../backend/ai/README.md).
 
----
+## What this feature changed
 
-## 三、这次改动做了什么（交接背景）
-
-- **工具以当前登录用户的身份执行**：AI 的"查统计 / 建短链"不再使用一把长效服务令牌，而是把网关
-  转发的用户 JWT 原样交给 Go 的 `/api/*`。权限判定只在 Go 一处，用户停用或过期立即生效，无需重启。
-- **AI 服务只接受来自网关的请求**：网关注入 `X-Internal-Secret`（`AI_INTERNAL_SECRET`），Python
-  校验后才处理，因此 `X-Kada-User-ID` 才有资格被当作身份断言。
-- **路由去掉 `/v1`**：对外 `/api/ai/chat`、`/api/ai/conversations/current`、
-  `/api/ai/conversations/restart`；服务内部 `/chat`、`/conversations/current`、
-  `/conversations/restart`（网关剥掉挂载前缀后转发）。与项目其它接口一致，URL 里不出现版本段。
-- **新增一个容器**：`kada-ai`（`deploy/docker-compose.ai.yml`），host 网络、只绑 `127.0.0.1:8000`，
-  不占用公网端口，ufw 依然管得住。
+- **Tools act as the signed-in user.** Querying statistics and creating a short link no longer use a
+  long-lived service token; they pass on the JWT that the gateway already forwards. Authorization lives in
+  the Go API alone, so a disabled or expired user takes effect immediately, with no restart.
+- **The AI service accepts only the gateway.** The gateway injects `X-Internal-Secret`
+  (`AI_INTERNAL_SECRET`), and Python checks it before it will treat the `X-Kada-User-ID` header as an
+  identity claim.
+- **No version segment in the routes.** Public: `/api/ai/chat`, `/api/ai/conversations/current`,
+  `/api/ai/conversations/restart`. Inside the service: `/chat`, `/conversations/current`,
+  `/conversations/restart`. The gateway strips the mount prefix.
+- **One extra container.** `kada-ai` (`deploy/docker-compose.ai.yml`) uses the host network and binds only
+  `127.0.0.1:8000`, so it takes no public port and `ufw` still governs it.
