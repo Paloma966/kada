@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { RotateCcw, Send, Sparkles } from "lucide-react";
 import { toast } from "sonner";
+import { AiAnswer } from "@/components/AiAnswer";
 import { aiAPI } from "@/lib/api";
 import { useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
@@ -182,7 +183,11 @@ export default function AIPage() {
                       : "bg-muted-surface text-strong"
                   )}
                 >
-                  {m.content || (loading && i === messages.length - 1 ? "…" : "")}
+                  {m.role === "assistant" && m.content ? (
+                    <AiAnswer text={m.content} />
+                  ) : (
+                    m.content || (loading && i === messages.length - 1 ? "…" : "")
+                  )}
                 </div>
               </div>
             ))}
