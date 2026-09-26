@@ -672,6 +672,16 @@ Three supported shapes:
 The deploy job applies the schema **before** replacing the binary, so a failed migration leaves the
 previous version running.
 
+The bytes reach the host as **one tarball over one ssh stream**, and that transfer is bounded: a
+per-attempt timeout, three attempts, and a size check before anything is unpacked. It used to be
+`appleboy/scp-action` with six sources, one of them a directory glob, and the step took whatever the
+runner-to-host link decided - 26 seconds in one run, 8 minutes in another and 27 minutes in a third, with
+the action's own command timeout (10m) not bounding the last one. A stalled transfer is now a failure that
+leaves the host untouched instead of a run held open until it happens to succeed, and the step that
+follows starts from a complete tree under `/tmp/kada-deploy`. The frontend is built **once**: the
+`frontend-build` job already produces the bundle with the deployment's own `NEXT_PUBLIC_API_URL`, so the
+deploy job receives it as an artifact rather than setting up Node and building the same commit again.
+
 Verification happens in two places, which is deliberate:
 
 - **On the host**, during the deploy step: `curl http://127.0.0.1:8080/api/health`. This is the

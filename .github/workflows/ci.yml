@@ -153,6 +153,23 @@ jobs:
           NEXT_PUBLIC_API_URL: "same-origin"
         run: npm run build
 
+      # Packed here rather than in the deploy job, so the deploy job gets the bundle instead of building
+      # the same commit a second time. It is the same build: the environment variable above is the
+      # deployment's, and the deploy job used to build with exactly this value.
+      - name: Package the frontend for the host
+        working-directory: frontend
+        run: |
+          mkdir -p ../deploy-pkg
+          tar czf ../deploy-pkg/kada-fe-standalone.tar.gz -C .next/standalone .
+          tar czf ../deploy-pkg/kada-fe-static.tar.gz -C .next static/
+
+      - name: Upload the frontend build
+        uses: actions/upload-artifact@v7
+        with:
+          name: frontend-deploy-pkg
+          path: deploy-pkg
+          retention-days: 1
+
   # ----- AI service (Python) -----
   # The Python service fails at request time, not at import time: a missing
   # embedding SDK or an image that cannot run passes every startup check and then
@@ -278,39 +295,29 @@ jobs:
           go-version: ${{ env.GO_VERSION }}
           cache-dependency-path: backend/go.sum
 
-      - uses: actions/setup-node@v7
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-
       - name: Build Go binaries
         working-directory: backend
         run: |
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o bin/server ./cmd/server/
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o bin/migrate ./cmd/migrate/
 
-      - name: Install frontend dependencies
-        working-directory: frontend
-        run: npm ci
-
-      - name: Build frontend
-        working-directory: frontend
-        env:
-          # Same-origin deployment, see the note on the frontend-build job above.
-          NEXT_PUBLIC_API_URL: "same-origin"
-        run: npm run build
-
-      - name: Package frontend
-        run: |
-          cd frontend
-          mkdir -p ../deploy-pkg
-          tar czf ../deploy-pkg/kada-fe-standalone.tar.gz -C .next/standalone .
-          tar czf ../deploy-pkg/kada-fe-static.tar.gz -C .next static/
+      # Built by the frontend-build job - same commit, same NEXT_PUBLIC_API_URL - and handed over as one
+      # artifact. Setting up Node and running `npm ci && npm run build` here again cost ~35s of the deploy
+      # for a bundle that was already sitting in the workspace next door.
+      - name: Fetch the frontend build
+        uses: actions/download-artifact@v7
+        with:
+          name: frontend-deploy-pkg
+          path: deploy-pkg
 
       # The AI service is built into an image on the host, so the deploy ships
       # its source rather than a binary; see deploy/deploy-ai.sh.
       - name: Package the AI service
         run: |
           mkdir -p deploy-pkg
+          # Also the place a download that landed somewhere unexpected says so, rather than failing later
+          # inside the tar that builds the bundle.
+          ls -l deploy-pkg
           tar czf deploy-pkg/kada-ai-src.tar.gz -C backend/ai \
             --exclude='*__pycache__*' --exclude='*.pyc' .
 
@@ -319,16 +326,76 @@ jobs:
           echo "${{ github.sha }}" > deploy-version.txt
           echo "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> deploy-version.txt
 
-      - name: Upload artifacts
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ secrets.SERVER_HOST }}
-          username: ${{ secrets.SERVER_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          port: 22
-          source: "backend/bin/server,backend/bin/migrate,deploy-pkg/*,deploy-version.txt,deploy/deploy-ai.sh,deploy/upsert-env.sh,deploy/docker-compose.ai.yml"
-          target: /tmp/kada-deploy/
-          strip_components: 0
+      # One tarball, one stream, and a transfer that ends.
+      #
+      # This step was `appleboy/scp-action` with six sources, one of them a directory glob. Two runs in
+      # September 2026 spent 8 and 27 minutes in it while the runs either side took 26s: the duration is
+      # whatever the runner-to-host link decides that day, and the action's own command timeout (10m by
+      # default, see its action.yml) did not bound the 27-minute case. The bundle is now tarred here and
+      # pushed as a single stream under a per-attempt timeout, three attempts and a size check, so a bad
+      # link costs minutes and fails while the host is still untouched - instead of holding the run open
+      # until the transfer happens to complete.
+      - name: Upload the deploy bundle
+        env:
+          SSH_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+          SERVER_USER: ${{ secrets.SERVER_USER }}
+        run: |
+          set -euo pipefail
+
+          # The key arrives as a secret, so it is written to a file with the permissions ssh insists on.
+          # The trailing newline is on purpose: a key without one is rejected as malformed.
+          KEY="$RUNNER_TEMP/kada_deploy_key"
+          printf '%s\n' "$SSH_KEY" > "$KEY"
+          chmod 600 "$KEY"
+
+          # The host key is not pinned in this repository, which is what the action this replaces did too
+          # (its `fingerprint` input defaults to skipping verification). accept-new records it on first
+          # use, so the connections below are checked against that record rather than against nothing.
+          SSH=(ssh -i "$KEY" -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new
+               -o UserKnownHostsFile="$RUNNER_TEMP/kada_known_hosts" -o ConnectTimeout=15
+               -o ServerAliveInterval=15 -o ServerAliveCountMax=3)
+          REMOTE="$SERVER_USER@$SERVER_HOST"
+          BUNDLE="$RUNNER_TEMP/kada-deploy.tar.gz"
+
+          # The file list doubles as an assertion: tar fails on a missing member, which is how a frontend
+          # artifact that never arrived stops the deploy here rather than on the host.
+          tar czf "$BUNDLE" \
+            backend/bin/server backend/bin/migrate \
+            deploy-pkg deploy-version.txt \
+            deploy/deploy-ai.sh deploy/upsert-env.sh deploy/docker-compose.ai.yml
+
+          local_size=$(stat -c%s "$BUNDLE")
+          echo "the deploy bundle is $local_size bytes"
+
+          # The test harness sets this to 0 so a case does not wait out the backoff.
+          RETRY_DELAY_SECONDS="${RETRY_DELAY_SECONDS:-15}"
+
+          uploaded=no
+          for attempt in 1 2 3; do
+            echo "upload attempt $attempt of 3"
+            # A stalled connection is the failure this exists for: `timeout` ends it, and the size check
+            # below catches the other one - ssh exiting 0 after delivering part of the bundle.
+            if timeout 300 "${SSH[@]}" "$REMOTE" 'cat > /tmp/kada-deploy.tar.gz' < "$BUNDLE"; then
+              remote_size=$("${SSH[@]}" "$REMOTE" 'stat -c%s /tmp/kada-deploy.tar.gz')
+              if [ "$remote_size" = "$local_size" ]; then uploaded=yes; break; fi
+              echo "the host holds $remote_size of $local_size bytes"
+            else
+              echo "attempt $attempt did not finish"
+            fi
+            sleep "$RETRY_DELAY_SECONDS"
+          done
+
+          if [ "$uploaded" != yes ]; then
+            echo "the bundle did not reach the host in three attempts; nothing on the host was changed"
+            exit 1
+          fi
+
+          # Unpacked here, so the step below starts from a complete tree under the directory it already
+          # expects, and so a failed transfer cannot leave a half-written one there.
+          "${SSH[@]}" "$REMOTE" \
+            'rm -rf /tmp/kada-deploy && mkdir -p /tmp/kada-deploy && tar xzf /tmp/kada-deploy.tar.gz -C /tmp/kada-deploy && rm -f /tmp/kada-deploy.tar.gz'
+          echo "the bundle is unpacked on the host"
 
       # Whether the deployment may proceed is decided on the host, by the --require checks in the deploy
       # step below: they read /opt/kada/backend/.env as it will actually be after the sync, which is the

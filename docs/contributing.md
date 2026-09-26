@@ -243,7 +243,9 @@ showed.
 The last one exists because a workflow step cannot be run locally, so its mistakes only surface in CI on
 a real deploy. `node scripts/verify-deploy-step.test.js` extracts the deploy job's verification steps
 straight out of the workflow, runs them against a stubbed `curl`, and checks each outcome - reachable,
-connection refused, DNS failure, unhealthy payload. It needs a real `bash`; on Windows that means Git
+connection refused, DNS failure, unhealthy payload. It extracts the bundle-upload step the same way and
+drives it against a stubbed `ssh`: one good transfer, two failures then success, a short stream that the
+size check has to catch, and a host that refuses. It needs a real `bash`; on Windows that means Git
 Bash, which the default sandbox cannot start (it needs a signal pipe), so run it from a normal terminal.
 
 A bug fix without a test that fails before the fix is usually incomplete. Tests must not require a
