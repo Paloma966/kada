@@ -25,6 +25,21 @@ type Config struct {
 	// Empty disables the check on both sides (local development).
 	AIInternalSecret string
 
+	// The assistant's own settings. It runs in this process - the Python service it used to call is
+	// being replaced - so the model keys are read here instead of being handed to a second program.
+	AIDeepSeekBaseURL string
+	AIDeepSeekAPIKey  string
+	// AIDeepSeekModel keeps the name the Python service used. The name is a product decision, not part of
+	// the port, so it is unchanged here even though it is an unusual one for api.deepseek.com.
+	AIDeepSeekModel string
+	AIMaxTokens     int
+
+	// The embedding key is the Aliyun Bailian (DashScope) one. The Python service read it from `aliyun`,
+	// which is the name the old deployment wrote into ai.env; DASHSCOPE_API_KEY is the name to use from
+	// here on, and both are accepted so an existing ai.env keeps working during the change.
+	AIEmbeddingModel  string
+	AIEmbeddingAPIKey string
+
 	// AutoMigrate controls whether the process is allowed to create/update the schema at startup.
 	// Disable it (DB_AUTO_MIGRATE=false) once the schema is managed out of band.
 	AutoMigrate bool
@@ -55,7 +70,14 @@ func Load() *Config {
 		FrontendURL:      getEnv("FRONTEND_URL", "http://localhost:3000"),
 		AIBaseURL:        getEnv("AI_BASE_URL", "http://127.0.0.1:8000"),
 		AIInternalSecret: getEnv("AI_INTERNAL_SECRET", ""),
-		AutoMigrate:      getEnvBool("DB_AUTO_MIGRATE", true),
+
+		AIDeepSeekBaseURL: getEnv("DEEPSEEK_BASE_URL", "https://api.deepseek.com"),
+		AIDeepSeekAPIKey:  getEnv("DEEPSEEK_API_KEY", ""),
+		AIDeepSeekModel:   getEnv("AI_CHAT_MODEL", "deepseek-flash"),
+		AIMaxTokens:       getEnvInt("AI_MAX_TOKENS", 8192),
+		AIEmbeddingModel:  getEnv("AI_EMBEDDING_MODEL", "text-embedding-v3"),
+		AIEmbeddingAPIKey: embeddingKey(),
+		AutoMigrate:       getEnvBool("DB_AUTO_MIGRATE", true),
 		// SMS_SIGN_NAME has no default. A placeholder signature such as "kada" is not a value this account
 		// holds, and it turned "nobody configured SMS" into an Aliyun rejection that reads like a broken
 		// account: the startup guard in sms.NewAliyunSender never fired, and the failure only appeared when
@@ -106,6 +128,29 @@ func getEnvBool(key string, fallback bool) bool {
 		return fallback
 	}
 	return b
+}
+
+// getEnvInt parses an integer environment variable; an unparsable value falls back to the default, the
+// same way getEnvBool does, rather than turning a typo into a zero.
+func getEnvInt(key string, fallback int) int {
+	v := strings.TrimSpace(os.Getenv(key))
+	if v == "" {
+		return fallback
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n <= 0 {
+		return fallback
+	}
+	return n
+}
+
+// embeddingKey reads the Aliyun Bailian key under its new name, falling back to the `aliyun` name the
+// Python service used so an ai.env written by the old deployment keeps working.
+func embeddingKey() string {
+	if v := getEnv("DASHSCOPE_API_KEY", ""); v != "" {
+		return v
+	}
+	return getEnv("aliyun", "")
 }
 
 // weakJWTSecrets lists known weak default secrets: startup fails outright in release mode
