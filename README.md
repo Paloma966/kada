@@ -4,7 +4,7 @@
 
 A short link management and analytics platform. Supports link folders and tags, custom domains, access passwords, expiry times, UTM templates, a click analytics dashboard, and an AI assistant that answers questions about your own links.
 
-The backend is written in Go, the frontend in Next.js, click events are processed asynchronously through Kafka, and the AI assistant is a separate Python service behind the Go gateway.
+The backend is written in Go, the frontend is a Vite single-page app served as static files, click events are processed asynchronously through Kafka, and the AI assistant runs inside the API process.
 
 ## Features
 
@@ -27,7 +27,7 @@ The backend is written in Go, the frontend in Next.js, click events are processe
 | Backend | Go 1.26, Gin, GORM |
 | Storage | PostgreSQL 16 (pgvector for the knowledge base), Redis 7 |
 | Messaging | Kafka 3.8 |
-| Frontend | Next.js 16, React 19, TypeScript, SWR, Tailwind |
+| Frontend | Vite, React 19, React Router, TypeScript, SWR, Tailwind |
 | AI assistant | Go (Eino), DeepSeek + Aliyun Bailian, pgvector |
 | Deployment | Docker Compose, Nginx, systemd, GitHub Actions |
 
@@ -80,7 +80,7 @@ the deploy job; the deployment section of [docs/design.md](docs/design.md) expla
 
 ```text
 backend/   Go backend (cmd + internal), including the AI assistant
-frontend/  Next.js frontend
+frontend/  Vite single-page app, built to static files
 docs/      Design, contributing and code-style documentation
 nginx/     Reverse proxy configuration
 deploy/    Deployment scripts

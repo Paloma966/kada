@@ -1,7 +1,5 @@
-"use client";
-
-import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { Link } from "react-router";
+import { useLocation } from "react-router";
 import {
   Link2,
   Globe,
@@ -67,7 +65,7 @@ const NAV_SECTIONS: NavSection[] = [
 ];
 
 export function Sidebar({ onCloseMobile }: { onCloseMobile?: () => void }) {
-  const pathname = usePathname();
+  const pathname = useLocation().pathname;
   const t = useT();
 
   const handleClick = () => {
@@ -111,7 +109,7 @@ export function Sidebar({ onCloseMobile }: { onCloseMobile?: () => void }) {
                 return (
                   <Link
                     key={item.href}
-                    href={item.href}
+                    to={item.href}
                     onClick={handleClick}
                     className={cn(
                       "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
@@ -133,7 +131,7 @@ export function Sidebar({ onCloseMobile }: { onCloseMobile?: () => void }) {
       {/* Bottom: Settings + version */}
       <div className="border-t border-line px-3 py-3 space-y-2">
         <Link
-          href="/dashboard/settings"
+          to="/dashboard/settings"
           onClick={handleClick}
           className={cn(
             "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",

@@ -63,9 +63,9 @@ services:
       context: ./frontend
       args:
         # "same-origin" keeps requests relative: nginx serves the frontend and proxies /api/ to the
-        # backend. This has to be a build arg, not `environment`, because Next.js inlines
-        # NEXT_PUBLIC_* at build time - a runtime environment variable here would have no effect.
-        NEXT_PUBLIC_API_URL: "same-origin"
+        # backend. This has to be a build argument, not `environment`, because Vite inlines
+        # import.meta.env.VITE_* at build time - a runtime environment variable here would have no effect.
+        VITE_API_URL: "same-origin"
     depends_on:
       - backend
     restart: unless-stopped

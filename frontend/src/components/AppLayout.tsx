@@ -1,7 +1,5 @@
-"use client";
-
 import { useEffect, useState } from "react";
-import { useRouter, usePathname } from "next/navigation";
+import { useLocation, useNavigate } from "react-router";
 import { Menu } from "lucide-react";
 import { Sidebar } from "./Sidebar";
 import { TopBarControls } from "./TopBarControls";
@@ -11,8 +9,8 @@ import { useT } from "@/lib/i18n";
 import { useHydrated } from "@/lib/useHydrated";
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
-  const router = useRouter();
-  const pathname = usePathname();
+  const navigate = useNavigate();
+  const pathname = useLocation().pathname;
   const t = useT();
   // The token lives in localStorage, which does not exist while the server renders. Reading it directly
   // would make the server's output (the spinner) disagree with the client's first render (the shell), and
@@ -26,9 +24,9 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (hydrated && !ready) {
-      router.push("/login");
+      navigate("/login");
     }
-  }, [hydrated, ready, router]);
+  }, [hydrated, ready, navigate]);
 
   // Close the mobile sidebar when the route changes (React's documented
   // "adjust state when a prop changes" pattern).

@@ -1,7 +1,6 @@
-"use client";
-
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { useHydrated } from "@/lib/useHydrated";
+import { DARK_QUERY, STORAGE_KEY } from "./bootstrap";
 
 /**
  * Theme handling.
@@ -17,8 +16,6 @@ import { useHydrated } from "@/lib/useHydrated";
 
 export type Theme = "light" | "dark";
 
-const STORAGE_KEY = "kada.theme";
-const DARK_QUERY = "(prefers-color-scheme: dark)";
 
 type ThemeValue = {
   /** The theme currently applied. */
@@ -49,7 +46,7 @@ function readStoredTheme(): Theme | null {
 /**
  * The theme actually in the DOM.
  *
- * ThemeScript has already set it, so reading the attribute back keeps this in step with the painted page -
+ * The script in index.html has already set it, so reading the attribute back keeps this in step with the painted page -
  * including the "following the system" case, which this component then never has to compute at all.
  */
 function appliedTheme(): Theme {
@@ -116,23 +113,4 @@ export function useTheme(): ThemeValue {
     throw new Error("useTheme must be used within a ThemeProvider");
   }
   return ctx;
-}
-
-/**
- * Applies the theme before the first paint.
- *
- * This is a plain inline <script> in <head> rather than next/script. That is deliberate and measured:
- * with `strategy="beforeInteractive"` the theme landed 62ms AFTER the first frame - Next queues the
- * inline body through its own loader, which runs too late - and the result was a visible flash of the
- * light theme on every load in dark mode. A synchronous inline script blocks parsing, so the attribute
- * is set before anything is painted. `scripts/check-theme-timing.mjs` measures this and fails if the
- * theme is applied after the first frame.
- *
- * It reads the same two sources in the same order as the provider, so the two always agree; the
- * `suppressHydrationWarning` on <html> tells React to keep the attribute this sets.
- */
-export function ThemeScript() {
-  const script = `(function(){try{var s=localStorage.getItem(${JSON.stringify(STORAGE_KEY)});var m=window.matchMedia(${JSON.stringify(DARK_QUERY)}).matches;document.documentElement.setAttribute("data-theme",(s==="dark"||s==="light")?s:(m?"dark":"light"))}catch(e){try{document.documentElement.setAttribute("data-theme",window.matchMedia(${JSON.stringify(DARK_QUERY)}).matches?"dark":"light")}catch(e2){}}})()`;
-
-  return <script dangerouslySetInnerHTML={{ __html: script }} />;
 }

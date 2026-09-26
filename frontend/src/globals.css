@@ -1,0 +1,107 @@
+@import "tailwindcss";
+
+/*
+ * Dark mode is driven by `data-theme` on <html>, not by the `prefers-color-scheme` media query.
+ *
+ * Tailwind's default `dark:` variant asks the browser directly, which cannot be overridden by a
+ * preference the app stores itself. Making the attribute the single source of truth means the OS setting
+ * and an explicit choice travel the same path, and a component never has to care which one won.
+ * The script index.html carries sets the attribute before the first paint, so there is no flash.
+ */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+/*
+ * Semantic colours.
+ *
+ * Components refer to a role (`text-body`, `bg-canvas`) rather than a shade (`text-gray-700`), because a
+ * shade that reads correctly on white is usually wrong on near-black. Every token below is redefined for
+ * dark mode, so a component written against these needs no `dark:` variant at all.
+ *
+ * Fixed colours - brand fills, status tints - are deliberately NOT redefined. `bg-indigo-600 text-white`
+ * is a pair: brightening the indigo for a dark theme would hand a light blue to white text and make the
+ * primary buttons unreadable, and a colour that does not change can never change the meaning of its
+ * partner. Where a fixed colour would genuinely fail on a dark surface the component says so with a
+ * `dark:` variant, which keeps those few deliberate choices visible instead of hiding them in a ramp.
+ */
+@theme {
+  --color-brand: #4f46e5;        /* indigo-600 brand color */
+  --color-brand-dark: #4338ca;   /* indigo-700 */
+  --color-brand-soft: #eef2ff;   /* indigo-50: brand-tinted surface */
+  --color-brand-ink: #4338ca;    /* indigo-700: text and icons on that surface */
+  --color-hairline: #e5e5e5;     /* neutral-200 hairline border */
+  --color-surface: #fafafa;      /* neutral-50 page background */
+
+  /*
+   * Tailwind v4 has no `dark` config key; both themes are expressed as CSS variables. The light values
+   * mirror Tailwind's default palette, so replacing a `bg-gray-50` with `bg-subtle` does not change the
+   * light appearance at all - the tokens exist so that one class can mean two things.
+   */
+  --color-canvas: #ffffff;       /* page and card background */
+  --color-subtle: #f9fafb;       /* gray-50: recessed panels, table headers */
+  --color-muted-surface: #f3f4f6;/* gray-100: chips, inert controls */
+  --color-raised: #e5e7eb;       /* gray-200: selected / filled states */
+  --color-strong: #111827;       /* gray-900: headings and primary text */
+  --color-body: #374151;         /* gray-700: body text */
+  --color-muted: #6b7280;        /* gray-500: secondary text */
+  --color-faint: #9ca3af;        /* gray-400: placeholders, disabled, icons */
+  --color-line: #e5e7eb;         /* gray-200: borders and dividers */
+  --color-line-strong: #d1d5db;  /* gray-300: control borders, hover dividers */
+}
+
+/* Dark theme: the neutral roles move to a near-black canvas and light type. */
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  --color-canvas: #111827;
+  --color-subtle: #0b1220;
+  --color-muted-surface: #1f2937;
+  --color-raised: #374151;
+  --color-strong: #f9fafb;
+  --color-body: #d1d5db;
+  --color-muted: #9ca3af;
+  --color-faint: #6b7280;
+  --color-line: #374151;
+  --color-line-strong: #4b5563;
+
+  /*
+   * The brand tint is a *surface role*, not a fixed pair: `bg-brand-soft text-brand-ink` is a chip, a
+   * selected nav item, an icon tile. Both halves therefore move together, or they meet in the middle - a
+   * light chip carrying light ink, which is what happens when only one of the two is themed.
+   */
+  --color-brand-soft: #312e81;   /* indigo-900 */
+  --color-brand-ink: #c7d2fe;    /* indigo-200 */
+
+  /*
+   * `gray-50` is remapped because this app uses it as a neutral surface (`bg-gray-50`, `bg-gray-50/50`,
+   * `border-gray-50`, `hover:bg-gray-50`), never as one half of a fixed pair: every place it appears sits
+   * under `text-*` classes that are themselves themed, or holds no text at all. Left alone it paints
+   * white panels and near-white code chips on a near-black page, with light text on top of them.
+   *
+   * It is deliberately the only raw Tailwind neutral remapped here. `indigo-600`, `red-600` and the other
+   * brand/status shades are fixed pairs (`bg-indigo-600 text-white`, `bg-red-50 text-red-600`) whose two
+   * halves must keep their contrast, and remapping one half is how a primary button ends up with white
+   * text on a pale blue fill.
+   */
+  --color-gray-50: #0b1220;
+
+  /*
+   * `white` stays literal white in both themes. It is not a surface role here: it is the type on the
+   * selected segment of the language capsule, and the low-alpha wash over the permanently dark sign-in
+   * screens. Only `bg-canvas` follows the theme.
+   */
+  --color-white: #ffffff;
+}
+
+body {
+  background: var(--color-subtle);
+  color: var(--color-strong);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+}
+
+/* Homepage deep-space background: deep navy → indigo → subtle violet radial gradient */
+.bg-deep-space {
+  background:
+    radial-gradient(90% 70% at 70% 20%, rgba(79, 70, 229, 0.16) 0%, transparent 60%),
+    radial-gradient(120% 100% at 50% 30%, #202a5e 0%, #131b45 45%, #0a0e28 100%);
+}

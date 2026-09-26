@@ -4,7 +4,7 @@
 
 短链接管理与分析平台。支持链接文件夹与标签、自定义域名、访问密码、过期时间、UTM 模板、点击分析看板，以及一个能就你自己链接提问的 AI 助手。
 
-后端用 Go 编写，前端用 Next.js，点击事件经 Kafka 异步处理，AI 助手是位于 Go 网关之后的独立 Python 服务。
+后端用 Go 编写，前端是 Vite 单页应用（构建为静态文件），点击事件经 Kafka 异步处理，AI 助手运行在 API 进程内。
 
 ## 功能
 
@@ -27,7 +27,7 @@
 | 后端 | Go 1.26、Gin、GORM |
 | 存储 | PostgreSQL 16（知识库使用 pgvector）、Redis 7 |
 | 消息队列 | Kafka 3.8 |
-| 前端 | Next.js 16、React 19、TypeScript、SWR、Tailwind |
+| 前端 | Vite、React 19、React Router、TypeScript、SWR、Tailwind |
 | AI 助手 | Go（Eino）、DeepSeek + 阿里云百炼、pgvector |
 | 部署 | Docker Compose、Nginx、systemd、GitHub Actions |
 
@@ -79,7 +79,7 @@ cd frontend && npm run dev                  # 3000
 
 ```text
 backend/   Go 后端（cmd + internal），AI 助手也在其中
-frontend/  Next.js 前端
+frontend/  Vite 单页应用，构建为静态文件
 docs/      设计、贡献与代码风格文档
 nginx/     反向代理配置
 deploy/    部署脚本

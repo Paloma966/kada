@@ -43,7 +43,7 @@ allowed to lag by a second. The architecture is split along that line.
                        └───────┬───────────────────────┬────────────┘
                                │                       │
                     ┌──────────▼─────────┐   ┌─────────▼──────────┐
-                    │ backend (Go/Gin)   │   │ frontend (Next.js) │
+                    │ backend (Go/Gin)   │   │ frontend (static)  │
                     │  :8080             │   │  :3000             │
                     └──┬───────┬─────┬───┘   └────────────────────┘
                        │       │     │
@@ -72,7 +72,7 @@ Components:
 | `cmd/server` | `backend` | HTTP API, short-link redirection, publishes click events |
 | `cmd/worker` | `kafka-worker` | Consumes the `clicks` topic and persists click rows |
 | `cmd/migrate` | one-off | Applies the database schema (GORM AutoMigrate) |
-| `frontend` | `frontend` | Next.js App Router UI; talks to the API over HTTP only |
+| `frontend` | `frontend` | Vite single-page app, served as static files; talks to the API over HTTP only |
 | `postgres` | `postgres` | Source of truth; also the analytics store |
 | `redis` | `redis` | Short-code cache and rate-limit counters |
 | `kafka` | `kafka` | Durable buffer between request handling and click persistence |
@@ -276,8 +276,9 @@ Design rules:
 
 ## 6. Frontend
 
-Next.js App Router with React Server Components only where they help; the dashboard is client-side
-because it is highly interactive.
+A Vite single-page app built to static files, with React Router for the routes. The dashboard is highly
+interactive, so there was never a server-rendered page to gain from; removing the Node process removed a
+service, its systemd unit and a whole deployment step with it.
 
 | Path | Content |
 |---|---|
@@ -512,7 +513,7 @@ existing `/api/*` routes. Four consequences decide the shape of that:
 | `SMS_SIGN_NAME`, `SMS_TEMPLATE_CODE` | empty | The system-granted signature and template from the PNVS console; both are required, see below |
 | `KAFKA_BROKERS` | empty | Comma-separated brokers; empty disables Kafka (clicks are written directly) |
 | `KAFKA_TOPIC` | `clicks` | Click event topic |
-| `NEXT_PUBLIC_API_URL` | `""` (same origin) | API base for the browser |
+| `VITE_API_URL` | `""` (same origin) | API base for the browser, fixed at build time |
 | `DEEPSEEK_API_KEY` | empty | The assistant's chat model key (DeepSeek, OpenAI-compatible API) |
 | `DASHSCOPE_API_KEY` | empty | Aliyun Bailian key for the knowledge base embeddings |
 | `AI_CHAT_MODEL`, `DEEPSEEK_BASE_URL`, `AI_MAX_TOKENS`, `AI_EMBEDDING_MODEL` | `deepseek-flash`, `https://api.deepseek.com`, `8192`, `text-embedding-v3` | Optional overrides for the four values above |
@@ -665,7 +666,7 @@ runner-to-host link decided - 26 seconds in one run, 8 minutes in another and 27
 the action's own command timeout (10m) not bounding the last one. A stalled transfer is now a failure that
 leaves the host untouched instead of a run held open until it happens to succeed, and the step that
 follows starts from a complete tree under `/tmp/kada-deploy`. The frontend is built **once**: the
-`frontend-build` job already produces the bundle with the deployment's own `NEXT_PUBLIC_API_URL`, so the
+`frontend-build` job already produces the bundle with the deployment's own `VITE_API_URL`, so the
 deploy job receives it as an artifact rather than setting up Node and building the same commit again.
 
 Verification happens in two places, which is deliberate:

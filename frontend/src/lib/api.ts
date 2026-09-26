@@ -8,15 +8,14 @@ import { getToken } from "./auth";
 //                    of both the frontend and the API, so /api/ is proxied by the same origin.
 //   a URL        -> that URL, used whenever the API lives somewhere else.
 //
-// Why not an empty string for the same-origin case: the bundler only inlines a non-empty
-// NEXT_PUBLIC_* value. With the variable empty it leaves a runtime lookup in the client bundle instead
-// (verified against builds of this app), and whether that lookup finds "" or undefined decides between
-// relative requests and the development fallback. A sentinel inlines predictably, so the behaviour is
-// the same in every build.
+// Why a sentinel and not an empty string: Vite replaces `import.meta.env.VITE_API_URL` with the value the
+// bundle was built with, so "not configured" arrives as undefined and an empty configuration would be
+// indistinguishable from a deliberate one. The sentinel keeps the two apart, and it names the same-origin
+// case at the build site (the CI job and frontend/Dockerfile both pass it).
 const SAME_ORIGIN = "same-origin";
 
 function resolveAPIURL(): string {
-  const configured = process.env.NEXT_PUBLIC_API_URL;
+  const configured = import.meta.env.VITE_API_URL;
   if (!configured) return "http://localhost:8080";
   return configured === SAME_ORIGIN ? "" : configured;
 }
@@ -32,7 +31,7 @@ interface FetchOptions extends RequestInit {
  *
  * Calling `res.json()` on an HTML body throws `Unexpected token '<', "<!DOCTYPE "... is not valid JSON`,
  * which says nothing about what actually happened: the request probably never reached the Go API and was
- * answered by Next.js or a proxy instead. Checking the content type first turns that into an error that
+ * answered by a proxy or a dev server instead. Checking the content type first turns that into an error that
  * names the URL, the status and the content type, so the cause is visible without opening DevTools.
  */
 async function readJSON(res: Response, url: string) {
@@ -42,7 +41,7 @@ async function readJSON(res: Response, url: string) {
     const body = (await res.text()).slice(0, 200).replace(/\s+/g, " ");
     throw new Error(
       `${url} returned ${res.status} ${res.statusText} with content-type ${contentType} instead of JSON. ` +
-        `Check that NEXT_PUBLIC_API_URL points at the API and that it is running. Body starts with: ${body}`
+        `Check that VITE_API_URL points at the API and that it is running. Body starts with: ${body}`
     );
   }
 
@@ -68,7 +67,9 @@ async function fetchAPI(path: string, options: FetchOptions = {}) {
   } catch (cause) {
     // A network-level failure (API not running, wrong host, CORS preflight rejected) never produces a
     // Response at all, so it needs its own message rather than surfacing as a bare "Failed to fetch".
-    throw new Error(`cannot reach the API at ${url}: ${cause instanceof Error ? cause.message : cause}`);
+    throw new Error(`cannot reach the API at ${url}: ${cause instanceof Error ? cause.message : cause}`, {
+      cause,
+    });
   }
 
   const data = await readJSON(res, url);
@@ -88,7 +89,9 @@ export async function fetchCSV(path: string, token: string): Promise<string> {
   try {
     res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
   } catch (cause) {
-    throw new Error(`cannot reach the API at ${url}: ${cause instanceof Error ? cause.message : cause}`);
+    throw new Error(`cannot reach the API at ${url}: ${cause instanceof Error ? cause.message : cause}`, {
+      cause,
+    });
   }
 
   if (!res.ok) {

@@ -29,7 +29,7 @@ Kada 由以下部分组成：
 | 组件 | 技术 | 职责 |
 |---|---|---|
 | Go 后端 | Go 1.26 + Gin + GORM，端口 8080 | HTTP 接口、短链跳转、业务逻辑 |
-| 前端 | Next.js 16 + React 19 + TypeScript + SWR + Tailwind，端口 3000 | 用户界面 |
+| 前端 | Vite + React 19 + React Router + TypeScript + SWR + Tailwind，构建为静态文件由 nginx 直接托管 | 用户界面 |
 | PostgreSQL 16 | 主数据库 | 业务数据的唯一真相源 |
 | Redis 7 | 缓存 | 短码缓存、限流计数 |
 | Kafka 3.8 | 消息队列 | 点击事件异步落库 |
