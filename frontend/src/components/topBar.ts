@@ -7,8 +7,10 @@
  * as you sign in, which is exactly what the hand-written copies of these numbers did (16px against 24px on
  * the horizontal, and four pixels higher on the dark pages).
  *
- * The pinned vertical offset is not a second rhythm: it is (56px bar - 32px control) / 2, the same centring
- * the bar does, with the bar removed. Change one of these and the other shell follows.
+ * The pinned vertical offset is not a second rhythm: it is the bar's own centring with the bar removed,
+ * (56px bar - cluster height) / 2. The cluster is 34px because its tallest control is the capsule, which
+ * draws a 1px border and a 2px inset around a 28px button row; the 32px icon controls inside it are centred
+ * by the cluster, so they land on 12px either way and the capsule is what the offset has to agree with.
  */
 export const TOP_BAR_HEIGHT = "h-14";
 
@@ -32,4 +34,4 @@ export const TOP_BAR_GUTTER = "px-4 sm:px-6";
 export const TOP_BAR_CAPSULE_OVERHANG = "-mr-1";
 
 /** The same corner, for a page that has no bar to put the controls in. */
-export const TOP_BAR_CONTROLS_PINNED = "fixed right-4 top-3 z-50 sm:right-6";
+export const TOP_BAR_CONTROLS_PINNED = "fixed right-4 top-[11px] z-50 sm:right-6";
