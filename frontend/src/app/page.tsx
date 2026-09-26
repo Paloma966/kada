@@ -3,8 +3,8 @@
 import Link from "next/link";
 import { Link2 } from "lucide-react";
 import StarfieldCanvas from "@/components/StarfieldCanvas";
-import { LanguageSwitcher } from "@/components/LanguageSwitcher";
-import { TOP_BAR_CAPSULE_OVERHANG, TOP_BAR_GUTTER, TOP_BAR_HEIGHT } from "@/components/topBar";
+import { TopBarControls } from "@/components/TopBarControls";
+import { TOP_BAR_GUTTER, TOP_BAR_HEIGHT } from "@/components/topBar";
 import { useT } from "@/lib/i18n";
 
 export default function HomePage() {
@@ -37,7 +37,7 @@ export default function HomePage() {
             >
               {t("登录 / 注册")}
             </Link>
-            <LanguageSwitcher onDark className={TOP_BAR_CAPSULE_OVERHANG} />
+            <TopBarControls onDark />
           </div>
         </header>
 

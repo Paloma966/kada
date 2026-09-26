@@ -10,8 +10,7 @@ import { authAPI } from "@/lib/api";
 import { setToken, setUser } from "@/lib/auth";
 import { AuthCard } from "@/components/auth/AuthCard";
 import { FormField, inputBase, fieldState } from "@/components/auth/FormField";
-import { LanguageSwitcher } from "@/components/LanguageSwitcher";
-import { TOP_BAR_CAPSULE_OVERHANG, TOP_BAR_CONTROLS_PINNED } from "@/components/topBar";
+import { TopBarControls } from "@/components/TopBarControls";
 import { useT } from "@/lib/i18n";
 
 /**
@@ -181,11 +180,9 @@ export default function LoginPage() {
 
   return (
     <>
-      {/* Pinned to the corner the app shell's top bar puts these controls in, so the switcher does not
-          move as you sign in: the position is shared rather than copied. */}
-      <div className={TOP_BAR_CONTROLS_PINNED}>
-        <LanguageSwitcher onDark className={TOP_BAR_CAPSULE_OVERHANG} />
-      </div>
+      {/* The corner the app shell's top bar puts these controls in, so nothing moves as you sign in: the
+          cluster and the corner it is pinned to both come from TopBarControls. */}
+      <TopBarControls onDark pinned />
       <AuthCard
         title={t("登录 Kada")}
         subtitle={t("智能短链接管理平台")}
