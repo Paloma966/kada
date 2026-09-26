@@ -1,10 +1,9 @@
-// Package assistant is the assistant: the knowledge base it answers from, the model it answers with and
-// the tools it may call.
+// Package assistant is the assistant: the documentation it answers from, the model it answers with and the
+// tools it may call.
 //
 // It runs inside the API process and replaces a separate Python service (backend/ai) that the API used to
-// reverse-proxy to on 127.0.0.1:8000. The model and embedding clients come from Eino
-// (github.com/cloudwego/eino); the knowledge base and the conversations are PostgreSQL, in the same
-// database as everything else.
+// reverse-proxy to on 127.0.0.1:8000. The model client comes from Eino (github.com/cloudwego/eino); the
+// conversations are PostgreSQL, in the same database as everything else.
 package assistant
 
 import (
@@ -59,12 +58,24 @@ type errorPayload struct {
 const systemPrompt = "你是 kada 平台的 AI 助手，帮助用户分析和管理短链接数据。请用简体中文回答，" +
 	"简洁准确。优先使用参考资料；需要实时信息或计算时，可以调用提供的工具。"
 
-// noKnowledge is what the prompt says when retrieval found nothing, again as the Python service wrote it.
-const noKnowledge = "知识库中没有相关资料。"
-
-// retrievalTopK is how many passages are put in front of the model. Four was the Python service's choice
-// and is a prompt-size decision: enough context to answer from, not enough to bury the question.
-const retrievalTopK = 4
+// systemMessage is the instructions the model is given: the prompt above and then the whole bundled
+// documentation.
+//
+// The documentation travels in the prompt rather than behind a search. The corpus is a few kilobytes of
+// product notes, and at that size retrieval can only lose a passage the model needed, while it costs a
+// second vendor key, a PostgreSQL with the vector extension and an indexing step in the deploy. The comment
+// on reference names the seam to put retrieval back behind if the corpus ever outgrows a prompt.
+func systemMessage() string {
+	docs, err := reference()
+	if err != nil {
+		// The assistant stays usable: it answers from the model alone, exactly what the Python service did
+		// when its knowledge base was unreachable. A product question then becomes a guess, which is a worse
+		// answer rather than no answer - and not worth failing a chat over.
+		log.Printf("assistant: the bundled documentation could not be read, answering without it: %v", err)
+		return systemPrompt
+	}
+	return systemPrompt + "\n\n【参考资料】\n" + docs
+}
 
 // history is the slice of the conversation store the assistant needs.
 type history interface {
@@ -75,17 +86,10 @@ type history interface {
 	Restart(ctx context.Context, userID int64) (string, error)
 }
 
-// retriever is the slice of the knowledge base the assistant needs.
-type retriever interface {
-	Retrieve(ctx context.Context, query string, limit int) ([]string, error)
-}
-
-// Assistant answers questions: it retrieves the passages a question is about, keeps the conversation and
-// streams the answer back.
+// Assistant answers questions: it keeps the conversation and streams the answer back.
 type Assistant struct {
-	agent     *react.Agent
-	knowledge retriever
-	convos    history
+	agent  *react.Agent
+	convos history
 }
 
 // maxAgentSteps bounds one question's model/tool rounds.
@@ -104,10 +108,9 @@ func NewAssistant(
 	ctx context.Context,
 	chatModel model.ToolCallingChatModel,
 	kada kadaOperations,
-	knowledge retriever,
 	convos history,
 ) (*Assistant, error) {
-	assistant := &Assistant{knowledge: knowledge, convos: convos}
+	assistant := &Assistant{convos: convos}
 	if chatModel == nil {
 		return assistant, nil
 	}
@@ -209,7 +212,7 @@ func (a *Assistant) run(
 		}
 	}
 
-	messages := buildMessages(history, a.retrieve(ctx, question), question)
+	messages := buildMessages(history, question)
 
 	answer, err := a.answer(ctx, messages, send)
 	if err != nil {
@@ -268,31 +271,14 @@ func (a *Assistant) answer(ctx context.Context, messages []*schema.Message, send
 	return full.String(), nil
 }
 
-// retrieve returns the passages to put in front of the model, or an empty string.
+// buildMessages assembles one request: the instructions with the documentation, the conversation so far and
+// the question.
 //
-// A failure is not fatal and is not reported to the user: the assistant answers from the model alone, the
-// way the Python service did when the knowledge base was unreachable. It is logged, because "the answers
-// stopped citing the documentation" is otherwise invisible.
-func (a *Assistant) retrieve(ctx context.Context, question string) string {
-	passages, err := a.knowledge.Retrieve(ctx, question, retrievalTopK)
-	if err != nil {
-		log.Printf("assistant: knowledge base lookup failed, answering without context: %v", err)
-		return ""
-	}
-	if len(passages) == 0 {
-		return ""
-	}
-	return strings.Join(passages, "\n\n---\n\n")
-}
-
-// buildMessages assembles one request: the instructions, the conversation so far, and the question with
-// the retrieved passages in front of it.
-//
-// The split is the Python service's prompt template: history stays separate messages (so the model can
-// tell who said what), while the passages and the question travel together in one user message.
-func buildMessages(history []ChatMessage, context, question string) []*schema.Message {
+// History stays separate messages so the model can tell who said what. The documentation belongs to the
+// instructions rather than to the question, because it is the same for every turn.
+func buildMessages(history []ChatMessage, question string) []*schema.Message {
 	messages := make([]*schema.Message, 0, len(history)+2)
-	messages = append(messages, schema.SystemMessage(systemPrompt))
+	messages = append(messages, schema.SystemMessage(systemMessage()))
 
 	for _, turn := range history {
 		if turn.Role == "assistant" {
@@ -302,9 +288,6 @@ func buildMessages(history []ChatMessage, context, question string) []*schema.Me
 		messages = append(messages, schema.UserMessage(turn.Content))
 	}
 
-	if context == "" {
-		context = noKnowledge
-	}
-	messages = append(messages, schema.UserMessage("【参考资料】\n"+context+"\n\n【用户问题】"+question))
+	messages = append(messages, schema.UserMessage(question))
 	return messages
 }

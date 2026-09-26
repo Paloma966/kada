@@ -105,7 +105,6 @@ two to drift apart.
 | `go vet` / ESLint | `cd backend && go vet ./...` / `cd frontend && npm run lint` |
 | `golangci-lint` (what CI runs) | `cd backend && golangci-lint run --timeout=5m ./...` |
 | Apply the schema | `cd backend && go run ./cmd/migrate/` |
-| Rebuild the AI knowledge base | `cd backend && go run ./cmd/ai-ingest/` (needs `DASHSCOPE_API_KEY`, and a PostgreSQL with the pgvector extension) |
 | Destroy the database volume and start over | `docker compose down -v && docker compose up -d postgres redis && cd backend && go run ./cmd/migrate/` |
 | Production builds | `cd backend && CGO_ENABLED=0 go build -o bin/server ./cmd/server/main.go` / `cd frontend && npm run build` |
 | Compose lifecycle | `docker compose up -d` / `docker compose down` / `docker compose logs -f` |

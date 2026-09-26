@@ -147,18 +147,12 @@ func main() {
 		log.Printf("The assistant will report a configuration problem: %v", err)
 	}
 
-	embedder, err := assistant.NewEmbedder(context.Background(), cfg.AIEmbeddingAPIKey, cfg.AIEmbeddingModel)
-	if err != nil {
-		log.Printf("The assistant will answer without the knowledge base: %v", err)
-	}
-
 	// Building the agent can only fail on a programming error (a tool whose schema cannot be inferred), so
 	// it is the one assistant failure that stops the process: there would be nothing to answer with.
 	assistantService, err := assistant.NewAssistant(
 		context.Background(),
 		chatModel,
 		assistant.NewKada(linkSvc, analyticsSvc),
-		assistant.NewKnowledgeBase(db, embedder),
 		assistant.NewConversations(db),
 	)
 	if err != nil {

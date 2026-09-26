@@ -17,7 +17,7 @@
 - 链接预览、二维码与 CSV 导出
 - 点击分析看板（总览、平台分布、每日趋势、访客明细）
 - 开放 API 令牌
-- AI 助手（基于项目知识库的 RAG，工具调用以当前登录用户的身份执行）
+- AI 助手（随二进制携带产品说明文档，工具调用以当前登录用户的身份执行）
 - 明暗两套主题
 
 ## 技术栈
@@ -25,10 +25,10 @@
 | 层级 | 技术 |
 |-------|------------|
 | 后端 | Go 1.26、Gin、GORM |
-| 存储 | PostgreSQL 16（知识库使用 pgvector）、Redis 7 |
+| 存储 | PostgreSQL 16、Redis 7 |
 | 消息队列 | Kafka 3.8 |
 | 前端 | Vite、React 19、React Router、TypeScript、SWR、Tailwind |
-| AI 助手 | Go（Eino）、DeepSeek + 阿里云百炼、pgvector |
+| AI 助手 | Go（Eino）、DeepSeek |
 | 部署 | Docker Compose、Nginx、systemd、GitHub Actions |
 
 ## 架构
@@ -41,8 +41,9 @@
 （AutoMigrate）应用。仓库里没有 SQL 迁移文件：结构体是唯一事实来源，AutoMigrate 只补齐缺失的
 表 / 列 / 索引，因此可以安全地重复执行。
 
-AI 助手运行在 API 进程内：`/api/ai/*` 由它自己提供，会话与知识库都存放在同一个 PostgreSQL 里，
-它提供的工具直接调用本项目的业务服务。见 [docs/design.md](docs/design.md) 的部署一节。
+AI 助手运行在 API 进程内：`/api/ai/*` 由它自己提供，会话存放在同一个 PostgreSQL 里，产品说明文档
+随二进制一起编译并在每次提问时发给模型；它提供的工具直接调用本项目的业务服务。见
+[docs/design.md](docs/design.md) 的部署一节。
 
 ## 快速开始
 
@@ -70,7 +71,7 @@ cd frontend && npm run dev                  # 3000
 | DB_AUTO_MIGRATE | 是否让 API 服务在启动时应用表结构（默认 true；使用 cmd/migrate 时设为 false） |
 | SMS_ACCESS_KEY_ID / SMS_ACCESS_KEY_SECRET | 阿里云短信。生产环境必填：手机号 + 短信验证码是唯一的登录方式 |
 | SMS_SIGN_NAME / SMS_TEMPLATE_CODE | 阿里云 PNVS 控制台为你分配的短信签名与模板 |
-| DEEPSEEK_API_KEY / DASHSCOPE_API_KEY | AI 助手使用（对话模型密钥，以及知识库用的百炼 embedding 密钥） |
+| DEEPSEEK_API_KEY | AI 助手的对话模型密钥 |
 
 生产环境下这些值来自 GitHub 仓库 secrets，由部署任务写入 `/opt/kada/backend/.env`；部署任务做了什么，
 见 [docs/design.md](docs/design.md) 的部署一节。

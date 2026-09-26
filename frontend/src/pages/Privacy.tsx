@@ -98,9 +98,6 @@ function ChinesePolicy() {
           <Row label="DeepSeek">
             你在 AI 助手输入的内容会发送给 DeepSeek 以生成回复。
           </Row>
-          <Row label="阿里云百炼（DashScope）">
-            为支持知识库检索，相关文本会发送给 DashScope 生成向量。
-          </Row>
           <Row label="服务器与数据库">
             数据存放在本服务自有的服务器与数据库中，不向其他方开放。
           </Row>
@@ -187,7 +184,6 @@ function EnglishPolicy() {
         <ul className="space-y-2">
           <Row label="Aliyun SMS">Your phone number and the code are sent to Aliyun to deliver the message.</Row>
           <Row label="DeepSeek">What you type into the assistant is sent to DeepSeek to produce a reply.</Row>
-          <Row label="DashScope">Text is sent to Aliyun DashScope to compute the embeddings the knowledge base searches.</Row>
           <Row label="Our servers">Data lives in this service&apos;s own servers and database, closed to anyone else.</Row>
         </ul>
         <p>We disclose nothing further unless the law requires it.</p>

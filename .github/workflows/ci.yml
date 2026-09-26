@@ -328,11 +328,9 @@ jobs:
           #
           # Add them under Settings -> Secrets and variables -> Actions:
           #   DEEPSEEK_API_KEY      chat model key
-          #   DASHSCOPE_API_KEY     Aliyun Bailian embedding key, for the knowledge base
           #   SMS_ACCESS_KEY_ID / SMS_ACCESS_KEY_SECRET / SMS_SIGN_NAME / SMS_TEMPLATE_CODE
           #                         the Aliyun PNVS credentials; without them nobody can sign in
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
-          DASHSCOPE_API_KEY: ${{ secrets.DASHSCOPE_API_KEY }}
           SMS_ACCESS_KEY_ID: ${{ secrets.SMS_ACCESS_KEY_ID }}
           SMS_ACCESS_KEY_SECRET: ${{ secrets.SMS_ACCESS_KEY_SECRET }}
           SMS_SIGN_NAME: ${{ secrets.SMS_SIGN_NAME }}
@@ -346,7 +344,7 @@ jobs:
           # default of 10m is generous for that. It was 30m when the Python image was built here, which
           # took minutes on a small server.
           command_timeout: 10m
-          envs: DATABASE_URL,DEEPSEEK_API_KEY,DASHSCOPE_API_KEY,SMS_ACCESS_KEY_ID,SMS_ACCESS_KEY_SECRET,SMS_SIGN_NAME,SMS_TEMPLATE_CODE
+          envs: DATABASE_URL,DEEPSEEK_API_KEY,SMS_ACCESS_KEY_ID,SMS_ACCESS_KEY_SECRET,SMS_SIGN_NAME,SMS_TEMPLATE_CODE
           script: |
             set -euo pipefail
 
@@ -366,10 +364,10 @@ jobs:
             #    hand keeps working; --require is what makes "nothing there at all" a hard failure.
             echo "Syncing secrets into the runtime env files"
             #
-            # The assistant runs in this process, so its two keys belong in the API's own env file:
+            # The assistant runs in this process, so its key belongs in the API's own env file:
             # the /opt/kada/ai/ai.env the Python service read is gone with it.
             #
-            # The SMS credentials are required too, and for the same reason as the AI keys: phone number
+            # The SMS credentials are required too, and for the same reason as the AI key: phone number
             # plus SMS code is the only way to sign in, so a host without them serves a site nobody can log
             # into. Checking them here is what makes that a refused deploy instead of a quiet outage. The
             # check reads the file, not the repository secrets, so a host that was configured by hand keeps

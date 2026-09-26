@@ -24,10 +24,6 @@ type Config struct {
 	AIDeepSeekModel string
 	AIMaxTokens     int
 
-	// The embedding key is the Aliyun Bailian (DashScope) one, for the knowledge base.
-	AIEmbeddingModel  string
-	AIEmbeddingAPIKey string
-
 	// AutoMigrate controls whether the process is allowed to create/update the schema at startup.
 	// Disable it (DB_AUTO_MIGRATE=false) once the schema is managed out of band.
 	AutoMigrate bool
@@ -61,8 +57,6 @@ func Load() *Config {
 		AIDeepSeekAPIKey:  getEnv("DEEPSEEK_API_KEY", ""),
 		AIDeepSeekModel:   getEnv("AI_CHAT_MODEL", "deepseek-flash"),
 		AIMaxTokens:       getEnvInt("AI_MAX_TOKENS", 8192),
-		AIEmbeddingModel:  getEnv("AI_EMBEDDING_MODEL", "text-embedding-v3"),
-		AIEmbeddingAPIKey: getEnv("DASHSCOPE_API_KEY", ""),
 		AutoMigrate:       getEnvBool("DB_AUTO_MIGRATE", true),
 		// SMS_SIGN_NAME has no default. A placeholder signature such as "kada" is not a value this account
 		// holds, and it turned "nobody configured SMS" into an Aliyun rejection that reads like a broken

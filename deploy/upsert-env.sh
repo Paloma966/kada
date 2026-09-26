@@ -1,10 +1,9 @@
 #!/bin/bash
 # Set or refresh KEY=VALUE pairs in a runtime env file, on the server.
 #
-#   bash upsert-env.sh /opt/kada/ai/ai.env \
+#   bash upsert-env.sh /opt/kada/backend/.env \
 #     --set DEEPSEEK_API_KEY="$DEEPSEEK_API_KEY" \
-#     --set DASHSCOPE_API_KEY="$DASHSCOPE_API_KEY" \
-#     --require DEEPSEEK_API_KEY --require DASHSCOPE_API_KEY
+#     --require DEEPSEEK_API_KEY
 #
 # Why this exists: the AI keys and the SMS credentials used to be typed into a file on the server by hand,
 # and nothing anywhere failed when they were forgotten. The service started, passed its health check, and
@@ -136,8 +135,7 @@ also satisfies the check - --set with an empty value leaves it alone, so a host 
 was configured by hand keeps deploying without the secret being set here.
 
 Expected secrets:
-  DEEPSEEK_API_KEY    chat model key           -> DEEPSEEK_API_KEY in ai.env
-  DASHSCOPE_API_KEY   Bailian embedding key    -> DASHSCOPE_API_KEY in backend/.env
+  DEEPSEEK_API_KEY    chat model key           -> DEEPSEEK_API_KEY in backend/.env
   
   SMS_ACCESS_KEY_ID, SMS_ACCESS_KEY_SECRET, SMS_SIGN_NAME, SMS_TEMPLATE_CODE -> backend/.env
       (phone + SMS code is the only sign-in method, so without these NOBODY CAN SIGN IN)
