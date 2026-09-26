@@ -10,11 +10,21 @@ import (
 	"github.com/cloudwego/eino/schema"
 )
 
-// fakeModel is an Eino chat model that streams scripted chunks. The interface is why the assistant can be
-// tested end to end without a key, a network or a provider: what the model does is an implementation
-// detail behind it.
+// fakeRound is one reply the fake model gives: either text, or a request to call tools.
+type fakeRound struct {
+	chunks    []string
+	toolCalls []schema.ToolCall
+}
+
+// fakeModel is an Eino chat model that streams scripted replies, one per call. That interface is why the
+// assistant can be tested end to end without a key, a network or a provider - and, with the real agent
+// behind it, why the tool loop is exercised rather than mocked.
 type fakeModel struct {
-	chunks      []string
+	// chunks is a single reply, for the tests that never leave the first round.
+	chunks []string
+	// rounds, when set, is one reply per model call: a tool request, then the answer that reads its result.
+	rounds      []fakeRound
+	calls       int
 	generateErr error
 	streamErr   error
 	requests    [][]*schema.Message
@@ -30,17 +40,30 @@ func (m *fakeModel) Generate(context.Context, []*schema.Message, ...model.Option
 
 func (m *fakeModel) Stream(_ context.Context, messages []*schema.Message, _ ...model.Option) (*schema.StreamReader[*schema.Message], error) {
 	m.requests = append(m.requests, messages)
-	if m.historyWhenCalled == 0 && m.onCall != nil {
+	if m.onCall != nil {
 		m.onCall()
 	}
 	if m.streamErr != nil {
 		return nil, m.streamErr
 	}
 
-	stream, writer := schema.Pipe[*schema.Message](len(m.chunks) + 1)
+	round := fakeRound{chunks: m.chunks}
+	if len(m.rounds) > 0 {
+		if m.calls >= len(m.rounds) {
+			return nil, errors.New("the model was called more times than the test scripted")
+		}
+		round = m.rounds[m.calls]
+	}
+	m.calls++
+
+	stream, writer := schema.Pipe[*schema.Message](len(round.chunks) + 1)
 	go func() {
 		defer writer.Close()
-		for _, chunk := range m.chunks {
+		if len(round.toolCalls) > 0 {
+			writer.Send(schema.AssistantMessage("", round.toolCalls), nil)
+			return
+		}
+		for _, chunk := range round.chunks {
 			writer.Send(schema.AssistantMessage(chunk, nil), nil)
 		}
 	}()
@@ -106,6 +129,18 @@ func (h *fakeHistory) Append(_ context.Context, _ int64, _ string, role, content
 	return nil
 }
 
+// newTestAssistant builds the assistant the way the process does - the real agent with the real tools - and
+// fakes only the model, the knowledge base and the store. That is what makes the tool test below a test of
+// the wiring rather than of a stand-in.
+func newTestAssistant(t *testing.T, chatModel model.ToolCallingChatModel, retriever retriever, convos history) *Assistant {
+	t.Helper()
+	a, err := NewAssistant(context.Background(), chatModel, &fakeKada{}, retriever, convos)
+	if err != nil {
+		t.Fatalf("NewAssistant() failed: %v", err)
+	}
+	return a
+}
+
 // collect drains the events of one turn.
 func collect(t *testing.T, events <-chan Event) []Event {
 	t.Helper()
@@ -130,7 +165,7 @@ func deltas(events []Event) []string {
 // remember the conversation for the next question.
 func TestStreamEmitsTokensThenDone(t *testing.T) {
 	history := &fakeHistory{}
-	a := NewAssistant(&fakeModel{chunks: []string{"你", "好"}}, &fakeRetriever{}, history)
+	a := newTestAssistant(t, &fakeModel{chunks: []string{"你", "好"}}, &fakeRetriever{}, history)
 
 	events, err := a.Stream(context.Background(), 7, "c-1", "打个招呼")
 	if err != nil {
@@ -165,7 +200,7 @@ func TestStreamStoresTheQuestionBeforeTheModelRuns(t *testing.T) {
 	history := &fakeHistory{}
 	chatModel := &fakeModel{chunks: []string{"好"}}
 	chatModel.onCall = func() { chatModel.historyWhenCalled = len(history.appended) }
-	a := NewAssistant(chatModel, &fakeRetriever{}, history)
+	a := newTestAssistant(t, chatModel, &fakeRetriever{}, history)
 
 	events, err := a.Stream(context.Background(), 7, "c-1", "问题")
 	if err != nil {
@@ -183,7 +218,7 @@ func TestStreamStoresTheQuestionBeforeTheModelRuns(t *testing.T) {
 // tells the page which one it got.
 func TestStreamStartsAConversationWhenThereIsNone(t *testing.T) {
 	history := &fakeHistory{}
-	a := NewAssistant(&fakeModel{chunks: []string{"好"}}, &fakeRetriever{}, history)
+	a := newTestAssistant(t, &fakeModel{chunks: []string{"好"}}, &fakeRetriever{}, history)
 
 	events, err := a.Stream(context.Background(), 7, "", "第一句")
 	if err != nil {
@@ -203,7 +238,7 @@ func TestStreamStartsAConversationWhenThereIsNone(t *testing.T) {
 // prompt says there is no reference material rather than pretending there is.
 func TestStreamAnswersWithoutContextWhenRetrievalFails(t *testing.T) {
 	chatModel := &fakeModel{chunks: []string{"好"}}
-	a := NewAssistant(chatModel, &fakeRetriever{err: errors.New("pgvector is not installed")}, &fakeHistory{})
+	a := newTestAssistant(t, chatModel, &fakeRetriever{err: errors.New("pgvector is not installed")}, &fakeHistory{})
 
 	events, err := a.Stream(context.Background(), 7, "c-1", "问题")
 	if err != nil {
@@ -230,7 +265,7 @@ func TestStreamAnswersWithoutContextWhenRetrievalFails(t *testing.T) {
 func TestStreamPutsThePassagesInFrontOfTheQuestion(t *testing.T) {
 	chatModel := &fakeModel{chunks: []string{"好"}}
 	retriever := &fakeRetriever{passages: []string{"短链是一条记录。", "点击会被记录。"}}
-	a := NewAssistant(chatModel, retriever, &fakeHistory{})
+	a := newTestAssistant(t, chatModel, retriever, &fakeHistory{})
 
 	events, err := a.Stream(context.Background(), 7, "c-1", "短链是什么")
 	if err != nil {
@@ -255,7 +290,7 @@ func TestStreamPutsThePassagesInFrontOfTheQuestion(t *testing.T) {
 // is no status code left to use - and nothing is stored as the answer.
 func TestStreamReportsAModelFailureAsAnErrorEvent(t *testing.T) {
 	history := &fakeHistory{}
-	a := NewAssistant(&fakeModel{streamErr: errors.New("401 unauthorized")}, &fakeRetriever{}, history)
+	a := newTestAssistant(t, &fakeModel{streamErr: errors.New("401 unauthorized")}, &fakeRetriever{}, history)
 
 	events, err := a.Stream(context.Background(), 7, "c-1", "问题")
 	if err != nil {
@@ -279,7 +314,7 @@ func TestStreamReportsAModelFailureAsAnErrorEvent(t *testing.T) {
 // A question that cannot even be loaded fails before the stream starts, so the handler can still answer
 // with a status code. This is the branch the page turns into a toast rather than an empty bubble.
 func TestStreamFailsBeforeTheFirstEvent(t *testing.T) {
-	a := NewAssistant(&fakeModel{}, &fakeRetriever{}, &fakeHistory{loadErr: errors.New("database is down")})
+	a := newTestAssistant(t, &fakeModel{}, &fakeRetriever{}, &fakeHistory{loadErr: errors.New("database is down")})
 
 	if _, err := a.Stream(context.Background(), 7, "c-1", "问题"); err == nil {
 		t.Fatal("expected the load failure to be returned to the caller")
@@ -290,7 +325,7 @@ func TestStreamFailsBeforeTheFirstEvent(t *testing.T) {
 // context check the goroutine would block forever on a channel nobody reads.
 func TestStreamStopsWhenTheClientGoesAway(t *testing.T) {
 	history := &fakeHistory{}
-	a := NewAssistant(&fakeModel{chunks: []string{"你", "好"}}, &fakeRetriever{}, history)
+	a := newTestAssistant(t, &fakeModel{chunks: []string{"你", "好"}}, &fakeRetriever{}, history)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -299,14 +334,89 @@ func TestStreamStopsWhenTheClientGoesAway(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Stream() failed: %v", err)
 	}
+	// collect returning at all is the first assertion: the producer stopped instead of blocking forever on a
+	// channel nobody reads. Which events arrive depends on the reader - a canceled context makes the agent
+	// fail, and whether that failure is deliverable is up to whoever is still listening.
 	got := collect(t, events)
 
-	if len(got) != 0 {
-		t.Errorf("events = %+v, want none for a client that is gone", got)
+	if len(got) > 0 && got[len(got)-1].Name == EventDone {
+		t.Errorf("a canceled request reported a finished answer: %+v", got)
 	}
 	for _, turn := range history.appended {
 		if turn.Role == "assistant" {
 			t.Error("an answer nobody could read was stored")
 		}
+	}
+}
+
+// The agent is what runs the tools: the model asks for one, the agent executes it and calls the model again
+// with the result. That is the loop the Python service wrote by hand, and the user in the context is what
+// makes one shared agent safe to reuse for every account.
+func TestStreamRunsTheToolTheModelAsksFor(t *testing.T) {
+	kada := &fakeKada{overview: `{"total_links":3,"total_clicks":9}`}
+	chatModel := &fakeModel{rounds: []fakeRound{
+		{toolCalls: []schema.ToolCall{{
+			ID:       "call-1",
+			Function: schema.FunctionCall{Name: "get_link_overview", Arguments: "{}"},
+		}}},
+		{chunks: []string{"你有 ", "3 条短链"}},
+	}}
+	history := &fakeHistory{}
+
+	a, err := NewAssistant(context.Background(), chatModel, kada, &fakeRetriever{}, history)
+	if err != nil {
+		t.Fatalf("NewAssistant() failed: %v", err)
+	}
+	events, err := a.Stream(context.Background(), 42, "c-1", "我一共有多少短链")
+	if err != nil {
+		t.Fatalf("Stream() failed: %v", err)
+	}
+	got := collect(t, events)
+
+	if kada.overviewCalls != 1 {
+		t.Errorf("the tool ran %d times, want once", kada.overviewCalls)
+	}
+	if kada.userID != 42 {
+		t.Errorf("the tool acted for user %d, want the caller 42", kada.userID)
+	}
+	if after := deltas(got); len(after) != 2 || after[0] != "你有 " {
+		t.Errorf("deltas = %v, want the answer from the round after the tool", after)
+	}
+	if got[len(got)-1].Name != EventDone {
+		t.Errorf("the turn did not finish: %+v", got)
+	}
+
+	// The model's second request carries the tool's result, which is how it learned the numbers.
+	second := chatModel.requests[1]
+	last := second[len(second)-1]
+	if last.Role != schema.Tool || !strings.Contains(last.Content, "total_links") {
+		t.Errorf("the second request did not carry the tool result: %+v", last)
+	}
+}
+
+// A model that only ever asks for tools has to hit the step limit. Without it this test would never return,
+// which is exactly what the bound is for.
+func TestStreamStopsAtTheStepLimit(t *testing.T) {
+	rounds := make([]fakeRound, 0, maxAgentSteps+2)
+	for i := 0; i < maxAgentSteps+2; i++ {
+		rounds = append(rounds, fakeRound{toolCalls: []schema.ToolCall{{
+			ID:       "call-1",
+			Function: schema.FunctionCall{Name: "get_current_time", Arguments: "{}"},
+		}}})
+	}
+
+	a := newTestAssistant(t, &fakeModel{rounds: rounds}, &fakeRetriever{}, &fakeHistory{})
+	events, err := a.Stream(context.Background(), 7, "c-1", "不停地调用工具")
+	if err != nil {
+		t.Fatalf("Stream() failed: %v", err)
+	}
+	got := collect(t, events)
+
+	if len(got) == 0 {
+		t.Fatal("the turn produced no events at all")
+	}
+	// However it ends, it ends: a token as the last event would mean the stream was cut without saying so.
+	if last := got[len(got)-1].Name; last != EventDone && last != EventError {
+		t.Errorf("the turn ended on a %s event, want done or error: %+v", last, got)
 	}
 }

@@ -16,6 +16,8 @@ import (
 	"strings"
 
 	"github.com/cloudwego/eino/components/model"
+	"github.com/cloudwego/eino/compose"
+	"github.com/cloudwego/eino/flow/agent/react"
 	"github.com/cloudwego/eino/schema"
 )
 
@@ -81,14 +83,53 @@ type retriever interface {
 // Assistant answers questions: it retrieves the passages a question is about, keeps the conversation and
 // streams the answer back.
 type Assistant struct {
-	model     model.ToolCallingChatModel
+	agent     *react.Agent
 	knowledge retriever
 	convos    history
 }
 
-// NewAssistant builds the assistant from its three collaborators.
-func NewAssistant(chatModel model.ToolCallingChatModel, knowledge retriever, convos history) *Assistant {
-	return &Assistant{model: chatModel, knowledge: knowledge, convos: convos}
+// maxAgentSteps bounds one question's model/tool rounds.
+//
+// The unit is Eino's, not the Python service's: MaxStep counts graph steps, and the graph has a model node
+// and a tools node, so a round costs about two. Twelve therefore allows roughly the five rounds
+// MAX_AGENT_ROUNDS allowed, which exists for the same reason - a model that keeps calling tools has to
+// reach a limit instead of holding the request open forever.
+const maxAgentSteps = 12
+
+// NewAssistant builds the assistant and the tool-calling agent behind it.
+//
+// A nil chat model is a configuration, not a programming error: cmd/server starts without a key, warns, and
+// every question is answered with that fact (see Stream).
+func NewAssistant(
+	ctx context.Context,
+	chatModel model.ToolCallingChatModel,
+	kada kadaOperations,
+	knowledge retriever,
+	convos history,
+) (*Assistant, error) {
+	assistant := &Assistant{knowledge: knowledge, convos: convos}
+	if chatModel == nil {
+		return assistant, nil
+	}
+
+	tools, err := newTools(kada)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build the assistant's tools: %w", err)
+	}
+
+	// The agent runs the tool loop the Python service wrote by hand: stream the model's answer, run whatever
+	// tools it asked for, feed the results back, and stop after maxAgentSteps rounds.
+	agent, err := react.NewAgent(ctx, &react.AgentConfig{
+		ToolCallingModel: chatModel,
+		ToolsConfig:      compose.ToolsNodeConfig{Tools: tools},
+		MaxStep:          maxAgentSteps,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to build the agent: %w", err)
+	}
+
+	assistant.agent = agent
+	return assistant, nil
 }
 
 // Stream starts one turn and returns its events as they happen.
@@ -101,7 +142,7 @@ func (a *Assistant) Stream(ctx context.Context, userID int64, conversationID, qu
 	// A process started without a chat model key still serves this route; it has to fail here rather than
 	// on a nil interface, and before anything is stored, so a misconfigured deployment leaves no trace in
 	// the conversation history.
-	if a.model == nil {
+	if a.agent == nil {
 		return nil, errors.New("the assistant has no chat model configured")
 	}
 
@@ -123,6 +164,9 @@ func (a *Assistant) Stream(ctx context.Context, userID int64, conversationID, qu
 	if err := a.convos.Append(ctx, userID, conversationID, "user", question); err != nil {
 		return nil, err
 	}
+
+	// The tools act for this user; the context is how they find out which one (see userIDKey).
+	ctx = withUser(ctx, userID)
 
 	events := make(chan Event)
 	go func() {
@@ -191,9 +235,13 @@ func (a *Assistant) run(
 	}})
 }
 
-// answer streams the model's reply, forwarding each chunk, and returns the whole text.
+// answer streams the agent's reply, forwarding each chunk, and returns the whole text.
+//
+// Only text reaches the user: the agent's tool calls and their results are its own business, which is what
+// the Python service's hand-written loop did too - it forwarded chunk.content and kept the tool messages to
+// itself.
 func (a *Assistant) answer(ctx context.Context, messages []*schema.Message, send func(Event) bool) (string, error) {
-	stream, err := a.model.Stream(ctx, messages)
+	stream, err := a.agent.Stream(ctx, messages)
 	if err != nil {
 		return "", fmt.Errorf("the model refused the request: %w", err)
 	}
