@@ -35,7 +35,7 @@ Kada 由以下部分组成：
 | Kafka 3.8 | 消息队列 | 点击事件异步落库 |
 | Worker（Go） | 独立进程，无 HTTP 端口 | 消费 Kafka 的点击事件并写入数据库 |
 | Nginx | 反向代理，端口 80 | 统一入口：`/api/` 和 `/r/` 转发后端，其余转发前端 |
-| Python AI 服务 | FastAPI + LangChain，端口 8000（内网） | AI 助手，由 Go 网关转发，不直接对外 |
+| AI 助手（Go） | 与 API 同一个进程，Eino + pgvector | 对话、工具调用与知识库检索，随 API 一起部署，没有独立服务 |
 
 后端代码分层为 **Handler（HTTP 层）→ Service（业务逻辑）→ Entity（数据库模型）**。Handler 不直接碰数据库，Service 不接触 HTTP 上下文。数据归属校验在 Service 层完成：查询时始终把 `user_id` 放进 WHERE 条件，绝不信任客户端传来的 ID。
 
@@ -73,9 +73,9 @@ Kada 由以下部分组成：
 - **创建短链**：直接把链接发给 AI，说"帮我转成短链"，AI 会调用短链服务创建并返回短链接
 - **查询数据概览**：询问"我有多少链接""最近点击情况"，AI 会调用数据概览接口回答
 - **知识库问答**：AI 可以检索本知识库回答关于 Kada 平台功能和使用的问题
-- **工具调用**：AI 可以查询当前时间、做简单计算，也能**以当前登录用户的身份**查询短链总览和创建短链（用的是用户自己的登录凭据，不需要额外配置服务令牌）
+- **工具调用**：AI 可以查询当前时间、做简单计算，也能**以当前登录用户的身份**查询短链总览和创建短链（工具在同一个进程内直接调用业务服务，用的是本次请求的登录用户，不需要额外配置服务令牌）
 
-AI 助手采用**单会话模式**：每个用户只保留当前一个会话，对话有上下文记忆；点击"重新开始"会清空当前会话并开启新会话。会话记录存储在 PostgreSQL（`kada_ai` 库），Redis 作为缓存加速读取，向量知识库存放在 PostgreSQL 的 pgvector 扩展中。
+AI 助手采用**单会话模式**：每个用户只保留当前一个会话，对话有上下文记忆；点击"重新开始"会清空当前会话并开启新会话。会话记录与向量知识库都存放在主数据库 PostgreSQL 里（知识库依赖 pgvector 扩展），没有额外的缓存层。
 
 ## 七、常见问题（FAQ）
 
@@ -109,6 +109,6 @@ AI 助手采用**单会话模式**：每个用户只保留当前一个会话，�
 - 启动后端：`cd backend && go run ./cmd/server/main.go`（端口 8080）；启动前端：`cd frontend && npm run dev`（端口 3000）
 - 一键启动全部服务（含数据库等）：`docker compose up -d`
 - 数据库表结构由 GORM 模型自动迁移（AutoMigrate），只增不删，可重复执行
-- AI 服务启动：`python app/main.py`（在 `backend/ai` 目录下，端口 8000）
-- AI 知识库文档入库：运行 `python -m app.scripts.ingest_docs`，会读取 `docs/` 目录下的文档切块并生成向量存入 pgvector
-- AI 服务需要配置的环境变量：`DEEPSEEK_API_KEY`（对话模型）、`aliyun`（阿里云百炼 Embedding 密钥）、`KADA_API_BASE`（Go 后端地址，供业务工具回调）
+- AI 助手没有独立服务：它随 API 进程一起启动，`/api/ai/*` 由同一个二进制提供
+- AI 知识库入库：`cd backend && go run ./cmd/ai-ingest/`，读取 `backend/internal/assistant/knowledge/` 下的文档，切块、向量化后写入 pgvector（需要 `DASHSCOPE_API_KEY`，以及启用了 vector 扩展的 PostgreSQL）
+- AI 助手需要配置的环境变量：`DEEPSEEK_API_KEY`（对话模型）、`DASHSCOPE_API_KEY`（阿里云百炼 Embedding 密钥）；`AI_CHAT_MODEL`、`DEEPSEEK_BASE_URL`、`AI_MAX_TOKENS`、`AI_EMBEDDING_MODEL` 可选

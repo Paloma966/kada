@@ -28,7 +28,7 @@
 | 存储 | PostgreSQL 16（知识库使用 pgvector）、Redis 7 |
 | 消息队列 | Kafka 3.8 |
 | 前端 | Next.js 16、React 19、TypeScript、SWR、Tailwind |
-| AI 服务 | Python 3.11、FastAPI、LangChain、DeepSeek + 阿里云百炼 |
+| AI 助手 | Go（Eino）、DeepSeek + 阿里云百炼、pgvector |
 | 部署 | Docker Compose、Nginx、systemd、GitHub Actions |
 
 ## 架构
@@ -41,9 +41,8 @@
 （AutoMigrate）应用。仓库里没有 SQL 迁移文件：结构体是唯一事实来源，AutoMigrate 只补齐缺失的
 表 / 列 / 索引，因此可以安全地重复执行。
 
-AI 助手是独立的 Python 服务（`backend/ai`），从不对外暴露：Go 网关校验调用方身份后，把
-`/api/ai/*` 反向代理给它。见 [backend/ai/README.md](backend/ai/README.md) 与
-[docs/ai-deployment.md](docs/ai-deployment.md)。
+AI 助手运行在 API 进程内：`/api/ai/*` 由它自己提供，会话与知识库都存放在同一个 PostgreSQL 里，
+它提供的工具直接调用本项目的业务服务。见 [docs/design.md](docs/design.md) 的部署一节。
 
 ## 快速开始
 
@@ -71,16 +70,15 @@ cd frontend && npm run dev                  # 3000
 | DB_AUTO_MIGRATE | 是否让 API 服务在启动时应用表结构（默认 true；使用 cmd/migrate 时设为 false） |
 | SMS_ACCESS_KEY_ID / SMS_ACCESS_KEY_SECRET | 阿里云短信。生产环境必填：手机号 + 短信验证码是唯一的登录方式 |
 | SMS_SIGN_NAME / SMS_TEMPLATE_CODE | 阿里云 PNVS 控制台为你分配的短信签名与模板 |
-| AI_BASE_URL / AI_INTERNAL_SECRET | Go 网关在何处找到 AI 服务，以及使其只接受网关请求的共享密钥 |
-| DEEPSEEK_API_KEY / aliyun | 仅 AI 服务使用（对话模型密钥，以及以字面量名 `aliyun` 存放的百炼 embedding 密钥） |
+| DEEPSEEK_API_KEY / DASHSCOPE_API_KEY | AI 助手使用（对话模型密钥，以及知识库用的百炼 embedding 密钥） |
 
-生产环境下这些值来自 GitHub 仓库 secrets，由部署任务写入 `/opt/kada/ai/ai.env` 与
-`/opt/kada/backend/.env`；见 [docs/ai-deployment.md](docs/ai-deployment.md)。
+生产环境下这些值来自 GitHub 仓库 secrets，由部署任务写入 `/opt/kada/backend/.env`；部署任务做了什么，
+见 [docs/design.md](docs/design.md) 的部署一节。
 
 ## 目录结构
 
 ```text
-backend/   Go 后端（cmd + internal），Python AI 服务在 backend/ai
+backend/   Go 后端（cmd + internal），AI 助手也在其中
 frontend/  Next.js 前端
 docs/      设计、贡献与代码风格文档
 nginx/     反向代理配置

@@ -15,18 +15,8 @@ type Config struct {
 	BaseURL     string
 	FrontendURL string
 
-	// AIBaseURL is the internal Python AI service that the gateway proxies to.
-	// It must never be exposed to the public internet.
-	AIBaseURL string
-
-	// AIInternalSecret is injected as X-Internal-Secret on every proxied request
-	// so the AI service can tell a gateway request from a direct one, which is
-	// what makes the X-Kada-User-ID header it also carries worth trusting.
-	// Empty disables the check on both sides (local development).
-	AIInternalSecret string
-
-	// The assistant's own settings. It runs in this process - the Python service it used to call is
-	// being replaced - so the model keys are read here instead of being handed to a second program.
+	// The assistant's own settings. It runs in this process, so the model keys are read here; there is no
+	// second service, no internal secret and no second database to point at.
 	AIDeepSeekBaseURL string
 	AIDeepSeekAPIKey  string
 	// AIDeepSeekModel keeps the name the Python service used. The name is a product decision, not part of
@@ -34,9 +24,7 @@ type Config struct {
 	AIDeepSeekModel string
 	AIMaxTokens     int
 
-	// The embedding key is the Aliyun Bailian (DashScope) one. The Python service read it from `aliyun`,
-	// which is the name the old deployment wrote into ai.env; DASHSCOPE_API_KEY is the name to use from
-	// here on, and both are accepted so an existing ai.env keeps working during the change.
+	// The embedding key is the Aliyun Bailian (DashScope) one, for the knowledge base.
 	AIEmbeddingModel  string
 	AIEmbeddingAPIKey string
 
@@ -61,22 +49,20 @@ type Config struct {
 
 func Load() *Config {
 	return &Config{
-		Port:             getEnv("PORT", "8080"),
-		DatabaseURL:      getEnv("DATABASE_URL", "postgres://kada:kada123@localhost:5432/kada?sslmode=disable"),
-		RedisURL:         getEnv("REDIS_URL", "redis://localhost:6379"),
-		JWTSecret:        getEnv("JWT_SECRET", "kada-dev-secret-change-in-production"),
-		JWTExpires:       getEnv("JWT_EXPIRES_IN", "720h"),
-		BaseURL:          getEnv("API_BASE_URL", "https://kada.click"),
-		FrontendURL:      getEnv("FRONTEND_URL", "http://localhost:3000"),
-		AIBaseURL:        getEnv("AI_BASE_URL", "http://127.0.0.1:8000"),
-		AIInternalSecret: getEnv("AI_INTERNAL_SECRET", ""),
+		Port:        getEnv("PORT", "8080"),
+		DatabaseURL: getEnv("DATABASE_URL", "postgres://kada:kada123@localhost:5432/kada?sslmode=disable"),
+		RedisURL:    getEnv("REDIS_URL", "redis://localhost:6379"),
+		JWTSecret:   getEnv("JWT_SECRET", "kada-dev-secret-change-in-production"),
+		JWTExpires:  getEnv("JWT_EXPIRES_IN", "720h"),
+		BaseURL:     getEnv("API_BASE_URL", "https://kada.click"),
+		FrontendURL: getEnv("FRONTEND_URL", "http://localhost:3000"),
 
 		AIDeepSeekBaseURL: getEnv("DEEPSEEK_BASE_URL", "https://api.deepseek.com"),
 		AIDeepSeekAPIKey:  getEnv("DEEPSEEK_API_KEY", ""),
 		AIDeepSeekModel:   getEnv("AI_CHAT_MODEL", "deepseek-flash"),
 		AIMaxTokens:       getEnvInt("AI_MAX_TOKENS", 8192),
 		AIEmbeddingModel:  getEnv("AI_EMBEDDING_MODEL", "text-embedding-v3"),
-		AIEmbeddingAPIKey: embeddingKey(),
+		AIEmbeddingAPIKey: getEnv("DASHSCOPE_API_KEY", ""),
 		AutoMigrate:       getEnvBool("DB_AUTO_MIGRATE", true),
 		// SMS_SIGN_NAME has no default. A placeholder signature such as "kada" is not a value this account
 		// holds, and it turned "nobody configured SMS" into an Aliyun rejection that reads like a broken
@@ -142,15 +128,6 @@ func getEnvInt(key string, fallback int) int {
 		return fallback
 	}
 	return n
-}
-
-// embeddingKey reads the Aliyun Bailian key under its new name, falling back to the `aliyun` name the
-// Python service used so an ai.env written by the old deployment keeps working.
-func embeddingKey() string {
-	if v := getEnv("DASHSCOPE_API_KEY", ""); v != "" {
-		return v
-	}
-	return getEnv("aliyun", "")
 }
 
 // weakJWTSecrets lists known weak default secrets: startup fails outright in release mode

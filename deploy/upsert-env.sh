@@ -3,8 +3,8 @@
 #
 #   bash upsert-env.sh /opt/kada/ai/ai.env \
 #     --set DEEPSEEK_API_KEY="$DEEPSEEK_API_KEY" \
-#     --set aliyun="$DASHSCOPE_API_KEY" \
-#     --require DEEPSEEK_API_KEY --require aliyun
+#     --set DASHSCOPE_API_KEY="$DASHSCOPE_API_KEY" \
+#     --require DEEPSEEK_API_KEY --require DASHSCOPE_API_KEY
 #
 # Why this exists: the AI keys and the SMS credentials used to be typed into a file on the server by hand,
 # and nothing anywhere failed when they were forgotten. The service started, passed its health check, and
@@ -137,8 +137,8 @@ was configured by hand keeps deploying without the secret being set here.
 
 Expected secrets:
   DEEPSEEK_API_KEY    chat model key           -> DEEPSEEK_API_KEY in ai.env
-  DASHSCOPE_API_KEY   Bailian embedding key    -> aliyun in ai.env
-  AI_INTERNAL_SECRET  gateway shared secret    -> both ai.env and backend/.env
+  DASHSCOPE_API_KEY   Bailian embedding key    -> DASHSCOPE_API_KEY in backend/.env
+  
   SMS_ACCESS_KEY_ID, SMS_ACCESS_KEY_SECRET, SMS_SIGN_NAME, SMS_TEMPLATE_CODE -> backend/.env
       (phone + SMS code is the only sign-in method, so without these NOBODY CAN SIGN IN)
 EOF
