@@ -1,5 +1,6 @@
-// Extracts the "Verify deployment", "Report the smoke test result" and "Check the SMS credentials" steps
-// out of ci.yml and runs them, so each outcome is observed instead of assumed.
+// Extracts the "Verify deployment", "Report the smoke test result", "Check the SMS credentials" and
+// "Upload the deploy bundle" steps out of ci.yml and runs them, so each outcome is observed instead of
+// assumed.
 //
 //   node scripts/verify-deploy-step.test.js
 //
@@ -12,6 +13,12 @@
 // the credentials, and still exits 0. It must not fail the job, because the value only has to reach the
 // host's .env by some route and a hand-configured host deploys perfectly well - a step that failed here
 // would reject a deployment that was going to work, which is worse than saying nothing.
+//
+// The upload cases stub `ssh` and drive the three things it can do wrong: complete the transfer, complete
+// it after failures, deliver a short stream while still exiting 0, and refuse outright. What they pin is
+// that a bad link stays bounded - three attempts, then a failure with the host untouched - because the
+// step this replaced could sit in a stalled transfer for half an hour (see the comment in ci.yml), and
+// that the bundle still carries every path the deploy step reads.
 //
 // Generates scripts/.verify-deploy-out/ and runs it with bash. Git Bash cannot run under the default
 // sandbox (it needs a signal pipe), so this looks for WSL bash first and falls back to Git Bash.
@@ -51,6 +58,7 @@ const write = (name, content) => fs.writeFileSync(path.join(outDir, name), conte
 write("step-verify.sh", extractRun("Verify deployment"));
 write("step-report.sh", extractRun("Report the smoke test result"));
 write("step-check-sms.sh", extractRun("Check the SMS credentials"));
+write("step-upload-bundle.sh", extractRun("Upload the deploy bundle"));
 
 // --- the harness that decides whether each case behaved -------------------------------------------------
 const HARNESS = String.raw`#!/usr/bin/env bash
@@ -158,6 +166,7 @@ echo "--- bash -n ---"
 bash -n "$HERE/step-verify.sh" && echo "step-verify.sh parses"
 bash -n "$HERE/step-report.sh" && echo "step-report.sh parses"
 bash -n "$HERE/step-check-sms.sh" && echo "step-check-sms.sh parses"
+bash -n "$HERE/step-upload-bundle.sh" && echo "step-upload-bundle.sh parses"
 echo
 
 echo "--- cases ---"
@@ -225,6 +234,121 @@ run_sms_case() {
 
 run_sms_case missing yes yes "SMS secrets unset: says so, without failing the deploy"
 run_sms_case present no  no  "SMS secrets set: says nothing at all"
+echo
+
+echo "--- the deploy bundle upload step ---"
+
+# The step talks to a host this machine cannot reach, so ssh is stubbed and the modes are the ways a
+# real link misbehaves. The interesting one is "truncated": ssh exits 0 having delivered less than it was
+# given, which is the case the size check exists for and the one a retry loop would otherwise paper over.
+run_upload_case() {
+  mode="$1"; want_exit="$2"; want_attempts="$3"; want_unpacked="$4"; label="$5"
+  dir="$HERE/case-upload-$mode"
+  rm -rf "$dir"; mkdir -p "$dir/bin" "$dir/backend/bin" "$dir/deploy-pkg" "$dir/deploy"
+  : > "$dir/calls"
+
+  # The files the step tars. Their names are the contract with the deploy step that follows, so the
+  # assertions below also check the received tar carries every one of them.
+  for f in backend/bin/server backend/bin/migrate deploy-pkg/kada-fe-standalone.tar.gz \
+           deploy-pkg/kada-fe-static.tar.gz deploy-pkg/kada-ai-src.tar.gz deploy-version.txt \
+           deploy/deploy-ai.sh deploy/upsert-env.sh deploy/docker-compose.ai.yml; do
+    echo "fixture" > "$dir/$f"
+  done
+
+  cat > "$dir/bin/ssh" <<'STUB'
+#!/usr/bin/env bash
+# Stub for ssh. The step sends three remote commands and the last argument is always the command itself.
+cmd=""
+for arg in "$@"; do cmd="$arg"; done
+echo "$cmd" >> "$STUB_CALLS"
+
+case "$cmd" in
+  'cat > /tmp/kada-deploy.tar.gz')
+    n=$(cat "$STUB_ATTEMPTS" 2>/dev/null || echo 0)
+    n=$((n + 1))
+    echo "$n" > "$STUB_ATTEMPTS"
+    case "$STUB_MODE" in
+      ok|truncated) cat > "$STUB_REMOTE" ;;
+      flaky) if [ "$n" -ge 3 ]; then cat > "$STUB_REMOTE"; else echo "connection reset by peer" >&2; exit 1; fi ;;
+      dead) echo "connection refused" >&2; exit 1 ;;
+    esac
+    ;;
+  'stat -c%s /tmp/kada-deploy.tar.gz')
+    size=$(wc -c < "$STUB_REMOTE")
+    if [ "$STUB_MODE" = "truncated" ]; then size=$((size - 1)); fi
+    printf '%s\n' "$size"
+    ;;
+  *)
+    echo "unpacked" > "$STUB_UNPACKED"
+    ;;
+esac
+STUB
+  chmod +x "$dir/bin/ssh"
+
+  # timeout is coreutils and present on the runner. Stubbing it keeps these cases from depending on
+  # whether the bash running them here ships it.
+  cat > "$dir/bin/timeout" <<'STUB'
+#!/usr/bin/env bash
+shift
+exec "$@"
+STUB
+  chmod +x "$dir/bin/timeout"
+
+  export STUB_MODE="$mode"
+  export STUB_CALLS="$dir/calls"
+  export STUB_ATTEMPTS="$dir/attempts"
+  export STUB_REMOTE="$dir/remote.tar.gz"
+  export STUB_UNPACKED="$dir/unpacked"
+  export SSH_KEY="not-a-real-key"
+  export SERVER_HOST="example.invalid"
+  export SERVER_USER="kada"
+  export RUNNER_TEMP="$dir"
+  # The step's backoff, set to nothing so a case does not wait it out.
+  export RETRY_DELAY_SECONDS=0
+  export PATH="$(cygpath -u "$dir/bin"):$PATH"
+
+  ( cd "$dir" && bash "$HERE/step-upload-bundle.sh" ) > "$dir/upload.out" 2>&1
+  upload_exit=$?
+
+  attempts=$(grep -c 'cat > /tmp/kada-deploy.tar.gz' "$dir/calls" || true)
+  unpacked=no
+  [ -s "$dir/unpacked" ] && unpacked=yes
+
+  problems=""
+  [ "$upload_exit" = "$want_exit" ] || problems="$problems exit=$upload_exit(want $want_exit)"
+  [ "$attempts" = "$want_attempts" ] || problems="$problems attempts=$attempts(want $want_attempts)"
+  [ "$unpacked" = "$want_unpacked" ] || problems="$problems unpacked=$unpacked(want $want_unpacked)"
+  [ -s "$dir/upload.out" ] || problems="$problems the step printed nothing"
+
+  # A failure must say what happened, and must never be quiet about it.
+  if [ "$want_exit" != "0" ]; then
+    grep -q 'nothing on the host was changed' "$dir/upload.out" || problems="$problems the failure does not say the host was left alone"
+  fi
+
+  if [ "$want_unpacked" = "yes" ]; then
+    tar tzf "$dir/remote.tar.gz" > "$dir/members" 2>/dev/null || problems="$problems the host did not receive a tar"
+    for member in backend/bin/server backend/bin/migrate deploy-pkg/kada-fe-standalone.tar.gz \
+                  deploy-pkg/kada-fe-static.tar.gz deploy-pkg/kada-ai-src.tar.gz deploy-version.txt \
+                  deploy/deploy-ai.sh deploy/upsert-env.sh deploy/docker-compose.ai.yml; do
+      grep -qx "$member" "$dir/members" || problems="$problems the bundle is missing $member"
+    done
+  fi
+
+  if [ -z "$problems" ]; then
+    printf 'ok    %s\n' "$label"
+  else
+    printf 'FAIL  %s\n' "$label"
+    printf '        reason:%s\n' "$problems"
+    fails=$((fails + 1))
+  fi
+  printf '        exit=%s attempts=%s unpacked=%s\n' "$upload_exit" "$attempts" "$unpacked"
+  printf '        out: %s\n' "$(tail -n 2 "$dir/upload.out" | tr '\n' ' ')"
+}
+
+run_upload_case ok        0 1 yes "a good link: one attempt, then the bundle is unpacked"
+run_upload_case flaky     0 3 yes "two dropped connections: the third attempt delivers it"
+run_upload_case truncated 1 3 no  "ssh exits 0 with a short stream: refused, host untouched"
+run_upload_case dead      1 3 no  "the host refuses: three attempts, then a bounded failure"
 echo
 
 if [ "$fails" = "0" ]; then
