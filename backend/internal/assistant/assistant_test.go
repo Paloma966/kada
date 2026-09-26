@@ -74,21 +74,6 @@ func (m *fakeModel) BindTools([]*schema.ToolInfo) error { return nil }
 
 func (m *fakeModel) WithTools([]*schema.ToolInfo) (model.ToolCallingChatModel, error) { return m, nil }
 
-// fakeRetriever stands in for the knowledge base.
-type fakeRetriever struct {
-	passages []string
-	err      error
-	query    string
-}
-
-func (r *fakeRetriever) Retrieve(_ context.Context, query string, _ int) ([]string, error) {
-	r.query = query
-	if r.err != nil {
-		return nil, r.err
-	}
-	return r.passages, nil
-}
-
 // fakeHistory records the turns in the order the assistant stores them.
 type fakeHistory struct {
 	stored     []ChatMessage
@@ -130,11 +115,11 @@ func (h *fakeHistory) Append(_ context.Context, _ int64, _ string, role, content
 }
 
 // newTestAssistant builds the assistant the way the process does - the real agent with the real tools - and
-// fakes only the model, the knowledge base and the store. That is what makes the tool test below a test of
-// the wiring rather than of a stand-in.
-func newTestAssistant(t *testing.T, chatModel model.ToolCallingChatModel, retriever retriever, convos history) *Assistant {
+// fakes only the model and the store. That is what makes the tool test below a test of the wiring rather
+// than of a stand-in.
+func newTestAssistant(t *testing.T, chatModel model.ToolCallingChatModel, convos history) *Assistant {
 	t.Helper()
-	a, err := NewAssistant(context.Background(), chatModel, &fakeKada{}, retriever, convos)
+	a, err := NewAssistant(context.Background(), chatModel, &fakeKada{}, convos)
 	if err != nil {
 		t.Fatalf("NewAssistant() failed: %v", err)
 	}
@@ -165,7 +150,7 @@ func deltas(events []Event) []string {
 // remember the conversation for the next question.
 func TestStreamEmitsTokensThenDone(t *testing.T) {
 	history := &fakeHistory{}
-	a := newTestAssistant(t, &fakeModel{chunks: []string{"你", "好"}}, &fakeRetriever{}, history)
+	a := newTestAssistant(t, &fakeModel{chunks: []string{"你", "好"}}, history)
 
 	events, err := a.Stream(context.Background(), 7, "c-1", "打个招呼")
 	if err != nil {
@@ -200,7 +185,7 @@ func TestStreamStoresTheQuestionBeforeTheModelRuns(t *testing.T) {
 	history := &fakeHistory{}
 	chatModel := &fakeModel{chunks: []string{"好"}}
 	chatModel.onCall = func() { chatModel.historyWhenCalled = len(history.appended) }
-	a := newTestAssistant(t, chatModel, &fakeRetriever{}, history)
+	a := newTestAssistant(t, chatModel, history)
 
 	events, err := a.Stream(context.Background(), 7, "c-1", "问题")
 	if err != nil {
@@ -218,7 +203,7 @@ func TestStreamStoresTheQuestionBeforeTheModelRuns(t *testing.T) {
 // tells the page which one it got.
 func TestStreamStartsAConversationWhenThereIsNone(t *testing.T) {
 	history := &fakeHistory{}
-	a := newTestAssistant(t, &fakeModel{chunks: []string{"好"}}, &fakeRetriever{}, history)
+	a := newTestAssistant(t, &fakeModel{chunks: []string{"好"}}, history)
 
 	events, err := a.Stream(context.Background(), 7, "", "第一句")
 	if err != nil {
@@ -234,38 +219,11 @@ func TestStreamStartsAConversationWhenThereIsNone(t *testing.T) {
 	}
 }
 
-// The knowledge base is an enhancement, not a dependency: when it fails the answer still arrives, and the
-// prompt says there is no reference material rather than pretending there is.
-func TestStreamAnswersWithoutContextWhenRetrievalFails(t *testing.T) {
+// The documentation reaches the model on the way in, which is what turns the assistant from a general chat
+// model into one that knows this product.
+func TestStreamGivesTheModelTheDocumentation(t *testing.T) {
 	chatModel := &fakeModel{chunks: []string{"好"}}
-	a := newTestAssistant(t, chatModel, &fakeRetriever{err: errors.New("pgvector is not installed")}, &fakeHistory{})
-
-	events, err := a.Stream(context.Background(), 7, "c-1", "问题")
-	if err != nil {
-		t.Fatalf("Stream() failed: %v", err)
-	}
-	got := collect(t, events)
-
-	for _, event := range got {
-		if event.Name == EventError {
-			t.Fatalf("a retrieval failure must not reach the user: %+v", event)
-		}
-	}
-	if got[len(got)-1].Name != EventDone {
-		t.Fatalf("the turn did not finish: %+v", got)
-	}
-
-	last := chatModel.requests[0][len(chatModel.requests[0])-1]
-	if !strings.Contains(last.Content, noKnowledge) {
-		t.Errorf("prompt = %q, want it to say the knowledge base holds nothing relevant", last.Content)
-	}
-}
-
-// Retrieved passages are put in front of the question, separated, exactly where the Python prompt had them.
-func TestStreamPutsThePassagesInFrontOfTheQuestion(t *testing.T) {
-	chatModel := &fakeModel{chunks: []string{"好"}}
-	retriever := &fakeRetriever{passages: []string{"短链是一条记录。", "点击会被记录。"}}
-	a := newTestAssistant(t, chatModel, retriever, &fakeHistory{})
+	a := newTestAssistant(t, chatModel, &fakeHistory{})
 
 	events, err := a.Stream(context.Background(), 7, "c-1", "短链是什么")
 	if err != nil {
@@ -273,16 +231,16 @@ func TestStreamPutsThePassagesInFrontOfTheQuestion(t *testing.T) {
 	}
 	collect(t, events)
 
-	if retriever.query != "短链是什么" {
-		t.Errorf("retrieved for %q, want the question", retriever.query)
+	first := chatModel.requests[0][0]
+	if first.Role != schema.System {
+		t.Fatalf("first message role = %q, want the system prompt", first.Role)
+	}
+	if !strings.Contains(first.Content, "【参考资料】") {
+		t.Errorf("system message = %q, want the reference block", first.Content)
 	}
 	last := chatModel.requests[0][len(chatModel.requests[0])-1]
-	want := "【参考资料】\n短链是一条记录。\n\n---\n\n点击会被记录。\n\n【用户问题】短链是什么"
-	if last.Content != want {
-		t.Errorf("prompt = %q, want %q", last.Content, want)
-	}
-	if role := chatModel.requests[0][0].Role; role != schema.System {
-		t.Errorf("first message role = %q, want the system prompt", role)
+	if last.Role != schema.User || last.Content != "短链是什么" {
+		t.Errorf("last message = %+v, want the question", last)
 	}
 }
 
@@ -290,7 +248,7 @@ func TestStreamPutsThePassagesInFrontOfTheQuestion(t *testing.T) {
 // is no status code left to use - and nothing is stored as the answer.
 func TestStreamReportsAModelFailureAsAnErrorEvent(t *testing.T) {
 	history := &fakeHistory{}
-	a := newTestAssistant(t, &fakeModel{streamErr: errors.New("401 unauthorized")}, &fakeRetriever{}, history)
+	a := newTestAssistant(t, &fakeModel{streamErr: errors.New("401 unauthorized")}, history)
 
 	events, err := a.Stream(context.Background(), 7, "c-1", "问题")
 	if err != nil {
@@ -314,7 +272,7 @@ func TestStreamReportsAModelFailureAsAnErrorEvent(t *testing.T) {
 // A question that cannot even be loaded fails before the stream starts, so the handler can still answer
 // with a status code. This is the branch the page turns into a toast rather than an empty bubble.
 func TestStreamFailsBeforeTheFirstEvent(t *testing.T) {
-	a := newTestAssistant(t, &fakeModel{}, &fakeRetriever{}, &fakeHistory{loadErr: errors.New("database is down")})
+	a := newTestAssistant(t, &fakeModel{}, &fakeHistory{loadErr: errors.New("database is down")})
 
 	if _, err := a.Stream(context.Background(), 7, "c-1", "问题"); err == nil {
 		t.Fatal("expected the load failure to be returned to the caller")
@@ -325,7 +283,7 @@ func TestStreamFailsBeforeTheFirstEvent(t *testing.T) {
 // context check the goroutine would block forever on a channel nobody reads.
 func TestStreamStopsWhenTheClientGoesAway(t *testing.T) {
 	history := &fakeHistory{}
-	a := newTestAssistant(t, &fakeModel{chunks: []string{"你", "好"}}, &fakeRetriever{}, history)
+	a := newTestAssistant(t, &fakeModel{chunks: []string{"你", "好"}}, history)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -363,7 +321,7 @@ func TestStreamRunsTheToolTheModelAsksFor(t *testing.T) {
 	}}
 	history := &fakeHistory{}
 
-	a, err := NewAssistant(context.Background(), chatModel, kada, &fakeRetriever{}, history)
+	a, err := NewAssistant(context.Background(), chatModel, kada, history)
 	if err != nil {
 		t.Fatalf("NewAssistant() failed: %v", err)
 	}
@@ -405,7 +363,7 @@ func TestStreamStopsAtTheStepLimit(t *testing.T) {
 		}}})
 	}
 
-	a := newTestAssistant(t, &fakeModel{rounds: rounds}, &fakeRetriever{}, &fakeHistory{})
+	a := newTestAssistant(t, &fakeModel{rounds: rounds}, &fakeHistory{})
 	events, err := a.Stream(context.Background(), 7, "c-1", "不停地调用工具")
 	if err != nil {
 		t.Fatalf("Stream() failed: %v", err)

@@ -1,158 +1,57 @@
 package assistant
 
 import (
-	"context"
+	"embed"
 	"errors"
 	"fmt"
-
-	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
-
-	"github.com/chun/kada-backend/internal/domain/entity"
+	"io/fs"
+	"strings"
+	"sync"
 )
 
-// KnowledgeBase is the assistant's memory: passages stored with their vectors, searched by cosine
-// distance.
-type KnowledgeBase struct {
-	db       *gorm.DB
-	embedder Embedder
-}
-
-// NewKnowledgeBase builds the knowledge base on an open database handle.
-func NewKnowledgeBase(db *gorm.DB, embedder Embedder) *KnowledgeBase {
-	return &KnowledgeBase{db: db, embedder: embedder}
-}
-
-// embedBatchSize is how many passages go into one embedding request. DashScope's compatible endpoint
-// rejects oversized batches, and ten keeps a request well inside the limit while still amortizing the
-// round trip over a whole document.
-const embedBatchSize = 10
-
-// Replace rewrites the knowledge base with the passages of the given documents and returns how many
-// passages were stored.
+// knowledgeFiles is the documentation the assistant answers product questions from, compiled into the
+// binary.
 //
-// A full rebuild, in one transaction: the passages are embedded first (the slow part, and the part that
-// talks to somebody else's API) and only then swapped in, so a failure half way through leaves the
-// previous knowledge in place rather than a knowledge base missing its second half.
-func (k *KnowledgeBase) Replace(ctx context.Context, docs []Document) (int, error) {
-	passages, err := k.passages(ctx, docs)
+// Embedded rather than read from disk: the deployment ships a binary to a host that has no checkout, so a
+// path here would be a file that exists only on the machine that built it.
+//
+//go:embed knowledge/*.md
+var knowledgeFiles embed.FS
+
+// reference returns the bundled documentation, read once per process.
+//
+// Everything under knowledge/ becomes one block of reference material in the system prompt, which is the
+// whole retrieval strategy: the corpus is a few kilobytes of product notes, small enough to send in full
+// and therefore small enough that a search could only add ways to answer from less. The deploy agrees -
+// there is no indexing step, no embedding key and no vector extension to install.
+//
+// The prompt is also where the cost lives: every question pays for the whole corpus, which is nothing at
+// this size and would not be at a large one. If the corpus ever outgrows what a prompt can carry, this is
+// the function to put retrieval behind; systemMessage, its only caller, does not have to change.
+//
+// It is a variable wrapping sync.OnceValues rather than a plain function so a test can replace the reader
+// and see what the assistant does when the documentation cannot be read at all.
+var reference = sync.OnceValues(readKnowledgeFiles)
+
+// readKnowledgeFiles reads every bundled document and joins them into one block.
+func readKnowledgeFiles() (string, error) {
+	paths, err := fs.Glob(knowledgeFiles, "knowledge/*.md")
 	if err != nil {
-		return 0, err
+		return "", fmt.Errorf("failed to list the bundled documentation: %w", err)
+	}
+	if len(paths) == 0 {
+		// A build whose embed matched no file would otherwise answer every product question from guesswork,
+		// with nothing in the log to say why.
+		return "", errors.New("the bundled documentation is empty")
 	}
 
-	err = k.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		// GORM refuses an unconditional DELETE, and this delete really is unconditional: the table is a
-		// cache of the bundled documents, rebuilt from them, with no user data in it.
-		if delErr := tx.Where("1 = 1").Delete(&entity.AIKnowledgeChunk{}).Error; delErr != nil {
-			return fmt.Errorf("failed to clear the knowledge base: %w", delErr)
+	docs := make([]string, 0, len(paths))
+	for _, path := range paths {
+		text, err := knowledgeFiles.ReadFile(path)
+		if err != nil {
+			return "", fmt.Errorf("failed to read %s: %w", path, err)
 		}
-		if len(passages) == 0 {
-			return nil
-		}
-		return tx.CreateInBatches(passages, 100).Error
-	})
-	if err != nil {
-		return 0, fmt.Errorf("failed to store the knowledge base: %w", err)
+		docs = append(docs, strings.TrimSpace(string(text)))
 	}
-	return len(passages), nil
-}
-
-// passages chunks the documents and embeds every passage, without touching the database.
-//
-// Split out from Replace so the whole embedding path - batching, the row each passage becomes, and what a
-// provider that returns the wrong number of vectors does - is testable without a database.
-func (k *KnowledgeBase) passages(ctx context.Context, docs []Document) ([]entity.AIKnowledgeChunk, error) {
-	var passages []entity.AIKnowledgeChunk
-
-	for _, doc := range docs {
-		texts := chunk(doc.Text, passageSize, passageOverlap)
-		for start := 0; start < len(texts); start += embedBatchSize {
-			end := start + embedBatchSize
-			if end > len(texts) {
-				end = len(texts)
-			}
-
-			vectors, err := k.embedder.EmbedStrings(ctx, texts[start:end])
-			if err != nil {
-				return nil, fmt.Errorf("failed to embed %s: %w", doc.Source, err)
-			}
-			if len(vectors) != end-start {
-				return nil, fmt.Errorf("embedding %s returned %d vectors for %d passages",
-					doc.Source, len(vectors), end-start)
-			}
-
-			for i, vector := range vectors {
-				passages = append(passages, entity.AIKnowledgeChunk{
-					Source:     doc.Source,
-					ChunkIndex: start + i,
-					Content:    texts[start+i],
-					Embedding:  vectorLiteral(vector),
-				})
-			}
-		}
-	}
-	return passages, nil
-}
-
-// Retrieve returns the passages closest to the query, nearest first.
-//
-// The query is embedded here rather than by the caller, because the vector and the text it came from must
-// not drift apart: a passage is only found if the question was embedded with the same model.
-//
-// There is no vector index. The knowledge base is a couple of dozen passages, where a sequential scan is
-// faster than the index maintenance, and an index would be one more thing to keep in step with the
-// embedding dimension. If the corpus grows, the statement to add is
-// `CREATE INDEX ... USING hnsw (embedding vector_cosine_ops)`.
-func (k *KnowledgeBase) Retrieve(ctx context.Context, query string, limit int) ([]string, error) {
-	if limit <= 0 {
-		return nil, nil
-	}
-
-	// A knowledge base built without an embedding key (see NewEmbedder) is a legitimate configuration: the
-	// assistant answers from the model alone. Saying so here is what keeps that from being a panic.
-	if k.embedder == nil {
-		return nil, errors.New("the embedding API key is not configured")
-	}
-
-	vectors, err := k.embedder.EmbedStrings(ctx, []string{query})
-	if err != nil {
-		return nil, fmt.Errorf("failed to embed the question: %w", err)
-	}
-	if len(vectors) == 0 {
-		return nil, errors.New("the embedding service returned no vector for the question")
-	}
-
-	// The cast is required: the operator is vector <=> vector, and the bound parameter arrives as text.
-	var rows []entity.AIKnowledgeChunk
-	err = k.search(k.db.WithContext(ctx), vectorLiteral(vectors[0]), limit).Find(&rows).Error
-	if err != nil {
-		return nil, fmt.Errorf("failed to search the knowledge base: %w", err)
-	}
-
-	passages := make([]string, 0, len(rows))
-	for _, row := range rows {
-		passages = append(passages, row.Content)
-	}
-	return passages, nil
-}
-
-// search builds the nearest-neighbor query, nearest first.
-//
-// Split out of Retrieve so the one clause in this package that a reader cannot check by reading - the
-// distance operator and its cast - is asserted against the SQL GORM actually renders, in a dry-run test.
-//
-// The order is a clause.OrderBy and not Order(gorm.Expr(...)): Order() switches on a fixed set of types
-// and a bare clause.Expr matches none of them, so it drops the clause and returns the passages in table
-// order - a wrong answer that looks like a working search. The dry-run test above is what found that.
-func (k *KnowledgeBase) search(query *gorm.DB, vector string, limit int) *gorm.DB {
-	return query.
-		Model(&entity.AIKnowledgeChunk{}).
-		Select("content").
-		Order(clause.OrderBy{Expression: clause.Expr{
-			// The cast is required: the operator is vector <=> vector, and the bound parameter arrives as text.
-			SQL:                "embedding <=> ?::vector",
-			Vars:               []any{vector},
-			WithoutParentheses: true,
-		}}).
-		Limit(limit)
+	return strings.Join(docs, "\n\n---\n\n"), nil
 }

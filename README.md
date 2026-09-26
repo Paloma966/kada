@@ -17,7 +17,7 @@ The backend is written in Go, the frontend is a Vite single-page app served as s
 - Link preview, QR codes, and CSV export
 - Click analytics dashboard (overview, platform breakdown, daily trend, visitor detail)
 - Open API tokens
-- AI assistant (RAG over the project knowledge base, tool calls that act as the signed-in user)
+- AI assistant (bundled product documentation in the prompt, tool calls that act as the signed-in user)
 - Light and dark themes
 
 ## Tech stack
@@ -25,10 +25,10 @@ The backend is written in Go, the frontend is a Vite single-page app served as s
 | Layer | Technology |
 |-------|------------|
 | Backend | Go 1.26, Gin, GORM |
-| Storage | PostgreSQL 16 (pgvector for the knowledge base), Redis 7 |
+| Storage | PostgreSQL 16, Redis 7 |
 | Messaging | Kafka 3.8 |
 | Frontend | Vite, React 19, React Router, TypeScript, SWR, Tailwind |
-| AI assistant | Go (Eino), DeepSeek + Aliyun Bailian, pgvector |
+| AI assistant | Go (Eino), DeepSeek |
 | Deployment | Docker Compose, Nginx, systemd, GitHub Actions |
 
 ## Architecture
@@ -41,9 +41,10 @@ The database schema is defined by the GORM models in `backend/internal/domain/en
 `backend/cmd/migrate` (AutoMigrate). There are no SQL migration files: the structs are the single source
 of truth, and AutoMigrate only adds missing tables/columns/indexes, so it is safe to re-run.
 
-The AI assistant runs inside the API process: it serves `/api/ai/*` itself, keeps its conversations and
-its knowledge base in the same PostgreSQL as everything else, and calls the application's own services
-for the tools it offers. See the deployment section of [docs/design.md](docs/design.md).
+The AI assistant runs inside the API process: it serves `/api/ai/*` itself, keeps its conversations in
+the same PostgreSQL as everything else, carries its product documentation compiled into the binary, and
+calls the application's own services for the tools it offers. See the deployment section of
+[docs/design.md](docs/design.md).
 
 ## Getting started
 
@@ -71,7 +72,7 @@ cd frontend && npm run dev                  # 3000
 | DB_AUTO_MIGRATE | Let the API server apply the schema on startup (default true; set false when using cmd/migrate) |
 | SMS_ACCESS_KEY_ID / SMS_ACCESS_KEY_SECRET | Alibaba Cloud SMS. Required in production: phone + SMS code is the only sign-in method |
 | SMS_SIGN_NAME / SMS_TEMPLATE_CODE | The system-granted SMS signature and template from the Aliyun PNVS console |
-| DEEPSEEK_API_KEY / DASHSCOPE_API_KEY | The assistant: chat model key, and the Bailian embedding key for the knowledge base |
+| DEEPSEEK_API_KEY | The assistant's chat model key |
 
 In production these come from GitHub repository secrets and are written into `/opt/kada/backend/.env` by
 the deploy job; the deployment section of [docs/design.md](docs/design.md) explains what that job does.

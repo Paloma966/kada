@@ -63,18 +63,18 @@ describe("parseAnswer", () => {
 
   it("renders a realistic answer without leaving an asterisk on screen", () => {
     const answer = [
-      "目前知识库中**没有可用的资料内容**（检索结果为空）。",
+      "我**没有找到相关资料**。",
       "",
       "你可以：",
       "- 直接说明你想了解的内容",
-      "- 把相关资料补充进知识库",
+      "- 把相关资料直接发给我",
       "",
       "**需要我帮你查一下账号的短链总览数据吗？**",
     ].join("\n");
 
     const rendered = parseAnswer(answer).flatMap((line) => line.spans.map((s) => s.text));
     expect(rendered.join("")).not.toContain("*");
-    expect(rendered).toContain("没有可用的资料内容");
+    expect(rendered).toContain("没有找到相关资料");
     expect(rendered).toContain("需要我帮你查一下账号的短链总览数据吗？");
   });
 });

@@ -1,8 +1,6 @@
 services:
   postgres:
-    # pgvector image = the official postgres 16 image plus the vector extension
-    # the AI RAG knowledge base requires.
-    image: pgvector/pgvector:pg16
+    image: postgres:16-alpine
     environment:
       POSTGRES_USER: kada
       # Must be overridden via .env in production (see .env.example)
@@ -10,8 +8,6 @@ services:
       POSTGRES_DB: kada
     volumes:
       - pgdata:/var/lib/postgresql/data
-      # Runs on first volume init only: enables the vector extension the knowledge base needs
-      - ./deploy/postgres/initdb:/docker-entrypoint-initdb.d:ro
     ports:
       - "127.0.0.1:5432:5432"
     healthcheck:
@@ -48,11 +44,10 @@ services:
       # Production normally runs the migration explicitly (backend/cmd/migrate) and starts the API with
       # this disabled, so a restart can never change the database. In Compose the API applies it first.
       DB_AUTO_MIGRATE: "true"
-      # The assistant runs in this process, so these two keys go to the API rather than to a second
-      # service. Empty values still start the stack: the AI page reports the configuration problem and the
-      # rest of the application does not notice.
+      # The assistant runs in this process, so its key goes to the API rather than to a second service. An
+      # empty value still starts the stack: the AI page reports the configuration problem and the rest of
+      # the application does not notice.
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
-      DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:-}
     depends_on:
       postgres:
         condition: service_healthy

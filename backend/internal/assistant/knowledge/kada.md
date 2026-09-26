@@ -1,6 +1,6 @@
-# Kada 项目知识库
+# Kada 平台说明
 
-> 本文档是 Kada 短链接平台的产品与技术说明，供 AI 助手检索后回答用户关于 Kada 的问题。
+> 本文档是 Kada 短链接平台的产品与技术说明，随 AI 助手一起编译进二进制，每次提问时作为参考资料发给模型，用来回答用户关于 Kada 的问题。
 
 ## 一、Kada 是什么
 
@@ -35,7 +35,7 @@ Kada 由以下部分组成：
 | Kafka 3.8 | 消息队列 | 点击事件异步落库 |
 | Worker（Go） | 独立进程，无 HTTP 端口 | 消费 Kafka 的点击事件并写入数据库 |
 | Nginx | 反向代理，端口 80 | 统一入口：`/api/` 和 `/r/` 转发后端，其余转发前端 |
-| AI 助手（Go） | 与 API 同一个进程，Eino + pgvector | 对话、工具调用与知识库检索，随 API 一起部署，没有独立服务 |
+| AI 助手（Go） | 与 API 同一个进程，Eino | 对话、工具调用与平台问答；说明文档随二进制编译，随 API 一起部署，没有独立服务 |
 
 后端代码分层为 **Handler（HTTP 层）→ Service（业务逻辑）→ Entity（数据库模型）**。Handler 不直接碰数据库，Service 不接触 HTTP 上下文。数据归属校验在 Service 层完成：查询时始终把 `user_id` 放进 WHERE 条件，绝不信任客户端传来的 ID。
 
@@ -72,10 +72,10 @@ Kada 由以下部分组成：
 - **自然语言对话**：流式输出（SSE），逐字返回回答
 - **创建短链**：直接把链接发给 AI，说"帮我转成短链"，AI 会调用短链服务创建并返回短链接
 - **查询数据概览**：询问"我有多少链接""最近点击情况"，AI 会调用数据概览接口回答
-- **知识库问答**：AI 可以检索本知识库回答关于 Kada 平台功能和使用的问题
+- **平台问答**：AI 每次提问都会读到随程序一起发布的说明文档（就是本文档），因此能回答关于 Kada 功能和使用方式的问题
 - **工具调用**：AI 可以查询当前时间、做简单计算，也能**以当前登录用户的身份**查询短链总览和创建短链（工具在同一个进程内直接调用业务服务，用的是本次请求的登录用户，不需要额外配置服务令牌）
 
-AI 助手采用**单会话模式**：每个用户只保留当前一个会话，对话有上下文记忆；点击"重新开始"会清空当前会话并开启新会话。会话记录与向量知识库都存放在主数据库 PostgreSQL 里（知识库依赖 pgvector 扩展），没有额外的缓存层。
+AI 助手采用**单会话模式**：每个用户只保留当前一个会话，对话有上下文记忆；点击"重新开始"会清空当前会话并开启新会话。会话记录存放在主数据库 PostgreSQL 里，说明文档则随二进制一起发布，没有额外的缓存层。
 
 ## 七、常见问题（FAQ）
 
@@ -110,5 +110,5 @@ AI 助手采用**单会话模式**：每个用户只保留当前一个会话，�
 - 一键启动全部服务（含数据库等）：`docker compose up -d`
 - 数据库表结构由 GORM 模型自动迁移（AutoMigrate），只增不删，可重复执行
 - AI 助手没有独立服务：它随 API 进程一起启动，`/api/ai/*` 由同一个二进制提供
-- AI 知识库入库：`cd backend && go run ./cmd/ai-ingest/`，读取 `backend/internal/assistant/knowledge/` 下的文档，切块、向量化后写入 pgvector（需要 `DASHSCOPE_API_KEY`，以及启用了 vector 扩展的 PostgreSQL）
-- AI 助手需要配置的环境变量：`DEEPSEEK_API_KEY`（对话模型）、`DASHSCOPE_API_KEY`（阿里云百炼 Embedding 密钥）；`AI_CHAT_MODEL`、`DEEPSEEK_BASE_URL`、`AI_MAX_TOKENS`、`AI_EMBEDDING_MODEL` 可选
+- AI 说明文档：`backend/internal/assistant/knowledge/` 下的 Markdown 会在编译时嵌入二进制，每次提问时整篇作为参考资料发给模型；改完文档重新编译即可生效，不需要入库、切块或迁移
+- AI 助手需要配置的环境变量：`DEEPSEEK_API_KEY`（对话模型密钥）；`AI_CHAT_MODEL`、`DEEPSEEK_BASE_URL`、`AI_MAX_TOKENS` 可选

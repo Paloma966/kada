@@ -240,29 +240,6 @@ type Workspace struct {
 	User *User `gorm:"foreignKey:UserID" json:"-"`
 }
 
-// AIKnowledgeChunk is one passage of the assistant's knowledge base, with the vector that makes it
-// findable. The assistant embeds the passages once (cmd/ai-ingest) and searches them per question.
-//
-// It is deliberately NOT in Models(), and that is the one table in this file with an exception. Its
-// embedding column needs the pgvector extension, which the PostgreSQL a developer happens to be running
-// may not have (the native Windows install does not; the compose one does). Keeping it out of Models()
-// means `cmd/migrate` and an AutoMigrate-on-startup API still work there, and the knowledge base fails
-// where it is actually used instead: cmd/ai-ingest ensures the extension and then AutoMigrates this one
-// model, so this struct is still the schema of record - see docs/contributing.md section 9.
-type AIKnowledgeChunk struct {
-	ID int64 `gorm:"primaryKey" json:"id"`
-	// Source is the file the passage came from, so a passage can be traced back when an answer looks wrong.
-	Source string `gorm:"type:varchar(255);not null" json:"source"`
-	// ChunkIndex is the passage's position in that file.
-	ChunkIndex int    `gorm:"not null" json:"chunk_index"`
-	Content    string `gorm:"type:text;not null" json:"content"`
-	// Embedding is a vector(1024) column - the dimension text-embedding-v3 produces by default. Go passes
-	// the literal form pgvector parses ("[1,2,3]") and PostgreSQL converts it on the way in; the column
-	// type is what rejects a vector of the wrong length instead of storing a passage nothing can match.
-	Embedding string    `gorm:"type:vector(1024);not null" json:"-"`
-	CreatedAt time.Time `json:"created_at"`
-}
-
 // AIConversation is one chat session with the assistant. It is scoped to a user, and every query that
 // reads a conversation names that user, so one account's sessions are unreachable from another's.
 type AIConversation struct {

@@ -26,7 +26,7 @@ watch how they are clicked. This document explains how the system is put togethe
 | Custom domains | DNS TXT ownership verification before a domain can serve links |
 | Analytics | Click totals, daily trend, platform breakdown, visitor list, raw event log |
 | Integrations | UTM templates, QR codes, CSV export, personal API tokens |
-| AI assistant | RAG over the project knowledge base, tools that run as the signed-in user |
+| AI assistant | Bundled product documentation in the prompt, tools that run as the signed-in user |
 | Presentation | Bilingual UI (Chinese / English), light and dark themes |
 
 The primary tension in the design is that **redirection is hot and analytics is cold**. Following a
@@ -493,8 +493,8 @@ existing `/api/*` routes. Four consequences decide the shape of that:
   by the chat route; that is the same idea, and the reason its business tools could not live in the MCP
   subprocess, whose single shared stdio session has no request to belong to.)
 - **A failed tool degrades the answer, not the request.** Tools return their failure as text (an HTTP
-  status, a missing credential) so the model can explain it, in the same spirit as RAG retrieval falling
-  over to "no reference material".
+  status, a missing credential) so the model can explain it, in the same spirit as the bundled
+  documentation failing to load: the answer gets worse, and the request still finishes.
 
 ## 9. Configuration
 
@@ -515,8 +515,7 @@ existing `/api/*` routes. Four consequences decide the shape of that:
 | `KAFKA_TOPIC` | `clicks` | Click event topic |
 | `VITE_API_URL` | `""` (same origin) | API base for the browser, fixed at build time |
 | `DEEPSEEK_API_KEY` | empty | The assistant's chat model key (DeepSeek, OpenAI-compatible API) |
-| `DASHSCOPE_API_KEY` | empty | Aliyun Bailian key for the knowledge base embeddings |
-| `AI_CHAT_MODEL`, `DEEPSEEK_BASE_URL`, `AI_MAX_TOKENS`, `AI_EMBEDDING_MODEL` | `deepseek-flash`, `https://api.deepseek.com`, `8192`, `text-embedding-v3` | Optional overrides for the four values above |
+| `AI_CHAT_MODEL`, `DEEPSEEK_BASE_URL`, `AI_MAX_TOKENS` | `deepseek-flash`, `https://api.deepseek.com`, `8192` | Optional overrides for the three values above |
 
 `SMS_SIGN_NAME` has no default on purpose. It used to fall back to the literal `kada`, and for this
 deployment that is in fact the account's real signature - which is precisely what made the outage
@@ -546,9 +545,8 @@ machine is rebuilt.
 
 The assistant reads these from the same environment as the rest of the API (see
 `backend/.env.example`), and in production the deploy job writes them into `/opt/kada/backend/.env`.
-Missing keys do not stop the process: without the chat key every question is answered with a
-configuration message, and without the embedding key the assistant answers from the model alone, with no
-retrieved context.
+A missing key does not stop the process: without the chat key every question is answered with a
+configuration message.
 
 > There is no service token and no second process. The tools act as the signed-in user because they run
 > in this process with the user id from the request (see 8.6) - the credential the Python service used to
@@ -639,15 +637,10 @@ Three supported shapes:
    the health endpoint, rolling back to the previous binary if the service does not come up.
 3. **The assistant inside the API process.** It used to be a Python container of its own with its own
    database, its own env file and its own deploy script; it is a package of the Go binary now
-   (`internal/assistant`), which is why none of those exist any more. The knowledge base is a table in
-   the application's database, built by `cmd/ai-ingest`, and the chat, retrieval and tool code all runs
-   in the API process - so a host has one fewer service to run, and one fewer way for two processes to
-   disagree about who is asking.
-
-   The knowledge base needs the pgvector extension in the database it lives in. `cmd/ai-ingest` runs
-   `CREATE EXTENSION IF NOT EXISTS vector` itself, and says so plainly when the extension is not
-   available at all; on a fresh compose volume `deploy/postgres/initdb/01-enable-vector.sql` does the
-   same thing, because `docker-entrypoint-initdb.d` only runs on first initialisation.
+   (`internal/assistant`), which is why none of those exist any more. Its product documentation is
+   compiled into the binary and sent with every question, so the chat and tool code all runs in the API
+   process - one fewer service to run, one fewer way for two processes to disagree about who is asking,
+   and no indexing step in the deploy.
 
    The provider keys reach the host from **GitHub repository secrets**, written into
    `/opt/kada/backend/.env` by `deploy/upsert-env.sh` as the first step of the deploy, before any service
@@ -708,14 +701,13 @@ step that requires manual setup is a failure mode of its own.
 | Schema | `internal/domain/entity` asserts table names, columns, unique indexes and delete rules against the GORM schema |
 | Query shapes | Dry-run GORM sessions assert the generated SQL for the dynamic and bulk statements |
 | Frontend | Vitest for pure helpers (starfield geometry, ophiuchus lines, utilities) |
-| Assistant | Fakes for the model and the knowledge base, but the real Eino agent with the real tools: one test drives a model that asks for a tool and asserts which user the tool acted for, another drives a model that never stops asking and asserts the step limit holds |
+| Assistant | A fake model, but the real Eino agent with the real tools and the real bundled documentation: one test drives a model that asks for a tool and asserts which user the tool acted for, another drives a model that never stops asking and asserts the step limit holds |
 
 Run everything with `cd backend && go test ./... -count=1 -race` and `cd frontend && npm test`; CI
 additionally runs `go vet`, `golangci-lint`,
 `tsc --noEmit` and the production build on every pull request. The assistant is tested where it runs
-rather than as a container: the failure it has to catch - a model or an embedding call that only breaks
-when a question arrives - is a fake model or a retrieval error in `internal/assistant`, not an image that
-starts.
+rather than as a container: the failure it has to catch - a model call that only breaks when a question
+arrives - is a fake model in `internal/assistant`, not an image that starts.
 
 ## 12. Known limitations
 
