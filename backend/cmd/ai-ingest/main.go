@@ -17,7 +17,7 @@ import (
 	"github.com/joho/godotenv"
 
 	"github.com/chun/kada-backend/config"
-	"github.com/chun/kada-backend/internal/ai"
+	"github.com/chun/kada-backend/internal/assistant"
 	"github.com/chun/kada-backend/internal/domain/entity"
 	"github.com/chun/kada-backend/internal/infra"
 	"github.com/chun/kada-backend/internal/infra/schema"
@@ -46,17 +46,17 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
-	embedder, err := ai.NewEmbedder(ctx, cfg.AIEmbeddingAPIKey, cfg.AIEmbeddingModel)
+	embedder, err := assistant.NewEmbedder(ctx, cfg.AIEmbeddingAPIKey, cfg.AIEmbeddingModel)
 	if err != nil {
 		log.Fatalf("Embedding client failed: %v", err)
 	}
 
-	docs, err := ai.Documents()
+	docs, err := assistant.Documents()
 	if err != nil {
 		log.Fatalf("Reading the bundled knowledge base failed: %v", err)
 	}
 
-	passages, err := ai.NewKnowledgeBase(db, embedder).Replace(ctx, docs)
+	passages, err := assistant.NewKnowledgeBase(db, embedder).Replace(ctx, docs)
 	if err != nil {
 		log.Fatalf("Ingesting the knowledge base failed: %v", err)
 	}

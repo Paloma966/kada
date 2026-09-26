@@ -1,4 +1,4 @@
-package ai
+package assistant
 
 import (
 	"context"
@@ -106,6 +106,12 @@ func (k *KnowledgeBase) passages(ctx context.Context, docs []Document) ([]entity
 func (k *KnowledgeBase) Retrieve(ctx context.Context, query string, limit int) ([]string, error) {
 	if limit <= 0 {
 		return nil, nil
+	}
+
+	// A knowledge base built without an embedding key (see NewEmbedder) is a legitimate configuration: the
+	// assistant answers from the model alone. Saying so here is what keeps that from being a panic.
+	if k.embedder == nil {
+		return nil, errors.New("the embedding API key is not configured")
 	}
 
 	vectors, err := k.embedder.EmbedStrings(ctx, []string{query})
