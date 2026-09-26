@@ -301,7 +301,7 @@ as deliberate operations with a backup, not as part of a normal change.
 | Document | Owns |
 |---|---|
 | `README.md` | What the project is, how to run it |
-| `README.zh-CN.md` | The same README in Chinese; `README.md` is the source, so the two change together |
+| `README.zh.md` | The same README in Chinese; `README.md` is the source, so the two change together |
 | `docs/design.md` | Architecture, data model, flows, decisions, limitations |
 | `docs/contributing.md` | This file: workflow, commits, pull requests |
 | `docs/code-style.md` | Conventions for Go, TypeScript and SQL |
