@@ -662,11 +662,29 @@ follows starts from a complete tree under `/tmp/kada-deploy`. The frontend is bu
 `frontend-build` job already produces the bundle with the deployment's own `VITE_API_URL`, so the
 deploy job receives it as an artifact rather than setting up Node and building the same commit again.
 
+The frontend swap happens **inside** `/opt/kada/frontend`, never by replacing that directory. nginx runs
+in a container with the directory bind-mounted, and a bind mount keeps the inode it resolved when the
+container started: `rm -rf` followed by `mv` left it serving the removed, now empty directory, and the
+`try_files` fallback turned that into a 500 on every page while `/api/health` still answered 200 - a
+broken site behind a green deploy. The deploy therefore copies the new bundle in and renames only
+`index.html` into place, which is atomic and is the only name a visitor can be holding (Vite's asset
+names are content hashes and are never reused); files the new build does not contain are deleted after
+that switch. `scripts/verify-deploy-step.test.js` runs that block against a stand-in directory and asserts
+the inode does not change, which is the property the mount depends on.
+
+The container itself needs `-v /opt/kada/frontend:/opt/kada/frontend:ro` and `--network host`, the
+latter because the config proxies to `127.0.0.1:8080`, which means this host only under host
+networking. Both live in the host's `/opt/kada/docker-compose.yml`: a container created by hand from
+`docker run` looks identical until the next `docker compose up -d` discards it, mount and all.
+
 Verification happens in two places, which is deliberate:
 
-- **On the host**, during the deploy step: `curl http://127.0.0.1:8080/api/health`. This is the
-  authoritative check and the one that can fail the deploy. It depends on nothing but the API
-  answering, so a TLS, DNS or network problem cannot be reported as a failed deployment.
+- **On the host**, during the deploy step: `curl http://127.0.0.1:8080/api/health`, and then the site
+  itself through nginx, with `--resolve` so no DNS is involved and `grep 'id="root"'`. Both are
+  authoritative and both can fail the deploy, because neither depends on anything but this host, and
+  neither can be failed by a third party. The API check alone is not enough: a frontend that is not
+  being served - no bind mount, a stale one, a config still proxying to a dead port - leaves the API
+  perfectly healthy while every page is a 500.
 - **From the runner**, afterwards: a smoke test of the public origin over HTTPS, its `/api/health`,
   the frontend, and the plain-HTTP entry point (which nginx redirects). It covers DNS, TLS and nginx as
   a visitor sees them, and it is **advisory**: a datacenter IP can be refused by the host's edge (this

@@ -335,6 +335,9 @@ jobs:
           SMS_ACCESS_KEY_SECRET: ${{ secrets.SMS_ACCESS_KEY_SECRET }}
           SMS_SIGN_NAME: ${{ secrets.SMS_SIGN_NAME }}
           SMS_TEMPLATE_CODE: ${{ secrets.SMS_TEMPLATE_CODE }}
+          # The public origin, so the check below can ask this host's nginx for the site without DNS.
+          # Same variable and same default as the runner-side verification further down.
+          SITE_ORIGIN: ${{ vars.SITE_URL || 'https://kada.click' }}
         with:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USER }}
@@ -344,7 +347,7 @@ jobs:
           # default of 10m is generous for that. It was 30m when the Python image was built here, which
           # took minutes on a small server.
           command_timeout: 10m
-          envs: DATABASE_URL,DEEPSEEK_API_KEY,SMS_ACCESS_KEY_ID,SMS_ACCESS_KEY_SECRET,SMS_SIGN_NAME,SMS_TEMPLATE_CODE
+          envs: DATABASE_URL,DEEPSEEK_API_KEY,SMS_ACCESS_KEY_ID,SMS_ACCESS_KEY_SECRET,SMS_SIGN_NAME,SMS_TEMPLATE_CODE,SITE_ORIGIN
           script: |
             set -euo pipefail
 
@@ -419,20 +422,40 @@ jobs:
             # 4. Replace the frontend build.
             #
             #    Static files, so there is no service to restart and no runtime to supervise: nginx serves
-            #    this directory directly (see nginx/nginx-prod.conf). The unpack goes to a sibling
-            #    directory first and is moved into place, so a failed unpack leaves the previous build
-            #    serving and the swap itself is a rename.
+            #    this directory directly (see nginx/nginx-prod.conf).
+            #
+            #    The bundle is moved INTO the directory rather than replacing it, because that directory
+            #    is bind-mounted into the nginx container and a bind mount keeps the inode it resolved
+            #    when the container started. `rm -rf` + `mv` here left nginx serving the removed, now
+            #    empty directory, and the try_files fallback turned that into a 500 on every page - while
+            #    the API, behind its own location blocks, kept answering 200 and every check passed.
+            #
+            #    Moving in is still atomic where it matters. Vite names its bundles by content hash, so a
+            #    new build never reuses one and no visitor can be holding an old name; the only reused
+            #    name is index.html, and that one is renamed into place. Bundle files the new build does
+            #    not contain are deleted afterwards, once nothing references them.
             echo "Deploying the frontend"
             rm -rf "$FRONTEND_DIR.new"
-            mkdir -p "$FRONTEND_DIR.new"
+            mkdir -p "$FRONTEND_DIR" "$FRONTEND_DIR.new"
             tar xzf "$DEPLOY_DIR/deploy-pkg/kada-fe.tar.gz" -C "$FRONTEND_DIR.new"
-            rm -rf "$FRONTEND_DIR"
-            mv "$FRONTEND_DIR.new" "$FRONTEND_DIR"
+
+            cp -a "$FRONTEND_DIR.new/." "$FRONTEND_DIR/"
+            cp -a "$FRONTEND_DIR.new/index.html" "$FRONTEND_DIR/.index.html.new"
+            mv -f "$FRONTEND_DIR/.index.html.new" "$FRONTEND_DIR/index.html"
+
+            (cd "$FRONTEND_DIR.new" && find . -type f -printf '%P\n' | sort) > "$DEPLOY_DIR/frontend-wanted"
+            (cd "$FRONTEND_DIR" && find . -type f -printf '%P\n' | sort) > "$DEPLOY_DIR/frontend-present"
+            comm -13 "$DEPLOY_DIR/frontend-wanted" "$DEPLOY_DIR/frontend-present" > "$DEPLOY_DIR/frontend-stale"
+            while IFS= read -r stale; do
+              rm -f "$FRONTEND_DIR/$stale"
+            done < "$DEPLOY_DIR/frontend-stale"
+
+            rm -rf "$FRONTEND_DIR.new"
             echo "the frontend is deployed"
 
-            # 6. Verify on the host itself. This is the authoritative check: it does not depend on DNS,
-            #    TLS or the public network, only on the API answering. The public check further below
-            #    runs on the runner and then proves nginx and TLS are fine too.
+            # 5. Verify on the host itself. This is the authoritative check: it does not depend on DNS,
+            #    TLS or the public network, only on the API answering and nginx serving. The public check
+            #    further below runs on the runner and then proves DNS and TLS are fine too.
             echo "Checking the API on the host"
             if ! curl -sS --fail --max-time 10 http://127.0.0.1:8080/api/health | grep -q '"status":"ok"'; then
               echo "the API is not answering on 127.0.0.1:8080"
@@ -441,7 +464,29 @@ jobs:
             fi
             echo "API answered on the host"
 
-            # 7. Clean up.
+            # The site, through nginx, on this host. The API answering says nothing about whether nginx
+            # is serving the bundle that was just deployed: a missing bind mount, a stale one, or a config
+            # that still proxies to a port nothing listens on all leave the API healthy while every page
+            # is a 500. That is how a broken frontend survived a green deploy.
+            #
+            # --resolve sends the request to this host without involving DNS, which keeps this check as
+            # authoritative as the API one: no third party can fail it. -L follows the port-80 redirect to
+            # HTTPS, and -k is deliberate - a valid certificate is the runner-side smoke test's business,
+            # while this check is about the files behind it.
+            SITE_HOST="${SITE_ORIGIN#*://}"
+            SITE_HOST="${SITE_HOST%%/*}"
+            echo "Checking the site on the host"
+            if ! curl -sSkL --fail --max-time 10 \
+                 --resolve "$SITE_HOST:443:127.0.0.1" --resolve "$SITE_HOST:80:127.0.0.1" \
+                 "$SITE_ORIGIN/" | grep -q 'id="root"'; then
+              echo "nginx is not serving the deployed frontend at $SITE_ORIGIN"
+              docker exec kada-nginx nginx -t || true
+              docker exec kada-nginx ls -l "$FRONTEND_DIR" 2>&1 | head -5 || true
+              exit 1
+            fi
+            echo "the site answered on the host"
+
+            # 6. Clean up.
             rm -rf "$DEPLOY_DIR"
             echo "Deploy finished at $(date -u +%Y-%m-%dT%H:%M:%SZ)"
 

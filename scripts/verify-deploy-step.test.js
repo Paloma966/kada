@@ -20,6 +20,12 @@
 // step this replaced could sit in a stalled transfer for half an hour (see the comment in ci.yml), and
 // that the bundle still carries every path the deploy step reads.
 //
+// The swap case asserts the property the nginx bind mount depends on: the deploy moves a new frontend
+// build INTO /opt/kada/frontend and never replaces that directory. A bind mount keeps the inode it
+// resolved when the container started, so replacing the directory leaves nginx serving the removed, empty
+// one - every page a 500, while the API behind its own location blocks answers 200 and every other check
+// passes. That is what happened, which is why the case asserts the inode and not only the file contents.
+//
 // Generates scripts/.verify-deploy-out/ and runs it with bash. Git Bash cannot run under the default
 // sandbox (it needs a signal pipe), so this looks for WSL bash first and falls back to Git Bash.
 
@@ -54,11 +60,26 @@ function extractRun(name) {
   return body.join("\n");
 }
 
+// The frontend swap is a block inside the deploy step's script:, not a step of its own, and it is the one
+// part of the deploy with a property worth pinning down - see the swap case in the harness.
+function extractFrontendSwap() {
+  const lines = workflow.split(/\r?\n/);
+  const start = lines.findIndex((l) => l.includes('echo "Deploying the frontend"'));
+  if (start < 0) throw new Error("the frontend swap was not found in the workflow");
+  const end = lines.findIndex((l, i) => i > start && l.includes('echo "the frontend is deployed"'));
+  if (end < 0) throw new Error("the frontend swap has no end marker");
+  return lines
+    .slice(start, end + 1)
+    .map((l) => l.replace(/^\s{12}/, ""))
+    .join("\n");
+}
+
 const write = (name, content) => fs.writeFileSync(path.join(outDir, name), content.replace(/\r\n/g, "\n"), "utf8");
 write("step-verify.sh", extractRun("Verify deployment"));
 write("step-report.sh", extractRun("Report the smoke test result"));
 write("step-check-sms.sh", extractRun("Check the SMS credentials"));
 write("step-upload-bundle.sh", extractRun("Upload the deploy bundle"));
+write("frontend-swap.sh", extractFrontendSwap());
 
 // --- the harness that decides whether each case behaved -------------------------------------------------
 const HARNESS = String.raw`#!/usr/bin/env bash
@@ -349,6 +370,60 @@ run_upload_case ok        0 1 yes "a good link: one attempt, then the bundle is 
 run_upload_case flaky     0 3 yes "two dropped connections: the third attempt delivers it"
 run_upload_case truncated 1 3 no  "ssh exits 0 with a short stream: refused, host untouched"
 run_upload_case dead      1 3 no  "the host refuses: three attempts, then a bounded failure"
+echo
+
+# The frontend swap, sourced from the workflow itself. The directory stands in for the one bind-mounted
+# into the nginx container, and the property under test is that the swap never replaces it.
+run_swap_case() {
+  dir="$HERE/case-swap"
+  rm -rf "$dir"; mkdir -p "$dir/stage/assets" "$dir/deploy/deploy-pkg"
+  FRONTEND_DIR="$dir/frontend"
+  DEPLOY_DIR="$dir/deploy"
+  mkdir -p "$FRONTEND_DIR/assets"
+
+  # The build being served, including one file the next build does not contain.
+  echo 'old index'  > "$FRONTEND_DIR/index.html"
+  echo 'old bundle' > "$FRONTEND_DIR/assets/index-OLDBUNDLE.js"
+  echo 'old robots' > "$FRONTEND_DIR/robots.txt"
+  inode_before=$(stat -c %i "$FRONTEND_DIR")
+
+  # The build arriving in the bundle, packed the way the frontend-build job packs it.
+  echo 'new index'  > "$dir/stage/index.html"
+  echo 'new bundle' > "$dir/stage/assets/index-NEWBUNDLE.js"
+  echo 'new robots' > "$dir/stage/robots.txt"
+  tar czf "$DEPLOY_DIR/deploy-pkg/kada-fe.tar.gz" -C "$dir/stage" .
+
+  problems=""
+  ( FRONTEND_DIR="$FRONTEND_DIR"; DEPLOY_DIR="$DEPLOY_DIR"; . "$HERE/frontend-swap.sh" ) \
+    > "$dir/swap.out" 2>&1 || problems="$problems the swap exited $?"
+
+  [ "$(stat -c %i "$FRONTEND_DIR")" = "$inode_before" ] \
+    || problems="$problems the directory was replaced, so a bind mount would still point at the old one"
+  grep -q 'new index' "$FRONTEND_DIR/index.html" \
+    || problems="$problems index.html is not the new build"
+  [ -f "$FRONTEND_DIR/assets/index-NEWBUNDLE.js" ] \
+    || problems="$problems the new bundle is missing"
+  if [ -f "$FRONTEND_DIR/assets/index-OLDBUNDLE.js" ]; then
+    problems="$problems the stale bundle survived the swap"
+  fi
+  grep -q 'new robots' "$FRONTEND_DIR/robots.txt" \
+    || problems="$problems robots.txt was not updated"
+  if [ -e "$FRONTEND_DIR.new" ]; then
+    problems="$problems the staging directory was left behind"
+  fi
+
+  if [ -z "$problems" ]; then
+    printf 'ok    %s\n' "the frontend swap keeps the directory nginx has mounted"
+  else
+    printf 'FAIL  %s\n' "the frontend swap keeps the directory nginx has mounted"
+    printf '        reason:%s\n' "$problems"
+    fails=$((fails + 1))
+  fi
+  printf '        inode %s before, %s after\n' "$inode_before" "$(stat -c %i "$FRONTEND_DIR" 2>/dev/null || echo gone)"
+  printf '        out: %s\n' "$(tail -n 2 "$dir/swap.out" | tr '\n' ' ')"
+}
+
+run_swap_case
 echo
 
 if [ "$fails" = "0" ]; then
