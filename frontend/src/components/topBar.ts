@@ -1,11 +1,11 @@
 /**
- * Where the language capsule sits, shared by the three shells that show it.
+ * Where the top bar's controls sit, shared by the three shells that show them.
  *
- * The app shell renders it inside its top bar, next to the theme toggle. The landing and sign-in pages have
- * no bar - they are dark in both themes, so neither shows a theme toggle either - and pin the capsule to
- * the viewport corner instead. All three have to land on the same pixel, or the capsule visibly jumps
- * sideways and up as you sign in, which is exactly what the hand-written copies of these numbers did (16px
- * against 24px on the horizontal, and four pixels higher on the dark pages).
+ * TopBarControls is what spends these numbers; a shell only places it. The app shell's bar holds it, and
+ * the landing and sign-in pages - which have no bar, being dark in both themes - pin it to the viewport
+ * corner instead. All three have to land on the same pixel, or the capsule visibly jumps sideways and up
+ * as you sign in, which is exactly what the hand-written copies of these numbers did (16px against 24px on
+ * the horizontal, and four pixels higher on the dark pages).
  *
  * The pinned vertical offset is not a second rhythm: it is (56px bar - 32px control) / 2, the same centring
  * the bar does, with the bar removed. Change one of these and the other shell follows.
@@ -23,10 +23,11 @@ export const TOP_BAR_GUTTER = "px-4 sm:px-6";
  * is taken here, once, rather than per page, because three shells hand-placing the same control is how the
  * copies drifted apart the first time.
  *
- * Only the pill. The theme toggle and the sign-in button are rounded rectangles whose straight sides have
- * no such wedge, and the title inside the bar keeps the gutter it shares with the content column below.
- * The pinned copy needs no second number: pinning the corner and letting the capsule overhang it lands on
- * the same pixel as the bar does.
+ * Only the pill. The GitHub link and the theme toggle are rounded rectangles whose straight sides have no
+ * such wedge, and the title inside the bar keeps the gutter it shares with the content column below. So
+ * inside the cluster it is the last child's margin, which is what TopBarControls applies. The pinned copy
+ * needs no second number: pinning the corner and letting the capsule overhang it lands on the same pixel
+ * as the bar does.
  */
 export const TOP_BAR_CAPSULE_OVERHANG = "-mr-1";
 
