@@ -1,5 +1,3 @@
-"use client";
-
 const TOKEN_KEY = "kada_token";
 const USER_KEY = "kada_user";
 

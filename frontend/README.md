@@ -1,36 +1,28 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Frontend
 
-## Getting Started
-
-First, run the development server:
+A Vite + React single-page app. It talks to the Go API over HTTP and nothing else: `src/lib/api.ts` is
+the one place that knows the endpoints and attaches the bearer token.
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm ci
+npm run dev      # http://localhost:3000, with /api/* proxied to the Go API on :8080
+npm run build    # dist/, plain static files
+npm test         # vitest, for the pure helpers
+npm run lint     # eslint
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+| Path | What lives there |
+|---|---|
+| `src/router.tsx` | The route table - the only place that says which URLs exist |
+| `src/pages/` | One file per route |
+| `src/components/` | The shell (sidebar, top bar, language capsule, theme toggle) and shared pieces |
+| `src/lib/` | API client, auth, i18n dictionary, theme, and the pure helpers the tests cover |
+| `src/globals.css` | Tailwind entry point and the theme tokens |
+| `index.html` | The document shell |
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+The theme script is injected into `index.html` at build time by `vite.config.ts`, from the one
+implementation in `src/lib/theme/bootstrap.ts`: it has to run before the first frame, which a component
+rendered by React cannot do.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+The build is static files, so production has no Node process: nginx serves `dist/` directly. See
+`nginx/nginx-prod.conf` and the deployment section of `docs/design.md`.

@@ -249,8 +249,8 @@ run_upload_case() {
 
   # The files the step tars. Their names are the contract with the deploy step that follows, so the
   # assertions below also check the received tar carries every one of them.
-  for f in backend/bin/server backend/bin/migrate deploy-pkg/kada-fe-standalone.tar.gz \
-           deploy-pkg/kada-fe-static.tar.gz deploy-pkg/kada-ai-src.tar.gz deploy-version.txt \
+  for f in backend/bin/server backend/bin/migrate deploy-pkg/kada-fe.tar.gz \
+           deploy-version.txt \
            deploy/upsert-env.sh; do
     echo "fixture" > "$dir/$f"
   done
@@ -327,8 +327,8 @@ STUB
 
   if [ "$want_unpacked" = "yes" ]; then
     tar tzf "$dir/remote.tar.gz" > "$dir/members" 2>/dev/null || problems="$problems the host did not receive a tar"
-    for member in backend/bin/server backend/bin/migrate deploy-pkg/kada-fe-standalone.tar.gz \
-                  deploy-pkg/kada-fe-static.tar.gz deploy-pkg/kada-ai-src.tar.gz deploy-version.txt \
+    for member in backend/bin/server backend/bin/migrate deploy-pkg/kada-fe.tar.gz \
+                  deploy-version.txt \
                   deploy/upsert-env.sh; do
       grep -qx "$member" "$dir/members" || problems="$problems the bundle is missing $member"
     done

@@ -1,5 +1,3 @@
-"use client";
-
 import { useSyncExternalStore } from "react";
 
 /** Nothing to subscribe to: this flips exactly once, when React first runs in the browser. */

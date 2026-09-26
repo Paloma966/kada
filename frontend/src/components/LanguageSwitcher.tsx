@@ -1,5 +1,3 @@
-"use client";
-
 import { useEffect } from "react";
 import { LOCALE_LABELS, LOCALES, useI18n, type Locale } from "@/lib/i18n";
 

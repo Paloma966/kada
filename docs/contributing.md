@@ -87,7 +87,7 @@ cd backend && go run ./cmd/server/main.go   # API on :8080
 cd frontend && npm run dev                  # frontend on :3000
 ```
 
-When the frontend runs on the host, keep `NEXT_PUBLIC_API_URL` pointing at the API
+When the frontend runs on the host, keep `VITE_API_URL` pointing at the API
 (`http://localhost:8080`) in `frontend/.env.local`.
 
 ## 4. Everyday commands

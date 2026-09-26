@@ -13,12 +13,9 @@
 # testing
 /coverage
 
-# next.js
-/.next/
-/out/
-
-# production
-/build
+# build output (vite writes dist/; .theme-shots/ is written by scripts/capture-theme.mjs)
+/dist/
+/.theme-shots/
 
 # misc
 .DS_Store
@@ -32,12 +29,6 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
-# 本地开发走同源代理（rewrites），此配置需要提交以便队友可复现
-!.env.development
-
-# vercel
-.vercel
 
 # typescript
 *.tsbuildinfo
-next-env.d.ts

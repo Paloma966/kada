@@ -1,5 +1,3 @@
-"use client";
-
 import { GitHubLink } from "./GitHubLink";
 import { LanguageSwitcher } from "./LanguageSwitcher";
 import { ThemeToggle } from "./ThemeToggle";

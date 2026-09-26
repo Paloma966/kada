@@ -1,8 +1,5 @@
-"use client";
-
 import { Copy, ExternalLink, Pencil, Trash2, BarChart3, Check, QrCode, Download, X } from "lucide-react";
-import Image from "next/image";
-import Link from "next/link";
+import { Link } from "react-router";
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
 import { useT } from "@/lib/i18n";
@@ -101,7 +98,7 @@ export function LinkCard({ link, onDelete, selectable, selected, onSelect }: Lin
             </div>
           )}
           <Link
-            href={`/dashboard/links/${link.id}`}
+            to={`/dashboard/links/${link.id}`}
             className="flex-1 min-w-0"
           >
           <div className="flex items-start justify-between gap-4">
@@ -177,7 +174,7 @@ export function LinkCard({ link, onDelete, selectable, selected, onSelect }: Lin
               </a>
 
               <Link
-                href={`/dashboard/links/${link.id}`}
+                to={`/dashboard/links/${link.id}`}
                 onClick={(e) => e.stopPropagation()}
                 className="p-1.5 text-faint hover:text-brand-ink hover:bg-brand-soft rounded-lg transition-colors"
                 title={t("编辑")}
@@ -224,8 +221,8 @@ export function LinkCard({ link, onDelete, selectable, selected, onSelect }: Lin
               <div className="bg-canvas border border-line rounded-xl p-3">
                 {qrDataURL ? (
                   // A data: URL produced locally by qrcode's canvas, so there is no remote host to
-                  // allowlist and nothing for the image optimizer to fetch: next/image passes it through.
-                  <Image src={qrDataURL} alt="QR Code" width={224} height={224} unoptimized />
+                  // allowlist and nothing for the image optimizer to fetch: an <img> passes it through.
+                  <img src={qrDataURL} alt="QR Code" width={224} height={224} />
                 ) : (
                   <div className="size-56 flex items-center justify-center">
                     <div className="size-8 animate-spin rounded-full border-2 border-indigo-600 border-t-transparent" />

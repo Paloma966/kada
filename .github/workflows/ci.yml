@@ -127,14 +127,6 @@ jobs:
           key: ${{ runner.os }}-npm-${{ hashFiles('frontend/package-lock.json') }}
           restore-keys: ${{ runner.os }}-npm-
 
-      - name: Cache Next.js build
-        uses: actions/cache@v6
-        with:
-          path: frontend/.next/cache
-          key: ${{ runner.os }}-nextjs-${{ hashFiles('frontend/package-lock.json') }}-${{ github.sha }}
-          restore-keys: |
-            ${{ runner.os }}-nextjs-${{ hashFiles('frontend/package-lock.json') }}-
-            ${{ runner.os }}-nextjs-
 
       - name: Install dependencies
         working-directory: frontend
@@ -149,19 +141,18 @@ jobs:
         env:
           # "same-origin" makes the bundle issue relative requests: nginx serves the frontend and proxies
           # /api/ to the Go backend. The sentinel is used instead of an empty value because the bundler
-          # only inlines a non-empty NEXT_PUBLIC_* - see the note in src/lib/api.ts.
-          NEXT_PUBLIC_API_URL: "same-origin"
+          # replaces import.meta.env.VITE_API_URL at build time, so it has to be set here - see the note in src/lib/api.ts.
+          VITE_API_URL: "same-origin"
         run: npm run build
 
       # Packed here rather than in the deploy job, so the deploy job gets the bundle instead of building
-      # the same commit a second time. It is the same build: the environment variable above is the
-      # deployment's, and the deploy job used to build with exactly this value.
+      # the same commit a second time. The bundle is plain files: nginx serves them from a directory.
       - name: Package the frontend for the host
         working-directory: frontend
         run: |
           mkdir -p ../deploy-pkg
-          tar czf ../deploy-pkg/kada-fe-standalone.tar.gz -C .next/standalone .
-          tar czf ../deploy-pkg/kada-fe-static.tar.gz -C .next static/
+          tar czf ../deploy-pkg/kada-fe.tar.gz -C dist .
+
 
       - name: Upload the frontend build
         uses: actions/upload-artifact@v7
@@ -190,7 +181,7 @@ jobs:
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o bin/server ./cmd/server/
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o bin/migrate ./cmd/migrate/
 
-      # Built by the frontend-build job - same commit, same NEXT_PUBLIC_API_URL - and handed over as one
+      # Built by the frontend-build job - same commit, same VITE_API_URL - and handed over as one
       # artifact. Setting up Node and running `npm ci && npm run build` here again cost ~35s of the deploy
       # for a bundle that was already sitting in the workspace next door.
       - name: Fetch the frontend build
@@ -428,22 +419,18 @@ jobs:
             echo "kada-api is running"
 
             # 4. Replace the frontend build.
+            #
+            #    Static files, so there is no service to restart and no runtime to supervise: nginx serves
+            #    this directory directly (see nginx/nginx-prod.conf). The unpack goes to a sibling
+            #    directory first and is moved into place, so a failed unpack leaves the previous build
+            #    serving and the swap itself is a rename.
             echo "Deploying the frontend"
-            cd "$FRONTEND_DIR"
-            rm -rf .next/static node_modules server.js package.json static 2>/dev/null || true
-            tar xzf "$DEPLOY_DIR/deploy-pkg/kada-fe-standalone.tar.gz"
-            mkdir -p .next
-            tar xzf "$DEPLOY_DIR/deploy-pkg/kada-fe-static.tar.gz" -C .next
-
-            # 5. Restart the frontend.
-            systemctl restart kada-frontend
-            sleep 2
-            if ! systemctl is-active --quiet kada-frontend; then
-              echo "kada-frontend is not active after restart"
-              journalctl -u kada-frontend -n 30 --no-pager || true
-              exit 1
-            fi
-            echo "kada-frontend is running"
+            rm -rf "$FRONTEND_DIR.new"
+            mkdir -p "$FRONTEND_DIR.new"
+            tar xzf "$DEPLOY_DIR/deploy-pkg/kada-fe.tar.gz" -C "$FRONTEND_DIR.new"
+            rm -rf "$FRONTEND_DIR"
+            mv "$FRONTEND_DIR.new" "$FRONTEND_DIR"
+            echo "the frontend is deployed"
 
             # 6. Verify on the host itself. This is the authoritative check: it does not depend on DNS,
             #    TLS or the public network, only on the API answering. The public check further below

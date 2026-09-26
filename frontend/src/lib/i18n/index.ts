@@ -1,5 +1,3 @@
-"use client";
-
 import { useCallback } from "react";
 import { useI18n, type Locale } from "./context";
 import { en, zh, type Messages } from "./dictionary";
