@@ -119,6 +119,7 @@ func main() {
 	utmSvc := service.NewUTMTemplateService(db)
 	tokenSvc := service.NewAPITokenService(db)
 	workspaceSvc := service.NewWorkspaceService(db)
+	analyticsSvc := service.NewAnalyticsService(db)
 
 	// Initialize the handler layer
 	authH := authHandler.NewHandler(authSvc)
@@ -130,7 +131,7 @@ func main() {
 	utmH := utmHandler.NewHandler(utmSvc)
 	tokenH := tokenHandler.NewHandler(tokenSvc)
 	workspaceH := workspaceHandler.NewHandler(workspaceSvc)
-	analyticsH := analyticsHandler.NewHandler(db)
+	analyticsH := analyticsHandler.NewHandler(db, analyticsSvc)
 
 	// The assistant: it used to be a separate Python service that this binary reverse-proxied to, and it
 	// runs in this process now. Both halves are optional on purpose - a missing key is a warning rather
@@ -151,11 +152,19 @@ func main() {
 		log.Printf("The assistant will answer without the knowledge base: %v", err)
 	}
 
-	aiH := aiHandler.NewHandler(assistant.NewAssistant(
+	// Building the agent can only fail on a programming error (a tool whose schema cannot be inferred), so
+	// it is the one assistant failure that stops the process: there would be nothing to answer with.
+	assistantService, err := assistant.NewAssistant(
+		context.Background(),
 		chatModel,
+		assistant.NewKada(linkSvc, analyticsSvc),
 		assistant.NewKnowledgeBase(db, embedder),
 		assistant.NewConversations(db),
-	))
+	)
+	if err != nil {
+		log.Fatalf("Failed to initialize the assistant: %v", err)
+	}
+	aiH := aiHandler.NewHandler(assistantService)
 
 	// JWT + API Token middleware
 	authMW := middleware.JWTAuth(cfg.JWTSecret, tokenSvc)

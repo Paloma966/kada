@@ -1,6 +1,7 @@
 package analytics
 
 import (
+	"context"
 	"log"
 	"net/http"
 	"strconv"
@@ -9,16 +10,26 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
-	"github.com/chun/kada-backend/internal/domain/entity"
 	"github.com/chun/kada-backend/internal/middleware"
+	"github.com/chun/kada-backend/internal/service"
 )
 
-type Handler struct {
-	db *gorm.DB
+// OverviewService is the slice of the analytics service this handler needs.
+type OverviewService interface {
+	Overview(ctx context.Context, userID int64) (service.Overview, error)
 }
 
-func NewHandler(db *gorm.DB) *Handler {
-	return &Handler{db: db}
+type Handler struct {
+	db        *gorm.DB
+	analytics OverviewService
+}
+
+// NewHandler takes both the database and the analytics service: the overview moved into the service so the
+// assistant's tool and this endpoint read the same query, while the four breakdown endpoints below still
+// query here. They are the same candidate for the same extraction, and none of them is needed by the
+// assistant yet.
+func NewHandler(db *gorm.DB, analytics OverviewService) *Handler {
+	return &Handler{db: db, analytics: analytics}
 }
 
 func (h *Handler) RegisterRoutes(r *gin.RouterGroup, authMW gin.HandlerFunc) {
@@ -34,23 +45,16 @@ func (h *Handler) RegisterRoutes(r *gin.RouterGroup, authMW gin.HandlerFunc) {
 func (h *Handler) Overview(c *gin.Context) {
 	userID := middleware.GetUserID(c)
 
-	var stats struct {
-		TotalLinks  int64
-		TotalClicks int64
-	}
-	if err := h.db.WithContext(c.Request.Context()).
-		Model(&entity.Link{}).
-		Select("COUNT(*) AS total_links, COALESCE(SUM(click_count), 0) AS total_clicks").
-		Where("user_id = ?", userID).
-		Scan(&stats).Error; err != nil {
+	totals, err := h.analytics.Overview(c.Request.Context(), userID)
+	if err != nil {
 		log.Printf("analytics overview failed: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "query failed"})
 		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"total_links":  stats.TotalLinks,
-		"total_clicks": stats.TotalClicks,
+		"total_links":  totals.TotalLinks,
+		"total_clicks": totals.TotalClicks,
 	})
 }
 
