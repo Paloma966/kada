@@ -396,12 +396,26 @@ jobs:
             # 2. Apply the database schema.
             # The schema is defined by the GORM models in backend/internal/domain/entity and applied by
             # cmd/migrate: it reconciles legacy constraint names, then runs AutoMigrate (additive only).
-            # It reads DATABASE_URL from the environment when the secret is set, and otherwise from
-            # /opt/kada/backend/.env through godotenv, which is how this host is configured.
+            #
+            # DATABASE_URL comes from the repository secret when one is set, and otherwise from the host's
+            # own .env. The empty case is unset rather than merely not set again: godotenv does not
+            # override a variable that is present in the environment, and an exported empty string is
+            # present - so a secret that exists but holds nothing would shadow the file and hand
+            # cmd/migrate the built-in localhost default, against whatever happens to be listening there.
+            # The step says which source it used, because "the schema was applied" is not something to
+            # infer from a green run.
             echo "Applying the database schema"
             cp -f "$DEPLOY_DIR/backend/bin/migrate" "$BACKEND_DIR/bin/migrate"
             chmod +x "$BACKEND_DIR/bin/migrate"
-            cd "$BACKEND_DIR" && DATABASE_URL="$DATABASE_URL" ./bin/migrate
+            cd "$BACKEND_DIR"
+            if [ -n "${DATABASE_URL:-}" ]; then
+              echo "DATABASE_URL comes from the repository secret"
+              DATABASE_URL="$DATABASE_URL" ./bin/migrate
+            else
+              echo "DATABASE_URL comes from $BACKEND_DIR/.env"
+              unset DATABASE_URL
+              ./bin/migrate
+            fi
 
             # 3. Replace the backend binary.
             echo "Restarting the backend"
