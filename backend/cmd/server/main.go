@@ -13,6 +13,7 @@ import (
 	"github.com/joho/godotenv"
 
 	"github.com/chun/kada-backend/config"
+	"github.com/chun/kada-backend/internal/assistant"
 	aiHandler "github.com/chun/kada-backend/internal/handler/ai"
 	analyticsHandler "github.com/chun/kada-backend/internal/handler/analytics"
 	authHandler "github.com/chun/kada-backend/internal/handler/auth"
@@ -131,11 +132,30 @@ func main() {
 	workspaceH := workspaceHandler.NewHandler(workspaceSvc)
 	analyticsH := analyticsHandler.NewHandler(db)
 
-	// AI gateway: proxies /api/ai/* to the internal Python AI service
-	aiH, err := aiHandler.NewHandler(cfg.AIBaseURL, cfg.AIInternalSecret)
+	// The assistant: it used to be a separate Python service that this binary reverse-proxied to, and it
+	// runs in this process now. Both halves are optional on purpose - a missing key is a warning rather
+	// than a refused start, so /api/ai/chat answers with a configuration message instead of the whole API
+	// being down.
+	chatModel, err := assistant.NewChatModel(context.Background(), assistant.ChatModelConfig{
+		APIKey:    cfg.AIDeepSeekAPIKey,
+		BaseURL:   cfg.AIDeepSeekBaseURL,
+		Model:     cfg.AIDeepSeekModel,
+		MaxTokens: cfg.AIMaxTokens,
+	})
 	if err != nil {
-		log.Fatalf("Failed to initialize AI gateway: %v", err)
+		log.Printf("The assistant will report a configuration problem: %v", err)
 	}
+
+	embedder, err := assistant.NewEmbedder(context.Background(), cfg.AIEmbeddingAPIKey, cfg.AIEmbeddingModel)
+	if err != nil {
+		log.Printf("The assistant will answer without the knowledge base: %v", err)
+	}
+
+	aiH := aiHandler.NewHandler(assistant.NewAssistant(
+		chatModel,
+		assistant.NewKnowledgeBase(db, embedder),
+		assistant.NewConversations(db),
+	))
 
 	// JWT + API Token middleware
 	authMW := middleware.JWTAuth(cfg.JWTSecret, tokenSvc)

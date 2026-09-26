@@ -1,145 +1,159 @@
-// Package ai proxies AI chat requests to the internal Python AI service.
+// Package ai serves the assistant's HTTP surface.
 //
-// Kada's browser-facing API only ever talks to the Python service through this
-// gateway: the Go process owns authentication (JWT middleware), injects the
-// authenticated user id as X-Kada-User-ID, and streams the SSE response back
-// verbatim. The Python service listens on 127.0.0.1 only and is never exposed
-// to the public internet.
+// It used to be a reverse proxy to a Python service on 127.0.0.1:8000. The assistant runs in this process
+// now, so what is left of that boundary is the paths and the frames: /api/ai/chat streams server-sent
+// events named token, done and error, and /api/ai/conversations/* answers JSON. Both are unchanged,
+// because the frontend depends on them and not on what answers.
 package ai
 
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"io"
 	"log"
 	"net/http"
-	"net/http/httputil"
-	"net/url"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/chun/kada-backend/internal/assistant"
 	"github.com/chun/kada-backend/internal/middleware"
 )
 
-// userIDCtxKey carries the authenticated user id from the gin handler into the
-// reverse-proxy rewrite step. The rewrite function only sees *http.Request
-// values, not the gin.Context, so we smuggle the value through the request
-// context.
-type userIDCtxKey struct{}
+// Assistant is the slice of the assistant this handler needs.
+//
+// The handler declares it rather than taking the concrete type so its tests can stream a scripted answer,
+// with no model, no database and no network.
+type Assistant interface {
+	Stream(ctx context.Context, userID int64, conversationID, question string) (<-chan assistant.Event, error)
+	Current(ctx context.Context, userID int64) (assistant.Conversation, error)
+	Restart(ctx context.Context, userID int64) (string, error)
+}
 
-// internalAuthHeader is the header that tells the Python service this request
-// came through the gateway rather than from some other local process - which is
-// what makes the X-Kada-User-ID header sent alongside it trustworthy. The value
-// it carries is the shared secret, not the header name itself.
-const internalAuthHeader = "X-Internal-Secret"
-
-// Handler proxies /api/ai/* to the internal Python AI service.
+// Handler serves /api/ai/*.
 type Handler struct {
-	proxy *httputil.ReverseProxy
+	assistant Assistant
 }
 
-// NewHandler builds the gateway that forwards /api/ai/* to the Python service
-// at aiBaseURL (e.g. http://127.0.0.1:8000). internalSecret is injected as
-// X-Internal-Secret; an empty secret disables the check on both sides.
-func NewHandler(aiBaseURL, internalSecret string) (*Handler, error) {
-	target, err := url.Parse(aiBaseURL)
-	if err != nil {
-		return nil, err
-	}
-
-	// Rewrite is used instead of the deprecated Director (deprecated in Go 1.26):
-	// it receives the inbound and outbound requests as a pair, so it stays
-	// explicit which one is read (In, never trusted) and which one is written
-	// (Out). A ReverseProxy accepts exactly one of Director and Rewrite, so the
-	// proxy is constructed here rather than through NewSingleHostReverseProxy,
-	// which installs a Director.
-	proxy := &httputil.ReverseProxy{
-		// SSE must reach the client token by token; -1 = flush after every write
-		// instead of buffering. Without this, the streaming reply arrives in
-		// chunks rather than word by word.
-		FlushInterval: -1,
-		Rewrite: func(pr *httputil.ProxyRequest) {
-			pr.SetURL(target) // scheme/host/path/query from the target URL
-			// Rewrite strips the client's Forwarded / X-Forwarded-* headers
-			// before this runs, so what lands here is the gateway's own
-			// observation of the peer, not a claim the caller chose.
-			pr.SetXForwarded()
-
-			// Map the public path to the Python path by dropping this gateway's
-			// mount prefix: /api/ai/chat -> /chat, /api/ai/conversations/current
-			// -> /conversations/current. The AI service owns its own paths and
-			// knows nothing about /api/ai, so the two surfaces can move
-			// independently.
-			pr.Out.URL.Path = strings.TrimPrefix(pr.Out.URL.Path, "/api/ai")
-			if pr.Out.URL.Path == "" {
-				pr.Out.URL.Path = "/"
-			}
-
-			// Security: never trust a client-supplied X-Kada-User-ID. The
-			// gateway always overwrites it with the authenticated user id from
-			// the JWT, so a caller can never read or write another user's
-			// conversations.
-			pr.Out.Header.Del("X-Kada-User-ID")
-			if userID, ok := pr.In.Context().Value(userIDCtxKey{}).(int64); ok && userID > 0 {
-				pr.Out.Header.Set("X-Kada-User-ID", strconv.FormatInt(userID, 10))
-			}
-
-			// Same rule for the service secret. Deleting matters even when no
-			// secret is configured: the AI service must never see a header the
-			// gateway did not send, or a caller could smuggle one in and make a
-			// direct request look like it came through the gateway.
-			pr.Out.Header.Del(internalAuthHeader)
-			if internalSecret != "" {
-				pr.Out.Header.Set(internalAuthHeader, internalSecret)
-			}
-		},
-	}
-	proxy.ErrorHandler = func(w http.ResponseWriter, _ *http.Request, err error) {
-		// If the SSE stream already started, headers are written and we can no
-		// longer change the status code; just log and stop the stream.
-		if w.Header().Get("Content-Type") != "" {
-			log.Printf("ai proxy stream error: %v", err)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json; charset=utf-8")
-		w.WriteHeader(http.StatusBadGateway)
-		_ = json.NewEncoder(w).Encode(gin.H{"error": "AI service unavailable: " + err.Error()})
-	}
-
-	return &Handler{proxy: proxy}, nil
+// NewHandler builds the handler on an assistant (which may be wired to nothing at all - see cmd/server).
+func NewHandler(a Assistant) *Handler {
+	return &Handler{assistant: a}
 }
 
-// RegisterRoutes mounts the AI gateway on the /api router group.
+// RegisterRoutes mounts the AI surface on the /api router group.
 func (h *Handler) RegisterRoutes(r *gin.RouterGroup, authMW gin.HandlerFunc) {
 	r.Use(authMW)
-	r.POST("/ai/chat", h.forward)
-	// Single-session mode: current returns the user's latest conversation with
-	// its messages, restart drops it and creates a fresh empty one. The paths say
-	// conversations, not "session": the table is ai_conversations and the
-	// response already carries conversation_id.
-	r.GET("/ai/conversations/current", h.forward)
-	r.POST("/ai/conversations/restart", h.forward)
+	r.POST("/ai/chat", h.chat)
+	// Single-session mode: current returns the user's latest conversation with its messages, restart drops
+	// it and creates a fresh empty one. The paths say conversations because the table is ai_conversations
+	// and the response already carries conversation_id.
+	r.GET("/ai/conversations/current", h.current)
+	r.POST("/ai/conversations/restart", h.restart)
 }
 
-// forward proxies the request to the Python AI service.
-func (h *Handler) forward(c *gin.Context) {
+type chatRequest struct {
+	ConversationID string `json:"conversation_id"`
+	Message        string `json:"message"`
+}
+
+// chat streams one answer as server-sent events.
+func (h *Handler) chat(c *gin.Context) {
 	userID := middleware.GetUserID(c)
 	if userID <= 0 {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "authenticated user required"})
 		return
 	}
 
-	// SSE is a long-lived connection: lift the server-level write timeout
-	// (cmd/server sets 10s) for this request, otherwise Go would cut the
-	// stream mid-answer. time.Time{} means "no deadline".
+	var req chatRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+		return
+	}
+	if strings.TrimSpace(req.Message) == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "message is required"})
+		return
+	}
+
+	// SSE is a long-lived response and cmd/server sets a 10 second write deadline, which would cut the
+	// stream off mid-answer. Clearing it for this request is what lets a long reply finish.
 	if ctrl := http.NewResponseController(c.Writer); ctrl != nil {
 		if err := ctrl.SetWriteDeadline(time.Time{}); err != nil {
-			log.Printf("ai: could not clear write deadline: %v", err)
+			log.Printf("ai: could not clear the write deadline: %v", err)
 		}
 	}
 
-	req := c.Request.WithContext(context.WithValue(c.Request.Context(), userIDCtxKey{}, userID))
-	h.proxy.ServeHTTP(c.Writer, req)
+	events, err := h.assistant.Stream(c.Request.Context(), userID, req.ConversationID, req.Message)
+	if err != nil {
+		// Nothing has been written yet, so a failure here can still be an ordinary response; the AI page
+		// shows the body as the error message. Everything after the first frame can only be an error event.
+		c.String(http.StatusServiceUnavailable, "AI 服务异常：%v", err)
+		return
+	}
+
+	// X-Accel-Buffering stops nginx from collecting the whole stream into one response, which would make
+	// the answer appear in a lump instead of word by word.
+	c.Header("Content-Type", "text/event-stream")
+	c.Header("Cache-Control", "no-cache")
+	c.Header("X-Accel-Buffering", "no")
+	c.Status(http.StatusOK)
+
+	flusher, _ := c.Writer.(http.Flusher)
+	for event := range events {
+		if err := writeEvent(c.Writer, event); err != nil {
+			// The client is gone; the producer stops on its own because the request context is canceled.
+			log.Printf("ai: failed to write an event: %v", err)
+			break
+		}
+		if flusher != nil {
+			flusher.Flush()
+		}
+	}
+}
+
+// current returns the user's latest conversation and its messages.
+func (h *Handler) current(c *gin.Context) {
+	userID := middleware.GetUserID(c)
+	if userID <= 0 {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "authenticated user required"})
+		return
+	}
+
+	conversation, err := h.assistant.Current(c.Request.Context(), userID)
+	if err != nil {
+		log.Printf("ai: failed to load the conversation for user %d: %v", userID, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load the conversation"})
+		return
+	}
+	c.JSON(http.StatusOK, conversation)
+}
+
+// restart drops the user's conversations and returns a fresh one.
+func (h *Handler) restart(c *gin.Context) {
+	userID := middleware.GetUserID(c)
+	if userID <= 0 {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "authenticated user required"})
+		return
+	}
+
+	conversationID, err := h.assistant.Restart(c.Request.Context(), userID)
+	if err != nil {
+		log.Printf("ai: failed to restart the conversation for user %d: %v", userID, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to restart the conversation"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"conversation_id": conversationID})
+}
+
+// writeEvent writes one SSE frame: the event line, the data line and the blank line that ends it.
+func writeEvent(w io.Writer, event assistant.Event) error {
+	payload, err := json.Marshal(event.Data)
+	if err != nil {
+		return fmt.Errorf("failed to encode an event: %w", err)
+	}
+	if _, err := fmt.Fprintf(w, "event: %s\ndata: %s\n\n", event.Name, payload); err != nil {
+		return fmt.Errorf("failed to write an event: %w", err)
+	}
+	return nil
 }

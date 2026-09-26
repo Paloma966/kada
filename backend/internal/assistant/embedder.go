@@ -1,11 +1,4 @@
-// Package ai is the assistant: the knowledge base it answers from, the model it answers with and the
-// tools it may call.
-//
-// It runs inside the API process and replaces a separate Python service (backend/ai) that this gateway
-// used to reverse-proxy to. The model and embedding clients come from Eino (github.com/cloudwego/eino),
-// which is also where the tool-calling loop lives; the knowledge base is PostgreSQL's pgvector, kept in
-// the same database as everything else.
-package ai
+package assistant
 
 import (
 	"context"
