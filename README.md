@@ -1,6 +1,6 @@
 # Kada
 
-**English** | [简体中文](README.zh-CN.md)
+**English** | [简体中文](README.zh.md)
 
 A short link management and analytics platform. Supports link folders and tags, custom domains, access passwords, expiry times, UTM templates, a click analytics dashboard, and an AI assistant that answers questions about your own links.
 
