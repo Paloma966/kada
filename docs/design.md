@@ -477,19 +477,20 @@ The AI service holds no credential of its own. The Go gateway already forwards t
 `Authorization` header, and the tools that read link statistics or create short links pass it on to the
 existing `/api/*` routes. Four consequences decide the shape of that:
 
-- **Permission checks live in exactly one place.** Python neither parses nor validates the JWT, it only
-  forwards it. A disabled account or an expired token fails a tool call exactly as it fails the user's own
-  call, and nothing has to be restarted when that happens.
-- **The user id is an assertion by the gateway, and only because of the secret.** The gateway drops any
-  client-supplied `X-Kada-User-ID` and sets it from the verified JWT; the service trusts that header only
-  while the same request also carries `AI_INTERNAL_SECRET`, a value no other local process knows. Without
-  that second half, any process on the host could read or delete another user's conversations - which is
-  why the header itself was never the weak point worth changing.
-- **The credential is per request, not per process.** It travels in a `ContextVar` that the chat route
-  binds before generating, so two users served by the same worker cannot see each other's token. That is
-  also why these tools cannot live in the MCP subprocess: stdio is a single long-lived session shared by
-  every request, and `langchain-mcp-adapters` supports per-call headers only on HTTP transports. MCP stays
-  for tools that need no user identity.
+- **Permission checks live in exactly one place.** The assistant does not parse or validate the JWT and has
+  nothing to validate: the handler already knows the user, because the request reached it through the same
+  middleware as every other route. A disabled account or an expired token fails a tool call exactly as it
+  fails the user's own call, and nothing has to be restarted when that happens.
+- **The user id is the authenticated one, and there is no header to spoof.** It used to be a header the
+  gateway injected, trustworthy only while the request also carried a shared secret that no other local
+  process knew - and that second half is what made forging the header impossible rather than merely
+  unlikely. In this process the value comes from the middleware's context, so the whole exchange is gone:
+  no header, no secret, and no way for a local process to impersonate a user.
+- **The credential is per request, not per process.** The user id travels in the request context, so two
+  users served by the same process cannot see each other's data - and the same fact is what lets one
+  agent, built once at startup, serve every account. (The Python service kept it in a `ContextVar` bound
+  by the chat route; that is the same idea, and the reason its business tools could not live in the MCP
+  subprocess, whose single shared stdio session has no request to belong to.)
 - **A failed tool degrades the answer, not the request.** Tools return their failure as text (an HTTP
   status, a missing credential) so the model can explain it, in the same spirit as RAG retrieval falling
   over to "no reference material".
@@ -512,8 +513,9 @@ existing `/api/*` routes. Four consequences decide the shape of that:
 | `KAFKA_BROKERS` | empty | Comma-separated brokers; empty disables Kafka (clicks are written directly) |
 | `KAFKA_TOPIC` | `clicks` | Click event topic |
 | `NEXT_PUBLIC_API_URL` | `""` (same origin) | API base for the browser |
-| `AI_BASE_URL` | `http://127.0.0.1:8000` | Internal Python AI service the gateway proxies `/api/ai/*` to |
-| `AI_INTERNAL_SECRET` | empty | Injected as `X-Internal-Secret`; the AI service accepts only requests carrying it |
+| `DEEPSEEK_API_KEY` | empty | The assistant's chat model key (DeepSeek, OpenAI-compatible API) |
+| `DASHSCOPE_API_KEY` | empty | Aliyun Bailian key for the knowledge base embeddings |
+| `AI_CHAT_MODEL`, `DEEPSEEK_BASE_URL`, `AI_MAX_TOKENS`, `AI_EMBEDDING_MODEL` | `deepseek-flash`, `https://api.deepseek.com`, `8192`, `text-embedding-v3` | Optional overrides for the four values above |
 
 `SMS_SIGN_NAME` has no default on purpose. It used to fall back to the literal `kada`, and for this
 deployment that is in fact the account's real signature - which is precisely what made the outage
@@ -541,24 +543,16 @@ What survives from the episode is a runner-side note (never a failure) saying th
 these four values yet - useful because whether they are set here or only on the host is invisible until the
 machine is rebuilt.
 
-The Python AI service reads its own environment (`backend/ai/app/config.py`), and in production those
-values live in `/opt/kada/ai/ai.env` rather than in the repository's `.env`:
+The assistant reads these from the same environment as the rest of the API (see
+`backend/.env.example`), and in production the deploy job writes them into `/opt/kada/backend/.env`.
+Missing keys do not stop the process: without the chat key every question is answered with a
+configuration message, and without the embedding key the assistant answers from the model alone, with no
+retrieved context.
 
-| Variable | Default | Purpose |
-|---|---|---|
-| `DEEPSEEK_API_KEY` | empty | Chat model key (DeepSeek, OpenAI-compatible API) |
-| `aliyun` | empty | DashScope key for the RAG embeddings; the variable name is literally `aliyun` |
-| `POSTGRES_URL` | `...@127.0.0.1:5432/kada_ai` | AI database: conversations plus the pgvector knowledge base |
-| `REDIS_URL` | `redis://127.0.0.1:6379/0` | Session hot cache; optional, the service falls back to PostgreSQL |
-| `KADA_API_BASE` | `http://localhost:8080` | Go API the business tools call back into |
-| `AI_INTERNAL_SECRET` | empty | The same value as the gateway's; empty disables the inbound check |
-
-> There is no AI service token. The business tools act as the signed-in user, with the JWT the gateway
-> forwards on each chat request (see 8.6); the long-lived token this service used to hold, and the
-> hardcoded fallback it carried, are both gone. `AI_INTERNAL_SECRET` is a different kind of value: it
-> authenticates the *hop*, not a person. Leaking it is not enough to act on a user's links (that still
-> needs their JWT), but it is enough to forge `X-Kada-User-ID` and read their conversations, so it is
-> still a secret.
+> There is no service token and no second process. The tools act as the signed-in user because they run
+> in this process with the user id from the request (see 8.6) - the credential the Python service used to
+> carry, the internal secret that authenticated the hop to it, and the second database it kept its
+> conversations in are all gone with it.
 
 ### 9.1 SMS verification
 
@@ -636,38 +630,30 @@ screenshot to end.
 
 Three supported shapes:
 
-1. **Docker Compose** (`docker compose up -d`): nginx, API, worker, AI, frontend, PostgreSQL, Redis and
+1. **Docker Compose** (`docker compose up -d`): nginx, API, worker, frontend, PostgreSQL, Redis and
    Kafka on one host. Suitable for a single server or local development.
 2. **systemd + released binaries** (`deploy/`): the API and worker run as native processes, with
    PostgreSQL, Redis and Kafka provided separately. This is what the GitHub Actions deploy job uses:
    it builds the binaries, applies the schema with `bin/migrate`, restarts `kada-api`, and verifies
    the health endpoint, rolling back to the previous binary if the service does not come up.
-3. **The AI service as a container of its own** (`deploy/docker-compose.ai.yml`), which is how it joins
-   shape 2 on a host that already runs PostgreSQL and Redis. The root `docker-compose.yml` cannot be used
-   for that: its `ai` service declares `depends_on`, so starting it would also start compose's own
-   postgres and collide on `127.0.0.1:5432`. The dedicated file contains that one service and no
-   dependencies at all. It runs with `network_mode: host` and binds `127.0.0.1:8000` - exactly where
-   `AI_BASE_URL` already points - so the Go gateway reaches it without new wiring, and ufw keeps
-   governing the port because it never enters Docker's iptables chains.
+3. **The assistant inside the API process.** It used to be a Python container of its own with its own
+   database, its own env file and its own deploy script; it is a package of the Go binary now
+   (`internal/assistant`), which is why none of those exist any more. The knowledge base is a table in
+   the application's database, built by `cmd/ai-ingest`, and the chat, retrieval and tool code all runs
+   in the API process - so a host has one fewer service to run, and one fewer way for two processes to
+   disagree about who is asking.
 
-   The image is built **on the host**: a Python service is not a binary to copy, and only the source
-   changes between deploys, so the pip layers stay cached. `deploy/deploy-ai.sh` is the only
-   implementation of that step - the deploy job syncs `backend/ai`, `deploy/docker-compose.ai.yml` and
-   the script, then runs it. It refuses to deploy without `/opt/kada/ai/ai.env`, with an empty
-   `POSTGRES_URL` in it, or with an empty `DEEPSEEK_API_KEY` / `aliyun` (a service that starts and then
-   fails every request is worse than a refused deploy; for the DSN it is worse still, because the
-   fallback in `backend/ai/app/config.py` carries a guessed password, so the container dies inside
-   `init_db()` only after a multi-minute image build). It waits for `/healthz`, and rolls back to the
-   previous image otherwise.
-   `deploy/setup-ai-db.sh` creates `kada_ai` and enables the vector extension on a database that already
-   exists, which `docker-entrypoint-initdb.d` can no longer do on an existing volume.
+   The knowledge base needs the pgvector extension in the database it lives in. `cmd/ai-ingest` runs
+   `CREATE EXTENSION IF NOT EXISTS vector` itself, and says so plainly when the extension is not
+   available at all; on a fresh compose volume `deploy/postgres/initdb/01-enable-vector.sql` does the
+   same thing, because `docker-entrypoint-initdb.d` only runs on first initialisation.
 
-   The provider keys themselves reach the host from **GitHub repository secrets**, written into
-   `/opt/kada/ai/ai.env` and `/opt/kada/backend/.env` by `deploy/upsert-env.sh` as the first step of the
-   deploy, before any service is replaced. That file is the fix for a whole class of outage: both "the AI
-   page is broken" and "the SMS code never arrives" turned out to be an empty line in a file on the
-   server that nothing had ever checked. A `--require`d key that is missing fails the deployment while the
-   previous build is still serving, and an empty `--set` leaves an existing hand-configured value alone.
+   The provider keys reach the host from **GitHub repository secrets**, written into
+   `/opt/kada/backend/.env` by `deploy/upsert-env.sh` as the first step of the deploy, before any service
+   is replaced. That file is the fix for a whole class of outage: both "the AI page is broken" and "the
+   SMS code never arrives" turned out to be an empty line in a file on the server that nothing had ever
+   checked. A `--require`d key that is missing fails the deployment while the previous build is still
+   serving, and an empty `--set` leaves an existing hand-configured value alone.
 
 The deploy job applies the schema **before** replacing the binary, so a failed migration leaves the
 previous version running.
@@ -721,14 +707,14 @@ step that requires manual setup is a failure mode of its own.
 | Schema | `internal/domain/entity` asserts table names, columns, unique indexes and delete rules against the GORM schema |
 | Query shapes | Dry-run GORM sessions assert the generated SQL for the dynamic and bulk statements |
 | Frontend | Vitest for pure helpers (starfield geometry, ophiuchus lines, utilities) |
-| AI service | CI builds `backend/ai`, asserts the DashScope SDK is importable and boots the container against a real PostgreSQL to hit `/healthz` |
+| Assistant | Fakes for the model and the knowledge base, but the real Eino agent with the real tools: one test drives a model that asks for a tool and asserts which user the tool acted for, another drives a model that never stops asking and asserts the step limit holds |
 
 Run everything with `cd backend && go test ./... -count=1 -race` and `cd frontend && npm test`; CI
 additionally runs `go vet`, `golangci-lint`,
-`tsc --noEmit` and the production build on every pull request. The AI service gets a job of its own
-(`ai-build`) because its failures show up at request time rather than at import time: a requirements.txt
-missing the embedding SDK, or an image that cannot start, passes every startup check and only breaks when
-a user asks a question.
+`tsc --noEmit` and the production build on every pull request. The assistant is tested where it runs
+rather than as a container: the failure it has to catch - a model or an embedding call that only breaks
+when a question arrives - is a fake model or a retrieval error in `internal/assistant`, not an image that
+starts.
 
 ## 12. Known limitations
 

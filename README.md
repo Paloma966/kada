@@ -28,7 +28,7 @@ The backend is written in Go, the frontend in Next.js, click events are processe
 | Storage | PostgreSQL 16 (pgvector for the knowledge base), Redis 7 |
 | Messaging | Kafka 3.8 |
 | Frontend | Next.js 16, React 19, TypeScript, SWR, Tailwind |
-| AI service | Python 3.11, FastAPI, LangChain, DeepSeek + Aliyun Bailian |
+| AI assistant | Go (Eino), DeepSeek + Aliyun Bailian, pgvector |
 | Deployment | Docker Compose, Nginx, systemd, GitHub Actions |
 
 ## Architecture
@@ -41,9 +41,9 @@ The database schema is defined by the GORM models in `backend/internal/domain/en
 `backend/cmd/migrate` (AutoMigrate). There are no SQL migration files: the structs are the single source
 of truth, and AutoMigrate only adds missing tables/columns/indexes, so it is safe to re-run.
 
-The AI assistant runs as its own Python service (`backend/ai`) that is never exposed publicly: the Go
-gateway authenticates the caller and proxies `/api/ai/*` to it. See [backend/ai/README.md](backend/ai/README.md)
-and [docs/ai-deployment.md](docs/ai-deployment.md).
+The AI assistant runs inside the API process: it serves `/api/ai/*` itself, keeps its conversations and
+its knowledge base in the same PostgreSQL as everything else, and calls the application's own services
+for the tools it offers. See the deployment section of [docs/design.md](docs/design.md).
 
 ## Getting started
 
@@ -71,16 +71,15 @@ cd frontend && npm run dev                  # 3000
 | DB_AUTO_MIGRATE | Let the API server apply the schema on startup (default true; set false when using cmd/migrate) |
 | SMS_ACCESS_KEY_ID / SMS_ACCESS_KEY_SECRET | Alibaba Cloud SMS. Required in production: phone + SMS code is the only sign-in method |
 | SMS_SIGN_NAME / SMS_TEMPLATE_CODE | The system-granted SMS signature and template from the Aliyun PNVS console |
-| AI_BASE_URL / AI_INTERNAL_SECRET | Where the Go gateway finds the AI service, and the shared secret that makes it accept only gateway requests |
-| DEEPSEEK_API_KEY / aliyun | AI service only (chat model key, and the Bailian embedding key under the literal name `aliyun`) |
+| DEEPSEEK_API_KEY / DASHSCOPE_API_KEY | The assistant: chat model key, and the Bailian embedding key for the knowledge base |
 
-In production these come from GitHub repository secrets and are written into `/opt/kada/ai/ai.env` and
-`/opt/kada/backend/.env` by the deploy job; see [docs/ai-deployment.md](docs/ai-deployment.md).
+In production these come from GitHub repository secrets and are written into `/opt/kada/backend/.env` by
+the deploy job; the deployment section of [docs/design.md](docs/design.md) explains what that job does.
 
 ## Layout
 
 ```text
-backend/   Go backend (cmd + internal), plus the Python AI service in backend/ai
+backend/   Go backend (cmd + internal), including the AI assistant
 frontend/  Next.js frontend
 docs/      Design, contributing and code-style documentation
 nginx/     Reverse proxy configuration
