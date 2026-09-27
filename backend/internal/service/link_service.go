@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"golang.org/x/crypto/bcrypt"
+	"golang.org/x/sync/singleflight"
 	"gorm.io/gorm"
 
 	"github.com/chun/kada-backend/internal/domain"
@@ -27,12 +28,16 @@ var shortCodePattern = regexp.MustCompile(`^[a-zA-Z0-9_-]{4,20}$`)
 type LinkService struct {
 	db          *gorm.DB
 	baseURL     string
-	cache       *CacheService
+	cache       LinkCache
 	kafka       mq.ClickPublisher // Kafka publisher; nil means disabled
 	clickWriter ClickWriter       // direct write (used by the degraded fallback)
+
+	// loads collapses concurrent cache misses for one short code into a single database read. A key that
+	// is absent is exactly when a burst of requests for it arrives together.
+	loads singleflight.Group
 }
 
-func NewLinkService(db *gorm.DB, baseURL string, cache *CacheService, kafka mq.ClickPublisher, clickWriter ClickWriter) *LinkService {
+func NewLinkService(db *gorm.DB, baseURL string, cache LinkCache, kafka mq.ClickPublisher, clickWriter ClickWriter) *LinkService {
 	return &LinkService{db: db, baseURL: baseURL, cache: cache, kafka: kafka, clickWriter: clickWriter}
 }
 
@@ -142,10 +147,7 @@ func (s *LinkService) Create(ctx context.Context, userID int64, req domain.Creat
 		}
 	}
 
-	// write to cache
-	if s.cache != nil {
-		s.cache.SetLink(ctx, info)
-	}
+	s.cacheLink(ctx, info)
 
 	return info, nil
 }
@@ -171,29 +173,79 @@ func (s *LinkService) GetByCode(ctx context.Context, shortCode string) (*domain.
 			}
 			return info, nil
 		}
+
+		// A code that was looked up recently and did not exist is answered from the cache as well.
+		// Without this every request for an unknown code - which is what a scanner sends, and what a
+		// link someone deleted leaves behind - is a database query.
+		if s.cache.IsMissing(ctx, shortCode) {
+			return nil, domain.ErrLinkNotFound
+		}
 	}
 
-	var row entity.Link
-	err := s.db.WithContext(ctx).
-		Where("short_code = ? AND is_active = TRUE", shortCode).
-		First(&row).Error
+	return s.loadLink(ctx, shortCode)
+}
+
+// loadLink reads the link from the database and fills the cache.
+//
+// Concurrent calls for one code share a single read: that is the moment a burst of requests for the
+// same absent key arrives together, and without it they would all reach Postgres at once.
+//
+// The shared read runs under the context of whichever caller arrived first, so a client that
+// disconnects mid-read can end it for the waiters too. They see an error once and the next request
+// repeats the load.
+func (s *LinkService) loadLink(ctx context.Context, shortCode string) (*domain.LinkInfo, error) {
+	loaded, err, _ := s.loads.Do(shortCode, func() (any, error) {
+		var row entity.Link
+		err := s.db.WithContext(ctx).
+			Where("short_code = ? AND is_active = TRUE", shortCode).
+			First(&row).Error
+		if err != nil {
+			// Only a row that is genuinely absent is remembered as absent. An unreachable database would
+			// otherwise write "this code does not exist" for every code that was asked for, and that
+			// verdict would outlive the outage by its whole TTL.
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				s.markMissing(ctx, shortCode)
+			}
+			return nil, domain.ErrLinkNotFound
+		}
+
+		info := linkInfoFromEntity(row)
+
+		// check whether it has expired
+		if info.ExpiresAt != nil && info.ExpiresAt.Before(time.Now()) {
+			return nil, errors.New("link has expired")
+		}
+
+		s.cacheLink(ctx, info)
+		return info, nil
+	})
 	if err != nil {
+		return nil, err
+	}
+
+	info, ok := loaded.(*domain.LinkInfo)
+	if !ok {
 		return nil, domain.ErrLinkNotFound
 	}
-
-	info := linkInfoFromEntity(row)
-
-	// check whether it has expired
-	if info.ExpiresAt != nil && info.ExpiresAt.Before(time.Now()) {
-		return nil, errors.New("link has expired")
-	}
-
-	// write to cache
-	if s.cache != nil {
-		s.cache.SetLink(ctx, info)
-	}
-
 	return info, nil
+}
+
+// cacheLink fills the cache for a link and drops the record that its code was missing. The two move
+// together: a "missing" verdict that outlived the link it denied would shadow that link until its TTL.
+func (s *LinkService) cacheLink(ctx context.Context, info *domain.LinkInfo) {
+	if s.cache == nil {
+		return
+	}
+	s.cache.SetLink(ctx, info)
+	s.cache.ClearMissing(ctx, info.ShortCode)
+}
+
+// markMissing records that a short code did not resolve to a link
+func (s *LinkService) markMissing(ctx context.Context, shortCode string) {
+	if s.cache == nil {
+		return
+	}
+	s.cache.MarkMissing(ctx, shortCode)
 }
 
 // CheckPassword checks the link password

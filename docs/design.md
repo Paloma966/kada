@@ -173,6 +173,8 @@ GET /r/:code
    │
    ├─ Redis cache hit ──► serve
    │
+   ├─ Redis "missing" hit ──► 404
+   │
    └─ miss ──► SELECT ... WHERE short_code = $1 AND is_active
                  │
                  ├─ expired?      ──► error page
@@ -184,6 +186,13 @@ GET /r/:code
 The result is written back to Redis with a TTL, and every mutation (update, delete, batch delete,
 workspace delete) invalidates the affected short codes. This is a cache-aside pattern; PostgreSQL
 remains the source of truth and a cold cache only costs latency.
+
+A lookup that finds no row is cached as well, under a key of its own and for sixty seconds rather than
+ten minutes. Without it a scanner walking short codes turns every request into a query, and a deleted
+link leaves the same trail behind. Only a row that is genuinely absent is remembered as absent: an
+unreachable database must not write "this code does not exist" for every code that was asked for,
+because that verdict would outlive the outage by its whole TTL. Creating or renaming a link clears the
+entry, and concurrent misses on one code share a single database read instead of arriving together.
 
 ### 4.4 Schema ownership
 

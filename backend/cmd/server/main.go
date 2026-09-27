@@ -98,8 +98,10 @@ func main() {
 		}
 	}
 
-	// Initialize the cache service (if Redis is available)
-	var cacheSvc *service.CacheService
+	// Initialize the cache service (if Redis is available). The variable is the interface rather than
+	// *CacheService on purpose: a nil *CacheService stored in an interface is not nil, so every
+	// `cache != nil` guard in the service would pass and the first cache call would dereference it.
+	var cacheSvc service.LinkCache
 	if redisClient != nil {
 		cacheSvc = service.NewCacheService(redisClient)
 	}
