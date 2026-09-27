@@ -189,6 +189,9 @@ Rules:
 
 - **One line.** No body, no bullet list, no second paragraph. `git log --oneline` is the view this
   convention is written for.
+- **A closing reference rides in the summary**, in parentheses at the end:
+  `fix: drop the retry that never retried (closes #12)`. GitHub reads the keyword anywhere in the
+  message, and a footer would break the rule above.
 - **Imperative mood in the summary**: "add link expiry validation", not "added" or "adds".
 - **Lower case after the colon**, no trailing period, no emoji.
 - **No scope.** `fix: verify the deployment over HTTPS`, not `fix(ci): verify the deployment over
