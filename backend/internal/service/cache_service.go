@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -53,7 +54,13 @@ func (cs *CacheService) SetLink(ctx context.Context, info *domain.LinkInfo) {
 	cs.client.Set(ctx, key, data, cs.ttl)
 }
 
-// InvalidateLink invalidates the cached link
+// InvalidateLink invalidates the cached link.
+//
+// The error is logged rather than dropped: the redirect path trusts the cached entry to carry the
+// link's password state, so a DEL that fails silently can leave a link reachable without its password
+// until the TTL expires.
 func (cs *CacheService) InvalidateLink(ctx context.Context, shortCode string) {
-	cs.client.Del(ctx, cs.key("link", shortCode))
+	if err := cs.client.Del(ctx, cs.key("link", shortCode)).Err(); err != nil {
+		log.Printf("invalidate cached link %q failed, the stale entry now stands until its TTL: %v", shortCode, err)
+	}
 }

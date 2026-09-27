@@ -19,7 +19,6 @@ import (
 // LinkService is the short link service interface (mockable for tests).
 type LinkService interface {
 	GetByCode(ctx context.Context, shortCode string) (*domain.LinkInfo, error)
-	HasPassword(ctx context.Context, shortCode string) bool
 	CheckPassword(ctx context.Context, shortCode, password string) (bool, *domain.LinkInfo, error)
 	LogClick(ctx context.Context, linkID int64, ip, userAgent, platform, referer string)
 	BuildShortURL(domain, code string) string
@@ -60,8 +59,9 @@ func (h *Handler) Redirect(c *gin.Context) {
 		return
 	}
 
-	// Check whether a password is required.
-	if h.svc.HasPassword(c.Request.Context(), code) {
+	// Check whether a password is required. The answer rides along with the link that was just loaded,
+	// so this costs no extra query and cannot disagree with the row GetByCode returned.
+	if link.HasPassword {
 		c.Header("Content-Type", "text/html; charset=utf-8")
 		c.String(http.StatusOK, passwordPageHTML(code))
 		return

@@ -15,7 +15,6 @@ import (
 // mockLinkService is used for redirect handler tests.
 type mockLinkService struct {
 	getByCode     func(ctx context.Context, code string) (*domain.LinkInfo, error)
-	hasPassword   func(ctx context.Context, code string) bool
 	checkPassword func(ctx context.Context, code, password string) (bool, *domain.LinkInfo, error)
 	logClick      func(ctx context.Context, linkID int64, ip, userAgent, platform, referer string)
 	buildShortURL func(domain, code string) string
@@ -34,13 +33,6 @@ func (m *mockLinkService) GetByCode(ctx context.Context, code string) (*domain.L
 		ClickCount:  0,
 		IsActive:    true,
 	}, nil
-}
-
-func (m *mockLinkService) HasPassword(ctx context.Context, code string) bool {
-	if m.hasPassword != nil {
-		return m.hasPassword(ctx, code)
-	}
-	return false
 }
 
 func (m *mockLinkService) CheckPassword(ctx context.Context, code, password string) (bool, *domain.LinkInfo, error) {
@@ -257,8 +249,15 @@ func TestRedirect_PasswordPage(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	svc := &mockLinkService{
-		hasPassword: func(ctx context.Context, code string) bool {
-			return true
+		getByCode: func(ctx context.Context, code string) (*domain.LinkInfo, error) {
+			return &domain.LinkInfo{
+				ID:          1,
+				ShortCode:   code,
+				OriginalURL: "https://example.com/target",
+				Domain:      "kada.click",
+				IsActive:    true,
+				HasPassword: true,
+			}, nil
 		},
 	}
 	h := NewHandler(svc)

@@ -110,31 +110,35 @@ type LinkTagInfo struct {
 	Color string `json:"color"`
 }
 
+// LinkInfo is a link as the API and the cache see it. It deliberately has no field able to hold the
+// password hash: the struct is marshalled into Redis by CacheService.SetLink and serialised into API
+// responses, so a hash field would put it in both. HasPassword carries the only fact either needs.
+// users.password_hash is tagged json:"-" for the same reason (see TestUserHidesPasswordHash).
 type LinkInfo struct {
-	ID           int64         `json:"id"`
-	ShortCode    string        `json:"short_code"`
-	ShortURL     string        `json:"short_url"`
-	OriginalURL  string        `json:"original_url"`
-	Title        *string       `json:"title"`
-	Description  *string       `json:"description"`
-	ImageURL     *string       `json:"image_url"`
-	Domain       string        `json:"domain"`
-	ClickCount   int64         `json:"click_count"`
-	IsActive     bool          `json:"is_active"`
-	ExpiresAt    *time.Time    `json:"expires_at"`
-	CreatedAt    time.Time     `json:"created_at"`
-	UpdatedAt    time.Time     `json:"updated_at"`
-	FolderID     *int64        `json:"folder_id"`
-	FolderName   *string       `json:"folder_name"`
-	Tags         []LinkTagInfo `json:"tags"`
-	PasswordHash *string       `json:"password_hash,omitempty"`
-	UTMSource    *string       `json:"utm_source,omitempty"`
-	UTMMedium    *string       `json:"utm_medium,omitempty"`
-	UTMCampaign  *string       `json:"utm_campaign,omitempty"`
-	UTMTerm      *string       `json:"utm_term,omitempty"`
-	UTMContent   *string       `json:"utm_content,omitempty"`
-	IosURL       *string       `json:"ios_url,omitempty"`
-	AndroidURL   *string       `json:"android_url,omitempty"`
+	ID          int64         `json:"id"`
+	ShortCode   string        `json:"short_code"`
+	ShortURL    string        `json:"short_url"`
+	OriginalURL string        `json:"original_url"`
+	Title       *string       `json:"title"`
+	Description *string       `json:"description"`
+	ImageURL    *string       `json:"image_url"`
+	Domain      string        `json:"domain"`
+	ClickCount  int64         `json:"click_count"`
+	IsActive    bool          `json:"is_active"`
+	ExpiresAt   *time.Time    `json:"expires_at"`
+	CreatedAt   time.Time     `json:"created_at"`
+	UpdatedAt   time.Time     `json:"updated_at"`
+	FolderID    *int64        `json:"folder_id"`
+	FolderName  *string       `json:"folder_name"`
+	Tags        []LinkTagInfo `json:"tags"`
+	HasPassword bool          `json:"has_password"`
+	UTMSource   *string       `json:"utm_source,omitempty"`
+	UTMMedium   *string       `json:"utm_medium,omitempty"`
+	UTMCampaign *string       `json:"utm_campaign,omitempty"`
+	UTMTerm     *string       `json:"utm_term,omitempty"`
+	UTMContent  *string       `json:"utm_content,omitempty"`
+	IosURL      *string       `json:"ios_url,omitempty"`
+	AndroidURL  *string       `json:"android_url,omitempty"`
 }
 
 type PaginatedLinks struct {

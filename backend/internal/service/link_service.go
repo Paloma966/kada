@@ -196,18 +196,6 @@ func (s *LinkService) GetByCode(ctx context.Context, shortCode string) (*domain.
 	return info, nil
 }
 
-// HasPassword checks whether the link has a password set
-func (s *LinkService) HasPassword(ctx context.Context, shortCode string) bool {
-	var row entity.Link
-	if err := s.db.WithContext(ctx).
-		Select("password_hash").
-		Where("short_code = ?", shortCode).
-		First(&row).Error; err != nil {
-		return false
-	}
-	return row.PasswordHash != nil && *row.PasswordHash != ""
-}
-
 // CheckPassword checks the link password
 func (s *LinkService) CheckPassword(ctx context.Context, shortCode, password string) (bool, *domain.LinkInfo, error) {
 	var row entity.Link
@@ -676,27 +664,27 @@ func attachOwnedTagsTx(tx *gorm.DB, userID, linkID int64, tagIDs []int64) error 
 // linkInfoFromEntity maps a persistence row onto the API model.
 func linkInfoFromEntity(row entity.Link) *domain.LinkInfo {
 	info := &domain.LinkInfo{
-		ID:           row.ID,
-		ShortCode:    row.ShortCode,
-		OriginalURL:  row.OriginalURL,
-		Title:        row.Title,
-		Description:  row.Description,
-		ImageURL:     row.ImageURL,
-		Domain:       row.Domain,
-		ClickCount:   row.ClickCount,
-		IsActive:     row.IsActive,
-		ExpiresAt:    row.ExpiresAt,
-		CreatedAt:    row.CreatedAt,
-		UpdatedAt:    row.UpdatedAt,
-		FolderID:     row.FolderID,
-		PasswordHash: row.PasswordHash,
-		UTMSource:    row.UTMSource,
-		UTMMedium:    row.UTMMedium,
-		UTMCampaign:  row.UTMCampaign,
-		UTMTerm:      row.UTMTerm,
-		UTMContent:   row.UTMContent,
-		IosURL:       row.IosURL,
-		AndroidURL:   row.AndroidURL,
+		ID:          row.ID,
+		ShortCode:   row.ShortCode,
+		OriginalURL: row.OriginalURL,
+		Title:       row.Title,
+		Description: row.Description,
+		ImageURL:    row.ImageURL,
+		Domain:      row.Domain,
+		ClickCount:  row.ClickCount,
+		IsActive:    row.IsActive,
+		ExpiresAt:   row.ExpiresAt,
+		CreatedAt:   row.CreatedAt,
+		UpdatedAt:   row.UpdatedAt,
+		FolderID:    row.FolderID,
+		HasPassword: row.PasswordHash != nil && *row.PasswordHash != "",
+		UTMSource:   row.UTMSource,
+		UTMMedium:   row.UTMMedium,
+		UTMCampaign: row.UTMCampaign,
+		UTMTerm:     row.UTMTerm,
+		UTMContent:  row.UTMContent,
+		IosURL:      row.IosURL,
+		AndroidURL:  row.AndroidURL,
 	}
 	info.ShortURL = "https://" + row.Domain + "/r/" + row.ShortCode
 	return info

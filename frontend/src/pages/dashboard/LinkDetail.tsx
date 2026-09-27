@@ -36,7 +36,7 @@ interface LinkDetail {
   utm_content?: string;
   ios_url?: string;
   android_url?: string;
-  password_hash?: string;
+  has_password?: boolean;
   expires_at?: string;
   folder_id?: number;
   folder_name?: string;
@@ -547,7 +547,7 @@ export default function LinkDetailPage() {
             { label: t("创建时间"), value: new Date(link.created_at).toLocaleString(dateLocale) },
             { label: t("更新时间"), value: new Date(link.updated_at).toLocaleString(dateLocale) },
             { label: t("过期时间"), value: link.expires_at ? new Date(link.expires_at).toLocaleString(dateLocale) : t("永不过期"), icon: Clock },
-            { label: t("密码保护"), value: link.password_hash ? t("已设置") : t("未设置"), icon: Shield },
+            { label: t("密码保护"), value: link.has_password ? t("已设置") : t("未设置"), icon: Shield },
           ].filter(({ value }) => value).map(({ label, value, icon: Icon, mono }) => (
             <div key={label} className="flex items-center justify-between py-1.5 text-sm">
               <span className="text-muted flex items-center gap-1.5">
