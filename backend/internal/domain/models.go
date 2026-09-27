@@ -111,9 +111,9 @@ type LinkTagInfo struct {
 }
 
 // LinkInfo is a link as the API and the cache see it. It deliberately has no field able to hold the
-// password hash: the struct is marshalled into Redis by CacheService.SetLink and serialised into API
-// responses, so a hash field would put it in both. HasPassword carries the only fact either needs.
-// users.password_hash is tagged json:"-" for the same reason (see TestUserHidesPasswordHash).
+// password hash: the struct is encoded into Redis by CacheService.SetLink and into API responses, so a
+// hash field would put it in both. HasPassword carries the only fact either needs. users.password_hash
+// is tagged json:"-" for the same reason (see TestUserHidesPasswordHash).
 type LinkInfo struct {
 	ID          int64         `json:"id"`
 	ShortCode   string        `json:"short_code"`

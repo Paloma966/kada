@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-// A link's password hash must never leave the database. LinkInfo is serialised into the Redis cache by
+// A link's password hash must never leave the database. LinkInfo is encoded into the Redis cache by
 // CacheService.SetLink and into API responses, so a field able to hold the hash would put it in both.
 // The account model already guards itself this way (TestUserHidesPasswordHash).
 func TestLinkInfoKeepsThePasswordHashOutOfThePayload(t *testing.T) {
