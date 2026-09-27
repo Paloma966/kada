@@ -83,7 +83,9 @@ func newMissingLinkDB(t *testing.T, delay time.Duration) (*gorm.DB, *int64) {
 			// Held open so that concurrent callers overlap inside one load.
 			time.Sleep(delay)
 		}
-		tx.AddError(gorm.ErrRecordNotFound)
+		// AddError returns the error it stored; there is nothing useful to do with it in a callback, but
+		// discarding it silently is what gosec G104 reports.
+		_ = tx.AddError(gorm.ErrRecordNotFound)
 	})
 	if err != nil {
 		t.Fatalf("register the query callback: %v", err)
