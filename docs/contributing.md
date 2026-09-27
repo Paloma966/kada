@@ -14,10 +14,11 @@ Read [design.md](design.md) first for how the system fits together, and
 - [4. Everyday commands](#4-everyday-commands)
 - [5. Making a change](#5-making-a-change)
 - [6. Commit messages](#6-commit-messages)
-- [7. Pull requests](#7-pull-requests)
-- [8. Testing expectations](#8-testing-expectations)
-- [9. Changing the database schema](#9-changing-the-database-schema)
-- [10. Documentation](#10-documentation)
+- [7. Issues](#7-issues)
+- [8. Pull requests](#8-pull-requests)
+- [9. Testing expectations](#9-testing-expectations)
+- [10. Changing the database schema](#10-changing-the-database-schema)
+- [11. Documentation](#11-documentation)
 
 ## 1. Requirements
 
@@ -157,13 +158,17 @@ display text in a component, and never leave a key untranslated.
 
 ## 6. Commit messages
 
-Every commit message is **in English** and starts with a conventional-commit prefix:
+Every commit message is **in English**, **one line long**, and starts with a conventional-commit
+prefix:
 
 ```text
 <type>: <short imperative summary>
-
-<optional body: what changed and why, wrapped at ~80 columns>
 ```
+
+There is no body and no second paragraph. The summary says what changed; the reason belongs where a
+reader meets it next to the thing it explains - a comment at the decision, the issue that asked for
+the change, or `docs/design.md` when it is a design choice. A message that needs a paragraph to be
+understood is a sign the paragraph should live somewhere a reader will find it.
 
 Allowed types:
 
@@ -182,13 +187,13 @@ Allowed types:
 
 Rules:
 
+- **One line.** No body, no bullet list, no second paragraph. `git log --oneline` is the view this
+  convention is written for.
 - **Imperative mood in the summary**: "add link expiry validation", not "added" or "adds".
 - **Lower case after the colon**, no trailing period, no emoji.
 - **No scope.** `fix: verify the deployment over HTTPS`, not `fix(ci): verify the deployment over
   HTTPS`. The prefix already says what kind of change it is, and the summary names the area, so a scope
   repeats one of them. Every commit in this repository follows that shape.
-- **Explain the cause in the body when the fix is not obvious.** A reviewer three months from now
-  needs to know why, not just what.
 - **No attribution trailers.** Do not add `Co-Authored-By` for tooling, and do not credit an
   assistant in the message.
 
@@ -201,7 +206,36 @@ docs: add README and interview prep doc
 ci: make security gates effective (gosec + frontend lint/tsc)
 ```
 
-## 7. Pull requests
+## 7. Issues
+
+An issue is a report that a problem exists, not a place to think out loud. Three fields, then stop:
+
+```markdown
+## Where
+
+`path/to/file.go` `Symbol` (line N), or the endpoint and the request that triggers it.
+
+## Problem
+
+Two to four sentences. What happens, and why it matters - with the evidence that makes it a fact
+rather than an impression: the line number, the query that runs on every request, the count that is
+wrong.
+
+## Done when
+
+- The observable condition that says the problem is gone.
+- The test that will hold it there.
+```
+
+What does not belong: background, alternatives considered, trade-off analysis, and plans for work that
+is not being done now. A design choice that needs that much room belongs in [design.md](design.md); a
+rejected option belongs in the pull request that chose the other one.
+
+Write the title in the same shape as a commit subject (`type: imperative summary`), and close the issue
+from the commit that fixes it (`closes #12`) rather than leaving it open - a long list of open issues
+reads as an abandoned project.
+
+## 8. Pull requests
 
 A pull request should contain a short summary, and then:
 
@@ -229,7 +263,7 @@ Include what you did, what you expected, what happened, and the relevant log lin
 issues, the API logs the underlying cause of a failure; paste it rather than only the message the UI
 showed.
 
-## 8. Testing expectations
+## 9. Testing expectations
 
 | You changed | Add |
 |---|---|
@@ -269,7 +303,7 @@ Windows they must run outside the default sandbox. Run `check-theme-timing.mjs` 
 that injects the theme script: a theme applied after the first frame is a visible flash, and it is not
 obvious from reading the code.
 
-## 9. Changing the database schema
+## 10. Changing the database schema
 
 The schema is the GORM models in `backend/internal/domain/entity`. There are no SQL migration files.
 
@@ -296,14 +330,14 @@ Things AutoMigrate does **not** do, and that therefore need a hand-written state
 procedure: renaming a column, narrowing a type, dropping a column, and backfilling data. Treat these
 as deliberate operations with a backup, not as part of a normal change.
 
-## 10. Documentation
+## 11. Documentation
 
 | Document | Owns |
 |---|---|
 | `README.md` | What the project is, how to run it |
 | `README.zh.md` | The same README in Chinese; `README.md` is the source, so the two change together |
 | `docs/design.md` | Architecture, data model, flows, decisions, limitations |
-| `docs/contributing.md` | This file: workflow, commits, pull requests |
+| `docs/contributing.md` | This file: workflow, commits, issues, pull requests |
 | `docs/code-style.md` | Conventions for Go, TypeScript and SQL |
 
 Documentation is part of the change, not a follow-up. If you make a decision a future reader would

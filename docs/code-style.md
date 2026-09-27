@@ -359,7 +359,7 @@ runtime environment variable, where it does nothing at all.
 | Blank line | Between logical blocks, not after `{` or before `}` |
 | Import order | stdlib, third-party, then `github.com/chun/kada-backend/...` |
 | File endings | LF, one trailing newline (enforced by `.gitattributes`) |
-| Commit messages | English, `type: imperative summary` - see [contributing.md §6](contributing.md#6-commit-messages) |
+| Commit messages | English, one line, `type: imperative summary` - see [contributing.md §6](contributing.md#6-commit-messages) |
 
 Run before pushing:
 
