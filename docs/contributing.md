@@ -189,9 +189,10 @@ Rules:
 
 - **One line.** No body, no bullet list, no second paragraph. `git log --oneline` is the view this
   convention is written for.
-- **A closing reference rides in the summary**, in parentheses at the end:
-  `fix: drop the retry that never retried (closes #12)`. GitHub reads the keyword anywhere in the
-  message, and a footer would break the rule above.
+- **A closing reference is joined to the summary with a conjunction**, never parked in parentheses:
+  `fix: drop the retry that never retried and close #12`. GitHub reads the keyword anywhere in the
+  message, and a footer would break the rule above. A parenthesised tail reads as an aside - the
+  closing is part of what the commit does, so it is written as part of the sentence.
 - **Imperative mood in the summary**: "add link expiry validation", not "added" or "adds".
 - **Lower case after the colon**, no trailing period, no emoji.
 - **No scope.** `fix: verify the deployment over HTTPS`, not `fix(ci): verify the deployment over
@@ -235,8 +236,8 @@ is not being done now. A design choice that needs that much room belongs in [des
 rejected option belongs in the pull request that chose the other one.
 
 Write the title in the same shape as a commit subject (`type: imperative summary`), and close the issue
-from the commit that fixes it (`closes #12`) rather than leaving it open - a long list of open issues
-reads as an abandoned project.
+from the commit that fixes it (`... and close #12`, see [§6](#6-commit-messages)) rather than leaving it
+open - a long list of open issues reads as an abandoned project.
 
 ## 8. Pull requests
 
