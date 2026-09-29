@@ -20,7 +20,7 @@ import (
 type LinkService interface {
 	GetByCode(ctx context.Context, shortCode string) (*domain.LinkInfo, error)
 	CheckPassword(ctx context.Context, shortCode, password string) (bool, *domain.LinkInfo, error)
-	LogClick(ctx context.Context, linkID int64, ip, userAgent, platform, referer string)
+	LogClick(ctx context.Context, event domain.ClickEvent)
 	BuildShortURL(domain, code string) string
 }
 
@@ -40,7 +40,35 @@ func (h *Handler) RegisterRoutes(r *gin.Engine, mw ...gin.HandlerFunc) {
 	rg.GET("/:code", h.Redirect)
 	rg.GET("/:code/qrcode", h.QRCode)
 	rg.POST("/:code/verify-password", h.VerifyPassword)
+	rg.POST("/:code/visit", h.ConfirmVisit)
 	rg.POST("/:code/click-action", h.LogClickAction)
+}
+
+// evidenceKind reports what a hit on the redirect endpoint is evidence of, before the answer is sent.
+//
+// A client that is sent straight to the target never runs anything of ours, so its request is the only
+// evidence that will ever exist and it is recorded as a visit - unless the User-Agent names a crawler,
+// which is a claim a browser never makes. A client that is served the guide page instead is recorded as a
+// plain request: that page confirms the visit by calling ConfirmVisit once its scripts run, and a
+// prefetcher that fetched the same page never does. That last part is what a User-Agent filter cannot do
+// for WeChat and QQ, whose preview fetcher sends the in-app browser's own User-Agent.
+func evidenceKind(userAgent string, platform domain.Platform) domain.ClickKind {
+	if ua.IsCrawler(userAgent) || ua.NeedsIntermediatePage(platform) {
+		return domain.ClickRequest
+	}
+	return domain.ClickVisit
+}
+
+// logRequest records the hit. It is always recorded; the kind says whether it is evidence of a person.
+func (h *Handler) logRequest(c *gin.Context, linkID int64, userAgent string, platform domain.Platform, kind domain.ClickKind, referer string) {
+	go h.svc.LogClick(context.Background(), domain.ClickEvent{
+		LinkID:    linkID,
+		IP:        middleware.RealIP(c),
+		UserAgent: userAgent,
+		Platform:  platform,
+		Kind:      kind,
+		Referer:   referer,
+	})
 }
 
 // Redirect performs the short-link redirect (with platform detection and password check).
@@ -69,12 +97,11 @@ func (h *Handler) Redirect(c *gin.Context) {
 
 	userAgent := c.GetHeader("User-Agent")
 	platform := ua.Detect(userAgent)
-	ip := middleware.RealIP(c)
 	referer := c.GetHeader("Referer")
 
-	// Log the click.
-	clickPlatform := string(platform)
-	go h.svc.LogClick(context.Background(), link.ID, ip, userAgent, clickPlatform, referer)
+	// Record the request. The kind is decided before the branch below, not inside it: the answer that is
+	// about to be sent is what makes the difference, and deciding here keeps the two together.
+	h.logRequest(c, link.ID, userAgent, platform, evidenceKind(userAgent, platform), referer)
 
 	// Check whether an intermediate guide page is needed.
 	if ua.NeedsIntermediatePage(platform) {
@@ -112,6 +139,26 @@ func (h *Handler) QRCode(c *gin.Context) {
 	}
 }
 
+// ConfirmVisit records that the guide page ran its scripts, which is the signal that makes a visit.
+//
+// The page itself is not the evidence: WeChat and QQ fetch it to build a preview card, and so does every
+// link preview fetcher, without anyone having opened anything. Running its JavaScript is the part a
+// fetcher does not do.
+func (h *Handler) ConfirmVisit(c *gin.Context) {
+	code := c.Param("code")
+
+	link, err := h.svc.GetByCode(c.Request.Context(), code)
+	if err != nil {
+		c.Status(http.StatusNotFound)
+		return
+	}
+
+	userAgent := c.GetHeader("User-Agent")
+	h.logRequest(c, link.ID, userAgent, ua.Detect(userAgent), domain.ClickVisit, c.GetHeader("Referer"))
+
+	c.Status(http.StatusNoContent)
+}
+
 // LogClickAction records user actions on the guide page (copy, QR scan, deeplink attempt, etc.).
 func (h *Handler) LogClickAction(c *gin.Context) {
 	code := c.Param("code")
@@ -130,11 +177,13 @@ func (h *Handler) LogClickAction(c *gin.Context) {
 	}
 
 	userAgent := c.GetHeader("User-Agent")
-	platform := ua.Detect(userAgent)
-	ip := middleware.RealIP(c)
 
-	// Log the action event (platform is unchanged; the action is stored in the referer field).
-	go h.svc.LogClick(context.Background(), link.ID, ip, userAgent, string(platform), "action:"+req.Action)
+	// An action is recorded, never counted: the visit was confirmed when the page loaded, so counting the
+	// buttons a person taps would turn one visit into several.
+	//
+	// The action name still rides in the referer field, where it has always been; giving it a column of its
+	// own is a separate question from what counts as a visit.
+	h.logRequest(c, link.ID, userAgent, ua.Detect(userAgent), domain.ClickAction, "action:"+req.Action)
 
 	c.Status(http.StatusNoContent)
 }
@@ -160,9 +209,8 @@ func (h *Handler) VerifyPassword(c *gin.Context) {
 	// Password is correct: log the click and redirect.
 	userAgent := c.GetHeader("User-Agent")
 	platform := ua.Detect(userAgent)
-	ip := middleware.RealIP(c)
 	referer := c.GetHeader("Referer")
-	go h.svc.LogClick(context.Background(), info.ID, ip, userAgent, string(platform), referer)
+	h.logRequest(c, info.ID, userAgent, platform, evidenceKind(userAgent, platform), referer)
 
 	if ua.NeedsIntermediatePage(platform) {
 		h.renderIntermediatePage(c, info.OriginalURL, code, platform)
@@ -546,6 +594,13 @@ const guidePageHTML = `<!DOCTYPE html>
                 keepalive: true
             }).catch(function(){});
         }
+
+        // === Confirm the visit ===
+        // Fetching this page is not evidence that a person opened the link: WeChat and QQ fetch it to
+        // build a preview card, and so does every other link preview fetcher. Running its JavaScript is,
+        // and a fetcher that only reads HTML never gets this far. keepalive so the request still lands
+        // when the navigation below takes the page away.
+        fetch('/r/' + code + '/visit', { method: 'POST', keepalive: true }).catch(function(){});
 
         // Automatically try to open the link after the page loads
         setTimeout(function() {

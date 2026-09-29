@@ -57,10 +57,18 @@ type ClickLog struct {
 	ID int64 `gorm:"primaryKey" json:"id"`
 	// ON DELETE CASCADE is declared on the association below (and nowhere else): a constraint tag on both
 	// the field and the association would make AutoMigrate try to create two different foreign keys.
-	LinkID    *int64    `gorm:"index" json:"link_id"`
-	IP        *string   `gorm:"type:varchar(45)" json:"ip"`
-	UserAgent *string   `gorm:"type:text" json:"user_agent"`
-	Platform  *string   `gorm:"type:click_platform;default:unknown;index" json:"platform"`
+	LinkID    *int64  `gorm:"index" json:"link_id"`
+	IP        *string `gorm:"type:varchar(45)" json:"ip"`
+	UserAgent *string `gorm:"type:text" json:"user_agent"`
+	Platform  *string `gorm:"type:click_platform;default:unknown;index" json:"platform"`
+	// Kind is what this row is evidence of (domain.ClickKind): "visit" for a person opening the link,
+	// "request" for a hit that is not evidence of one, "action" for an interaction after the visit.
+	//
+	// The default is 'visit' because of the rows that already exist: they were recorded before this
+	// column did and are already counted in links.click_count and in every chart, so 'visit' is the value
+	// that leaves that history alone. A default of 'request' would have erased it. New rows always carry
+	// a kind from the application; this default only ever applies to the backfill.
+	Kind      string    `gorm:"type:varchar(16);not null;default:visit;index" json:"kind"`
 	Referer   *string   `gorm:"type:text" json:"referer"`
 	Country   *string   `gorm:"type:varchar(10)" json:"country"`
 	Province  *string   `gorm:"type:varchar(50)" json:"province"`

@@ -6,6 +6,8 @@ import (
 	"sync"
 	"testing"
 
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
 	"gorm.io/gorm/schema"
 )
 
@@ -63,7 +65,7 @@ func TestColumns(t *testing.T) {
 			"password_hash", "expires_at", "is_active", "click_count", "user_id", "workspace_id",
 			"folder_id", "utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content",
 			"ios_url", "android_url", "created_at", "updated_at"},
-		"click_logs": {"id", "link_id", "ip", "user_agent", "platform", "referer", "country",
+		"click_logs": {"id", "link_id", "ip", "user_agent", "platform", "kind", "referer", "country",
 			"province", "city", "created_at", "event_id"},
 		"sms_codes":      {"id", "phone", "code_hash", "ip", "used", "attempts", "expires_at", "created_at"},
 		"login_captchas": {"id", "code_hash", "ip", "used", "attempts", "expires_at", "created_at"},
@@ -97,6 +99,33 @@ func TestColumns(t *testing.T) {
 				t.Errorf("table %s is missing column %s", table, column)
 			}
 		}
+	}
+}
+
+// The default of a NOT NULL column is what the ALTER TABLE that adds it to an existing database carries.
+// GORM writes it into the DDL verbatim ("DEFAULT " + the tag value) unless the tag parsed as a value of
+// the field's type, so an unparsed `default:visit` reaches PostgreSQL as `DEFAULT visit` - an identifier,
+// which it rejects as a column reference. That would fail on the production database, during a deploy, so
+// the quoting is asserted here rather than discovered there.
+//
+// The value matters as much as the quoting: the rows recorded before this column existed are already
+// counted in links.click_count and in every chart, and 'visit' is the default that leaves them alone.
+func TestClickKindDefaultIsQuotedAndCountsExistingRows(t *testing.T) {
+	// #nosec G101 -- a throwaway DSN that is never dialed: this only renders DDL.
+	db, err := gorm.Open(postgres.New(postgres.Config{
+		DSN: "postgres://kada:invalid@127.0.0.1:1/kada?sslmode=disable",
+	}), &gorm.Config{DryRun: true, DisableAutomaticPing: true})
+	if err != nil {
+		t.Fatalf("failed to build a dry-run gorm.DB: %v", err)
+	}
+
+	field := parse(t, &ClickLog{}).LookUpField("kind")
+	if field == nil {
+		t.Fatal("click_logs has no kind column")
+	}
+
+	if ddl := db.Migrator().FullDataTypeOf(field).SQL; !strings.Contains(ddl, "DEFAULT 'visit'") {
+		t.Errorf("the kind column renders as %q, want a quoted DEFAULT 'visit'", ddl)
 	}
 }
 
@@ -173,6 +202,8 @@ func TestIndexesExist(t *testing.T) {
 		{&Link{}, "workspace_id"},
 		{&ClickLog{}, "created_at"},
 		{&ClickLog{}, "platform"},
+		// Every click aggregate filters on it.
+		{&ClickLog{}, "kind"},
 		{&ClickLog{}, "link_id"},
 		{&SMSVerificationCode{}, "phone"},
 		// The per-IP send quotas count this column before every send.

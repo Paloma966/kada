@@ -19,14 +19,14 @@ type recorderWriter struct {
 	got []mq.ClickEvent
 }
 
-func (r *recorderWriter) WriteClick(_ context.Context, eventID string, linkID int64, ip, ua, platform, referer string, createdAt time.Time) error {
-	r.got = append(r.got, mq.ClickEvent{EventID: eventID, LinkID: linkID, IP: ip, UserAgent: ua, Platform: platform, Referer: referer, CreatedAt: createdAt})
+func (r *recorderWriter) WriteClick(_ context.Context, event mq.ClickEvent) error {
+	r.got = append(r.got, event)
 	return nil
 }
 
 func TestProcessClickMessage_Valid(t *testing.T) {
 	w := &recorderWriter{}
-	e := mq.ClickEvent{EventID: "evt-1", LinkID: 5, IP: "8.8.8.8", UserAgent: "ua", Platform: "qq", Referer: "r", CreatedAt: time.Unix(1700000000, 0).UTC()}
+	e := mq.ClickEvent{EventID: "evt-1", LinkID: 5, IP: "8.8.8.8", UserAgent: "ua", Platform: "qq", Kind: "request", Referer: "r", CreatedAt: time.Unix(1700000000, 0).UTC()}
 	b, _ := json.Marshal(e)
 	if err := processClickMessage(b, w); err != nil {
 		t.Fatal(err)
@@ -36,6 +36,11 @@ func TestProcessClickMessage_Valid(t *testing.T) {
 	}
 	if w.got[0].EventID != "evt-1" {
 		t.Fatalf("expected EventID to be preserved, got %q", w.got[0].EventID)
+	}
+	// The kind decides whether the click is counted, and the worker is where it would be lost: it is
+	// rebuilt from JSON here, and a field the payload does not carry arrives as nothing.
+	if w.got[0].Kind != "request" {
+		t.Fatalf("expected Kind to survive the queue, got %q", w.got[0].Kind)
 	}
 	if !w.got[0].CreatedAt.Equal(e.CreatedAt) {
 		t.Fatalf("expected CreatedAt to be preserved, got %v want %v", w.got[0].CreatedAt, e.CreatedAt)

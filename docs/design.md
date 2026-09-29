@@ -261,7 +261,7 @@ login_captchas  (standalone, keyed by id)
 |---|---|---|
 | `users` | Accounts | `phone` (unique, and the whole profile); `email`, `name`, `avatar`, `password_hash`, `wechat_openid` are retained legacy columns nothing reads |
 | `links` | Short links | `short_code` (unique), `original_url`, `domain`, `password_hash`, `expires_at`, `is_active`, `click_count` |
-| `click_logs` | One row per click | `platform`, `ip`, `referer`, `event_id` (unique, idempotency) |
+| `click_logs` | One row per click request | `kind` (what the row is evidence of, and the only thing the counters read), `platform`, `ip`, `referer`, `event_id` (unique, idempotency) |
 | `folders`, `tags`, `link_tags` | Organisation | `link_tags` is a plain junction table |
 | `workspaces` | Team/project grouping | `slug` (unique), `links.workspace_id` |
 | `domains` | Custom domains | `verified`, unique per `(user_id, name)` |
@@ -425,20 +425,52 @@ Three properties of that ordering are deliberate:
 ```text
 GET /r/:code
   → resolve the link (cache, then database)
-  → build a click event with a random event_id
+  → build a click event with a random event_id and a kind
   → publish to Kafka
       publish fails → write the click row directly (degraded mode, same event_id)
-  → redirect the visitor
+  → redirect the visitor, or serve the guide page (WeChat, QQ, Xiaohongshu)
 
 worker: FetchMessage → WriteClick → CommitMessages
   INSERT click_logs ... ON CONFLICT (event_id) DO NOTHING
-      inserted → UPDATE links SET click_count = click_count + 1
+      inserted, kind = visit → UPDATE links SET click_count = click_count + 1
+      inserted, any other kind → commit only (recorded, not counted)
       conflict → commit only (the click was already counted)
 ```
 
 Kafka is at-least-once, so `event_id` is what makes counting exact. The consumer commits offsets
 only after a successful write, and a poison message (invalid JSON, foreign-key violation) is dropped
 after three attempts rather than blocking the single-partition consumer group forever.
+
+#### What counts as a visit
+
+A request to a short link is not evidence that a person opened it. WeChat and QQ fetch a link to build
+the preview card before anyone taps it, and that fetcher sends the in-app browser's own User-Agent - so
+a User-Agent filter cannot separate them, and any pattern aggressive enough to catch the fetcher throws
+away the visitors with it. Every click row therefore carries a `kind`:
+
+| `kind` | What it is evidence of | Counted |
+|---|---|---|
+| `visit` | A person opened the link | yes |
+| `request` | A hit that is not evidence of a person | no |
+| `action` | An interaction on the guide page after the visit | no |
+
+Two things produce a visit. A client sent straight to the target never runs any of our JavaScript, so
+its request is the only evidence there will ever be - unless its User-Agent names a crawler, which is a
+claim a browser never makes (`ua.IsCrawler`, a short list of tokens no browser sends). A client served
+the guide page instead is recorded as a `request`, and the page confirms itself with
+`POST /r/:code/visit` once its scripts run; a prefetcher that fetched the same page never gets that far.
+
+Only `visit` rows move a counter, and every aggregate - `links.click_count`, the platform breakdown, the
+daily trend, the visitor list - filters on it. The other rows stay in `click_logs`, where the amount of
+prefetch is still measurable (`/api/analytics/events?kind=request`).
+
+Actions are recorded but never counted: the visit was confirmed when the page loaded, so counting the
+buttons a person taps would turn one visit into several. The action name still rides in the `referer`
+column, where it has always been.
+
+The column was added with a default of `visit` because of the rows that already existed: they were
+recorded before it did, and they are already counted in `click_count` and in every chart, so `visit` is
+the value that leaves that history alone.
 
 ## 8. Cross-cutting decisions
 

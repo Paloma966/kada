@@ -11,11 +11,15 @@ import (
 
 // ClickEvent is a short-link click event (message payload shared by producer and consumer)
 type ClickEvent struct {
-	EventID   string    `json:"event_id"` // idempotency key used by the worker for deduplication
-	LinkID    int64     `json:"link_id"`
-	IP        string    `json:"ip"`
-	UserAgent string    `json:"user_agent"`
-	Platform  string    `json:"platform"`
+	EventID   string `json:"event_id"` // idempotency key used by the worker for deduplication
+	LinkID    int64  `json:"link_id"`
+	IP        string `json:"ip"`
+	UserAgent string `json:"user_agent"`
+	Platform  string `json:"platform"`
+	// Kind is what this event is evidence of (domain.ClickKind). It travels with the event rather than
+	// being derived at write time: the decision is made where the request is, which is the only place that
+	// knows whether the guide page was served or the client went straight to the target.
+	Kind      string    `json:"kind"`
 	Referer   string    `json:"referer"`
 	CreatedAt time.Time `json:"created_at"`
 }

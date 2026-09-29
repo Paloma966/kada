@@ -2,14 +2,20 @@ package service
 
 import (
 	"context"
-	"time"
 
 	"gorm.io/gorm"
+
+	"github.com/chun/kada-backend/internal/domain"
+	"github.com/chun/kada-backend/internal/mq"
 )
 
-// ClickWriter writes click logs directly (shared by the production degraded fallback and the worker consumer)
+// ClickWriter persists click events.
+//
+// It takes the event itself rather than its columns one at a time: that shape already exists as the
+// payload the producer and the consumer share, and a signature that grows a parameter per column is a
+// signature whose arguments can eventually be passed in the wrong order.
 type ClickWriter interface {
-	WriteClick(ctx context.Context, eventID string, linkID int64, ip, userAgent, platform, referer string, createdAt time.Time) error
+	WriteClick(ctx context.Context, event mq.ClickEvent) error
 }
 
 // ClickStore is the GORM implementation of ClickWriter
@@ -24,13 +30,24 @@ func NewClickStore(db *gorm.DB) *ClickStore {
 // WriteClick inside a transaction: insert the click log + increment the counter.
 // deduplicates by event_id: when Kafka redelivers, or the degraded direct write races the worker on the same event,
 // the second INSERT hits the unique conflict (RowsAffected=0) and click_count is not incremented again.
-func (s *ClickStore) WriteClick(ctx context.Context, eventID string, linkID int64, ip, userAgent, platform, referer string, createdAt time.Time) error {
+//
+// Only a visit moves the counter. The row is written either way - a request from a platform prefetch is
+// worth recording, it is just not worth counting as a person - so links.click_count and the analytics
+// endpoints agree on what a click is, rather than one of them filtering afterwards.
+func (s *ClickStore) WriteClick(ctx context.Context, event mq.ClickEvent) error {
+	kind := domain.ClickKind(event.Kind)
+	if kind == "" {
+		// An event from a producer older than this column carries no kind. It is a request and nothing
+		// more: not being able to say it was a person is the one answer that must never count.
+		kind = domain.ClickRequest
+	}
+
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		res := tx.Exec(`
-			INSERT INTO click_logs (link_id, ip, user_agent, platform, referer, created_at, event_id)
-			VALUES (?, ?, ?, ?, ?, ?, ?)
+			INSERT INTO click_logs (link_id, ip, user_agent, platform, kind, referer, created_at, event_id)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 			ON CONFLICT (event_id) DO NOTHING
-		`, linkID, ip, userAgent, platform, referer, createdAt, eventID)
+		`, event.LinkID, event.IP, event.UserAgent, event.Platform, string(kind), event.Referer, event.CreatedAt, event.EventID)
 		if res.Error != nil {
 			return res.Error
 		}
@@ -40,9 +57,10 @@ func (s *ClickStore) WriteClick(ctx context.Context, eventID string, linkID int6
 			return nil
 		}
 
-		if err := tx.Exec(`UPDATE links SET click_count = click_count + 1 WHERE id = ?`, linkID).Error; err != nil {
-			return err
+		if kind != domain.ClickVisit {
+			return nil
 		}
-		return nil
+
+		return tx.Exec(`UPDATE links SET click_count = click_count + 1 WHERE id = ?`, event.LinkID).Error
 	})
 }

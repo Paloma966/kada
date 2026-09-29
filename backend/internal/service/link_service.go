@@ -594,20 +594,25 @@ func (s *LinkService) ExportCSV(ctx context.Context, userID int64) (string, erro
 	return sb.String(), nil
 }
 
-// LogClick publishes a click event to Kafka; falls back to a direct write when Kafka is unavailable so clicks are not lost
-func (s *LinkService) LogClick(ctx context.Context, linkID int64, ip, userAgent, platform, referer string) {
+// LogClick publishes a click event to Kafka; falls back to a direct write when Kafka is unavailable so clicks are not lost.
+//
+// The kind is carried rather than decided here: only the caller knows whether the client was served the
+// guide page (and so may be a prefetch that never confirms) or was sent straight to the target.
+func (s *LinkService) LogClick(ctx context.Context, e domain.ClickEvent) {
 	// generate an idempotency key: used to deduplicate on Kafka redelivery or degraded direct write
-	eventID := newEventID()
+	event := mq.ClickEvent{
+		EventID:   newEventID(),
+		LinkID:    e.LinkID,
+		IP:        e.IP,
+		UserAgent: e.UserAgent,
+		Platform:  string(e.Platform),
+		Kind:      string(e.Kind),
+		Referer:   e.Referer,
+		CreatedAt: time.Now(),
+	}
+
 	if s.kafka != nil {
-		if err := s.kafka.PublishClick(ctx, mq.ClickEvent{
-			EventID:   eventID,
-			LinkID:    linkID,
-			IP:        ip,
-			UserAgent: userAgent,
-			Platform:  platform,
-			Referer:   referer,
-			CreatedAt: time.Now(),
-		}); err != nil {
+		if err := s.kafka.PublishClick(ctx, event); err != nil {
 			// Kafka failed -> fall back to direct write
 			log.Printf("kafka publish failed, falling back to direct write: %v", err)
 		} else {
@@ -615,7 +620,7 @@ func (s *LinkService) LogClick(ctx context.Context, linkID int64, ip, userAgent,
 		}
 	}
 	if s.clickWriter != nil {
-		if err := s.clickWriter.WriteClick(ctx, eventID, linkID, ip, userAgent, platform, referer, time.Now()); err != nil {
+		if err := s.clickWriter.WriteClick(ctx, event); err != nil {
 			log.Printf("click direct write failed: %v", err)
 		}
 	}

@@ -104,7 +104,7 @@ func processClickMessage(msg []byte, writer service.ClickWriter) error {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	return writer.WriteClick(ctx, e.EventID, e.LinkID, e.IP, e.UserAgent, e.Platform, e.Referer, e.CreatedAt)
+	return writer.WriteClick(ctx, e)
 }
 
 func main() {

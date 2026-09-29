@@ -162,6 +162,50 @@ const (
 	PlatformUnknown     Platform = "unknown"
 )
 
+// ==================== Click events ====================
+
+// ClickKind is what a recorded click row is evidence of.
+//
+// It exists because a request to a short link is not the same thing as a person opening it. WeChat and QQ
+// fetch a link to build the preview card before anyone taps it, and that fetcher sends the in-app
+// browser's own User-Agent - so the question "was this a person?" cannot be answered by looking at the
+// User-Agent, and the guide page answers it instead by reporting from JavaScript, which a fetcher that
+// only reads HTML never runs.
+type ClickKind string
+
+const (
+	// ClickVisit is evidence that a person opened the link, and the only kind that moves a counter.
+	//
+	// Two things produce it. A client that is sent straight to the target never runs any of our
+	// JavaScript, so that request is the only evidence there will ever be; and a client that is served the
+	// guide page confirms itself with POST /r/:code/visit once its scripts run.
+	ClickVisit ClickKind = "visit"
+
+	// ClickRequest is a request that is not evidence of a person: the guide page was served and nothing
+	// confirmed it, or the User-Agent names a crawler. The row is kept and labeled so that the amount of
+	// prefetch stays measurable.
+	ClickRequest ClickKind = "request"
+
+	// ClickAction is an interaction on the guide page - a copy, a QR reveal, an attempt to open the
+	// browser. It happens after the visit was confirmed, so it is recorded but never counted: a person who
+	// taps two buttons is one visit, not two.
+	ClickAction ClickKind = "action"
+)
+
+// ClickEvent is one click on a short link, as the application sees it: the HTTP request has been
+// classified, and the question left is whether it will be counted.
+//
+// It is a struct rather than a parameter list because every field but LinkID is a string, and four of them
+// sit next to each other - a caller that swapped two would compile and be wrong.
+type ClickEvent struct {
+	LinkID    int64
+	IP        string
+	UserAgent string
+	Platform  Platform
+	Kind      ClickKind
+	Referer   string
+}
+
 // DeepLink represents one deeplink fallback option
 type DeepLink struct {
 	Name   string `json:"name"`   // option name, e.g. "Chrome Intent"
