@@ -159,6 +159,16 @@ func (d *recordingDB) recordedKind() string {
 	return ""
 }
 
+// insertedArgs returns the values bound to the click_logs INSERT, or nil if none ran.
+func (d *recordingDB) insertedArgs() []any {
+	for i, s := range d.statements {
+		if strings.Contains(s, "INSERT INTO click_logs") {
+			return d.args[i]
+		}
+	}
+	return nil
+}
+
 type affectedRows int64
 
 func (r affectedRows) LastInsertId() (int64, error) { return 0, nil }
@@ -296,7 +306,7 @@ func TestWriteClickDoesNotCountADuplicateEvent(t *testing.T) {
 
 // An event from a producer older than the kind column carries none. "Nobody can say this was a person" is
 // the one answer that must not count, and it should not leave an unlabeled row behind either.
-func TestWriteClickLabelsAnUnlabelledEventAsARequest(t *testing.T) {
+func TestWriteClickLabelsAnUnlabeledEventAsARequest(t *testing.T) {
 	store, recorder := newRecordingStore(t, 1)
 
 	err := store.WriteClick(context.Background(), mq.ClickEvent{EventID: "e1", LinkID: 3, CreatedAt: time.Now()})
@@ -309,6 +319,47 @@ func TestWriteClickLabelsAnUnlabelledEventAsARequest(t *testing.T) {
 	}
 	if got := recorder.recordedKind(); got != string(domain.ClickRequest) {
 		t.Errorf("the row was written with kind %q, want %q", got, domain.ClickRequest)
+	}
+}
+
+// The action is its own column, so a report that reads referers no longer has to know that some of its rows
+// are not referers.
+func TestWriteClickRecordsTheActionInItsOwnColumn(t *testing.T) {
+	store, recorder := newRecordingStore(t, 1)
+
+	err := store.WriteClick(context.Background(), mq.ClickEvent{
+		EventID: "e1", LinkID: 3, Platform: string(domain.PlatformWechat),
+		Kind: string(domain.ClickAction), Action: string(domain.ActionCopyLink), CreatedAt: time.Now(),
+	})
+	if err != nil {
+		t.Fatalf("WriteClick returned %v", err)
+	}
+
+	if !strings.Contains(recorder.statements[0], "action") {
+		t.Fatalf("the insert does not mention the action column: %s", recorder.statements[0])
+	}
+	if !slices.Contains(recorder.insertedArgs(), any(string(domain.ActionCopyLink))) {
+		t.Errorf("the action did not reach the insert: %v", recorder.insertedArgs())
+	}
+}
+
+// An action that is not an action has to be absent rather than empty: the question "did this row record an
+// interaction" is asked as `action IS NOT NULL`, and an empty string would answer yes for every redirect.
+func TestWriteClickStoresNoActionAsNull(t *testing.T) {
+	store, recorder := newRecordingStore(t, 1)
+
+	// Every other field is set, so the action is the only value in this insert that could be an empty
+	// string, and the assertion does not have to know which position it occupies.
+	err := store.WriteClick(context.Background(), mq.ClickEvent{
+		EventID: "e1", LinkID: 3, IP: "1.2.3.4", UserAgent: "ua", Platform: string(domain.PlatformWechat),
+		Kind: string(domain.ClickVisit), Referer: "https://example.com/from", CreatedAt: time.Now(),
+	})
+	if err != nil {
+		t.Fatalf("WriteClick returned %v", err)
+	}
+
+	if slices.Contains(recorder.insertedArgs(), any("")) {
+		t.Errorf("a redirect bound an empty action instead of NULL: %v", recorder.insertedArgs())
 	}
 }
 

@@ -137,7 +137,7 @@ func TestEventsFiltersByKind(t *testing.T) {
 
 		var listed bool
 		for _, s := range *recorded {
-			if strings.Contains(s.sql, "cl.kind") && strings.Contains(s.sql, "cl.referer") {
+			if strings.Contains(s.sql, "cl.kind") && strings.Contains(s.sql, "cl.action") && strings.Contains(s.sql, "cl.referer") {
 				listed = true
 			}
 			if strings.Contains(s.sql, "cl.kind =") {

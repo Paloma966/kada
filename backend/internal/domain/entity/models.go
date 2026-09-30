@@ -68,7 +68,13 @@ type ClickLog struct {
 	// column did and are already counted in links.click_count and in every chart, so 'visit' is the value
 	// that leaves that history alone. A default of 'request' would have erased it. New rows always carry
 	// a kind from the application; this default only ever applies to the backfill.
-	Kind      string    `gorm:"type:varchar(16);not null;default:visit;index" json:"kind"`
+	Kind string `gorm:"type:varchar(16);not null;default:visit;index" json:"kind"`
+	// Action is which guide page interaction this row recorded (domain.Action); NULL for anything that is
+	// not one, which is every row a redirect or a visit confirmation writes.
+	//
+	// Deliberately not indexed: nothing groups by it yet, and the alternative to an unused index here is
+	// nothing, because this is the hottest insert in the system.
+	Action    *string   `gorm:"type:varchar(32)" json:"action"`
 	Referer   *string   `gorm:"type:text" json:"referer"`
 	Country   *string   `gorm:"type:varchar(10)" json:"country"`
 	Province  *string   `gorm:"type:varchar(50)" json:"province"`

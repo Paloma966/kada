@@ -261,7 +261,7 @@ login_captchas  (standalone, keyed by id)
 |---|---|---|
 | `users` | Accounts | `phone` (unique, and the whole profile); `email`, `name`, `avatar`, `password_hash`, `wechat_openid` are retained legacy columns nothing reads |
 | `links` | Short links | `short_code` (unique), `original_url`, `domain`, `password_hash`, `expires_at`, `is_active`, `click_count` |
-| `click_logs` | One row per click request | `kind` (what the row is evidence of, and the only thing the counters read), `platform`, `ip`, `referer`, `event_id` (unique, idempotency) |
+| `click_logs` | One row per click request | `kind` (what the row is evidence of, and the only thing the counters read), `action` (which guide page interaction, NULL otherwise), `platform`, `ip`, `referer`, `event_id` (unique, idempotency) |
 | `folders`, `tags`, `link_tags` | Organisation | `link_tags` is a plain junction table |
 | `workspaces` | Team/project grouping | `slug` (unique), `links.workspace_id` |
 | `domains` | Custom domains | `verified`, unique per `(user_id, name)` |
@@ -465,8 +465,19 @@ daily trend, the visitor list - filters on it. The other rows stay in `click_log
 prefetch is still measurable (`/api/analytics/events?kind=request`).
 
 Actions are recorded but never counted: the visit was confirmed when the page loaded, so counting the
-buttons a person taps would turn one visit into several. The action name still rides in the `referer`
-column, where it has always been.
+buttons a person taps would turn one visit into several. Each one carries its name in the `action` column,
+validated against the closed set in `domain.AllActions` - the four interactions the guide page can report.
+An unrecognised action is a 400, not a stored string.
+
+The action used to be stored as `action:<name>` in `referer`, so a report that read referers had to know
+that some of its rows were not referers at all, and any client could write whatever it liked into that
+column. The rows recorded before the column existed are moved across by the migration
+(`schema.ReconcileLegacyActions`); their `kind` is left alone, because they moved a denormalised counter
+when they were written and that number cannot be recomputed from the rows.
+
+Neither the action endpoint nor the visit confirmation stores a referer. Both are POSTs from the guide page
+this backend served, so the `Referer` header on them is our own URL: storing it would put our own domain at
+the top of every referrer report. Where a visitor came from is recorded on the request row instead.
 
 The column was added with a default of `visit` because of the rows that already existed: they were
 recorded before it did, and they are already counted in `click_count` and in every chart, so `visit` is
@@ -489,9 +500,17 @@ until the client reconnects. Availability of the product is ranked above strictn
 
 ### 8.3 Rate limiting
 
-Sliding-window counters in Redis, in three tiers: a global limit for normal API traffic, a strict
-limit for auth endpoints, and a higher-throughput limit for redirection. The client IP comes from
-`X-Real-IP`, which nginx rewrites. `X-Forwarded-For` is not trusted, because a client can forge it.
+Sliding-window counters in Redis, in four tiers: a global limit for normal API traffic, a strict limit for
+auth endpoints, a higher-throughput limit for redirection, and a tighter one for the guide page's action
+reports. The client IP comes from `X-Real-IP`, which nginx rewrites. `X-Forwarded-For` is not trusted,
+because a client can forge it.
+
+The action tier is the only one mounted on a single route rather than on a group, and its ceiling is the
+lower one because nothing a visitor sees depends on those reports: they are recorded, never counted, so a
+limit that drops one costs a line of engagement detail, while what it bounds is a script manufacturing
+activity on somebody else's link. The visit confirmation stays under the redirect limit despite being a
+POST - it is what makes a click count, so dropping one loses a real visit - and its volume can only ever be
+a fraction of the redirects that served the page it reports from.
 
 ### 8.4 Third-party failures are made visible
 

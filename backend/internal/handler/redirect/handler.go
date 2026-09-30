@@ -32,16 +32,34 @@ func NewHandler(svc LinkService) *Handler {
 	return &Handler{svc: svc}
 }
 
-func (h *Handler) RegisterRoutes(r *gin.Engine, mw ...gin.HandlerFunc) {
+// RegisterRoutes mounts the public /r/ routes.
+//
+// Two rate limiters, because the routes are not the same kind of thing. The redirect limiter covers
+// everything a visitor must be able to do - follow the link, scan the QR code, confirm the visit - and its
+// ceiling is set for a hot path shared by everyone behind one mobile carrier address. The action limiter
+// covers only the endpoint a visitor's browser calls on its own behalf to report a button press: nothing a
+// visitor sees depends on it, so a tighter ceiling there costs a line of engagement detail at worst.
+//
+// Either may be nil, and a nil limiter is left out of the chain rather than passed as a no-op.
+func (h *Handler) RegisterRoutes(r *gin.Engine, redirectMW, actionMW gin.HandlerFunc) {
 	rg := r.Group("/r")
-	if len(mw) > 0 && mw[0] != nil {
-		rg.Use(mw[0])
+	if redirectMW != nil {
+		rg.Use(redirectMW)
 	}
+
 	rg.GET("/:code", h.Redirect)
 	rg.GET("/:code/qrcode", h.QRCode)
 	rg.POST("/:code/verify-password", h.VerifyPassword)
+	// The visit confirmation stays under the redirect limiter despite being a POST: it is what makes a
+	// click count, so dropping one costs a real visit, and its volume can only ever be a fraction of the
+	// redirects that served the page it reports from.
 	rg.POST("/:code/visit", h.ConfirmVisit)
-	rg.POST("/:code/click-action", h.LogClickAction)
+
+	report := []gin.HandlerFunc{h.LogClickAction}
+	if actionMW != nil {
+		report = append([]gin.HandlerFunc{actionMW}, report...)
+	}
+	rg.POST("/:code/click-action", report...)
 }
 
 // evidenceKind reports what a hit on the redirect endpoint is evidence of, before the answer is sent.
@@ -59,15 +77,28 @@ func evidenceKind(userAgent string, platform domain.Platform) domain.ClickKind {
 	return domain.ClickVisit
 }
 
-// logRequest records the hit. It is always recorded; the kind says whether it is evidence of a person.
-func (h *Handler) logRequest(c *gin.Context, linkID int64, userAgent string, platform domain.Platform, kind domain.ClickKind, referer string) {
-	go h.svc.LogClick(context.Background(), domain.ClickEvent{
+// record fills in what every click event takes from the request itself and hands it to the service. The
+// caller names the link, the client and what the event is evidence of; building the struct with named
+// fields is what keeps two adjacent string fields from being passed the wrong way round.
+func (h *Handler) record(c *gin.Context, event domain.ClickEvent) {
+	event.IP = middleware.RealIP(c)
+	go h.svc.LogClick(context.Background(), event)
+}
+
+// pageEvent is an event reported by our own guide page rather than by a visitor arriving from elsewhere.
+//
+// Neither of the two carries a referer, on purpose. The Referer header of both POSTs is the guide page we
+// served a moment ago, which is not where the visitor came from - and storing it would put our own domain
+// at the top of every referrer report. The referer of the request that loaded the page is on the request
+// row, which is where the visitor's actual journey is recorded.
+func (h *Handler) pageEvent(c *gin.Context, linkID int64, kind domain.ClickKind, action domain.Action) {
+	userAgent := c.GetHeader("User-Agent")
+	h.record(c, domain.ClickEvent{
 		LinkID:    linkID,
-		IP:        middleware.RealIP(c),
 		UserAgent: userAgent,
-		Platform:  platform,
+		Platform:  ua.Detect(userAgent),
 		Kind:      kind,
-		Referer:   referer,
+		Action:    action,
 	})
 }
 
@@ -97,11 +128,16 @@ func (h *Handler) Redirect(c *gin.Context) {
 
 	userAgent := c.GetHeader("User-Agent")
 	platform := ua.Detect(userAgent)
-	referer := c.GetHeader("Referer")
 
 	// Record the request. The kind is decided before the branch below, not inside it: the answer that is
 	// about to be sent is what makes the difference, and deciding here keeps the two together.
-	h.logRequest(c, link.ID, userAgent, platform, evidenceKind(userAgent, platform), referer)
+	h.record(c, domain.ClickEvent{
+		LinkID:    link.ID,
+		UserAgent: userAgent,
+		Platform:  platform,
+		Kind:      evidenceKind(userAgent, platform),
+		Referer:   c.GetHeader("Referer"),
+	})
 
 	// Check whether an intermediate guide page is needed.
 	if ua.NeedsIntermediatePage(platform) {
@@ -153,19 +189,27 @@ func (h *Handler) ConfirmVisit(c *gin.Context) {
 		return
 	}
 
-	userAgent := c.GetHeader("User-Agent")
-	h.logRequest(c, link.ID, userAgent, ua.Detect(userAgent), domain.ClickVisit, c.GetHeader("Referer"))
-
+	h.pageEvent(c, link.ID, domain.ClickVisit, "")
 	c.Status(http.StatusNoContent)
 }
 
-// LogClickAction records user actions on the guide page (copy, QR scan, deeplink attempt, etc.).
+// LogClickAction records one interaction with the guide page: a copy, a QR reveal, an attempt to open the
+// browser.
 func (h *Handler) LogClickAction(c *gin.Context) {
 	code := c.Param("code")
 	var req struct {
-		Action string `json:"action"` // copy_link, qr_scan, deeplink_try, open_browser
+		Action string `json:"action"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
+		c.Status(http.StatusBadRequest)
+		return
+	}
+
+	// Checked against the closed set before the link is even looked up. This is free text arriving on a
+	// public endpoint, and storing whatever it says is how "action:<anything>" got into a column that is
+	// read as where a visitor came from.
+	action := domain.Action(req.Action)
+	if !action.Known() {
 		c.Status(http.StatusBadRequest)
 		return
 	}
@@ -176,14 +220,9 @@ func (h *Handler) LogClickAction(c *gin.Context) {
 		return
 	}
 
-	userAgent := c.GetHeader("User-Agent")
-
 	// An action is recorded, never counted: the visit was confirmed when the page loaded, so counting the
 	// buttons a person taps would turn one visit into several.
-	//
-	// The action name still rides in the referer field, where it has always been; giving it a column of its
-	// own is a separate question from what counts as a visit.
-	h.logRequest(c, link.ID, userAgent, ua.Detect(userAgent), domain.ClickAction, "action:"+req.Action)
+	h.pageEvent(c, link.ID, domain.ClickAction, action)
 
 	c.Status(http.StatusNoContent)
 }
@@ -209,8 +248,13 @@ func (h *Handler) VerifyPassword(c *gin.Context) {
 	// Password is correct: log the click and redirect.
 	userAgent := c.GetHeader("User-Agent")
 	platform := ua.Detect(userAgent)
-	referer := c.GetHeader("Referer")
-	h.logRequest(c, info.ID, userAgent, platform, evidenceKind(userAgent, platform), referer)
+	h.record(c, domain.ClickEvent{
+		LinkID:    info.ID,
+		UserAgent: userAgent,
+		Platform:  platform,
+		Kind:      evidenceKind(userAgent, platform),
+		Referer:   c.GetHeader("Referer"),
+	})
 
 	if ua.NeedsIntermediatePage(platform) {
 		h.renderIntermediatePage(c, info.OriginalURL, code, platform)

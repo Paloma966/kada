@@ -189,6 +189,7 @@ func (h *Handler) Events(c *gin.Context) {
 		OriginalURL string    `json:"original_url"`
 		Platform    *string   `json:"platform"`
 		Kind        string    `json:"kind"`
+		Action      *string   `json:"action"`
 		IP          *string   `json:"ip"`
 		Referer     *string   `json:"referer"`
 		CreatedAt   time.Time `json:"created_at"`
@@ -197,7 +198,7 @@ func (h *Handler) Events(c *gin.Context) {
 	var events []Event
 	if err := h.db.WithContext(c.Request.Context()).
 		Table("click_logs AS cl").
-		Select("cl.id, cl.link_id, l.short_code, l.original_url, cl.platform, cl.kind, cl.ip, cl.referer, cl.created_at").
+		Select("cl.id, cl.link_id, l.short_code, l.original_url, cl.platform, cl.kind, cl.action, cl.ip, cl.referer, cl.created_at").
 		Joins("JOIN links l ON cl.link_id = l.id").
 		Where(where, args...).
 		Order("cl.created_at DESC").

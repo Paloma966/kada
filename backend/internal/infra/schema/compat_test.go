@@ -148,3 +148,38 @@ func TestLegacyColumnStatementsCoverTheSmsCodeColumn(t *testing.T) {
 		}
 	}
 }
+
+// The action reconciliation is an UPDATE that runs on every deploy, so what makes it idempotent is its
+// predicate: it matches the prefix the old endpoint wrote and clears that prefix in the same statement, so
+// a second run finds nothing. Both halves are pinned here, along with the name being moved rather than
+// dropped - the column it lands in is the point of the whole statement.
+func TestLegacyActionStatementsAreIdempotentAndMoveTheName(t *testing.T) {
+	statements := LegacyActionRefererStatements()
+	if len(statements) == 0 {
+		t.Fatal("expected the legacy action statement")
+	}
+
+	for _, stmt := range statements {
+		if !strings.Contains(stmt, "WHERE referer LIKE 'action:%'") {
+			t.Errorf("the statement does not target what the old endpoint wrote: %s", stmt)
+		}
+		if !strings.Contains(stmt, "referer = NULL") {
+			t.Errorf("the statement leaves the action in the referer column, so it would run again: %s", stmt)
+		}
+		// 'action:' is seven characters, so the name starts at the eighth. Off by one here would store a
+		// truncated action ("opy_link") and clear the referer, which is silent and final.
+		if !strings.Contains(stmt, "substring(referer from 8)") {
+			t.Errorf("the name is not taken from just after the prefix: %s", stmt)
+		}
+	}
+}
+
+// A row whose action name was empty must not land in the column as an empty string: `action IS NOT NULL` is
+// how a report asks whether a row recorded an interaction, and ” would answer yes.
+func TestLegacyActionStatementStoresNoEmptyName(t *testing.T) {
+	for _, stmt := range LegacyActionRefererStatements() {
+		if !strings.Contains(stmt, "NULLIF(") {
+			t.Errorf("an empty action name would be stored as an empty string: %s", stmt)
+		}
+	}
+}

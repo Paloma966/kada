@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -307,7 +308,9 @@ func newRedirectServer(t *testing.T, rec *clickRecorder) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	h := NewHandler(&mockLinkService{logClick: rec.record})
 	r := gin.New()
-	h.RegisterRoutes(r)
+	// No limiters: rate limiting is the middleware's business and is tested where it lives. These tests are
+	// about what the routes record.
+	h.RegisterRoutes(r, nil, nil)
 	return r
 }
 
@@ -400,6 +403,10 @@ func TestCrawlerRequestIsRecordedButNotCounted(t *testing.T) {
 // The guide page fires its confirmation when it loads, so every later tap is an interaction with a visit
 // that is already counted. Counting them would make one person who copies the link and then opens it into
 // two visitors.
+//
+// The action goes in its own field, and the referer stays empty: the Referer header of this POST is the
+// guide page this backend served, so storing it would put our own domain at the top of every referrer
+// report and keep the column unreadable for its actual purpose.
 func TestGuidePageActionsAreRecordedButNotCounted(t *testing.T) {
 	rec := newClickRecorder()
 	r := newRedirectServer(t, rec)
@@ -407,6 +414,7 @@ func TestGuidePageActionsAreRecordedButNotCounted(t *testing.T) {
 	req := httptest.NewRequest("POST", "/r/abc123/click-action", strings.NewReader(`{"action":"copy_link"}`))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent", wechatUA)
+	req.Header.Set("Referer", "https://kada.click/r/abc123")
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 
@@ -421,8 +429,122 @@ func TestGuidePageActionsAreRecordedButNotCounted(t *testing.T) {
 	if n := counted(events); n != 0 {
 		t.Errorf("an action moved %d counters", n)
 	}
-	if events[0].Referer == "" {
-		t.Error("the action name is no longer recorded anywhere")
+	if events[0].Action != domain.ActionCopyLink {
+		t.Errorf("the action was recorded as %q, want %q", events[0].Action, domain.ActionCopyLink)
+	}
+	if events[0].Referer != "" {
+		t.Errorf("the action was filed as a referrer again: %q", events[0].Referer)
+	}
+}
+
+// The action arrives as free text from a public endpoint. An unrecognized one is refused rather than
+// stored, because a value the client chooses is what made the referer column unreadable in the first
+// place - and the row must not be written at all.
+func TestUnknownActionIsRejectedAndNotStored(t *testing.T) {
+	for _, action := range []string{`{"action":"whatever"}`, `{"action":""}`, `{}`, `{"action":"open_link "}`} {
+		t.Run(action, func(t *testing.T) {
+			rec := newClickRecorder()
+			r := newRedirectServer(t, rec)
+
+			req := httptest.NewRequest("POST", "/r/abc123/click-action", strings.NewReader(action))
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("User-Agent", wechatUA)
+			w := httptest.NewRecorder()
+			r.ServeHTTP(w, req)
+
+			if w.Code != http.StatusBadRequest {
+				t.Fatalf("expected 400 for %s, got %d", action, w.Code)
+			}
+
+			select {
+			case e := <-rec.events:
+				t.Errorf("the rejected action %s was recorded anyway: %+v", action, e)
+			case <-time.After(100 * time.Millisecond):
+			}
+		})
+	}
+}
+
+// The action limiter is wired to one route, not to the group. That distinction is not cosmetic: the
+// redirect ceiling is generous because a mobile carrier puts thousands of visitors behind one address, so a
+// tight limit applied to the hot path would drop real visits - and the only symptom would be a dashboard
+// that is quietly lower than the truth.
+func TestOnlyTheActionEndpointIsBehindTheActionLimiter(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	h := NewHandler(&mockLinkService{})
+
+	marked := func(c *gin.Context) { c.Header("X-Test-Limiter", "action") }
+	r := gin.New()
+	h.RegisterRoutes(r, nil, marked)
+
+	for _, route := range []struct{ method, path string }{
+		{"GET", "/r/abc123"},
+		{"GET", "/r/abc123/qrcode"},
+		{"POST", "/r/abc123/visit"},
+		{"POST", "/r/abc123/verify-password"},
+	} {
+		req := httptest.NewRequest(route.method, route.path, strings.NewReader("password=x"))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+
+		if got := w.Header().Get("X-Test-Limiter"); got != "" {
+			t.Errorf("%s %s is behind the action limiter", route.method, route.path)
+		}
+	}
+
+	req := httptest.NewRequest("POST", "/r/abc123/click-action", strings.NewReader(`{"action":"copy_link"}`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if got := w.Header().Get("X-Test-Limiter"); got != "action" {
+		t.Errorf("the action endpoint is not behind the action limiter, so nothing bounds it")
+	}
+}
+
+// The visit confirmation is written by the same page and has the same problem: the referer it sends is our
+// own guide page. The visit still counts - it is the JavaScript signal that makes a click a click - but it
+// carries no referer.
+func TestConfirmedVisitCarriesNoReferer(t *testing.T) {
+	rec := newClickRecorder()
+	r := newRedirectServer(t, rec)
+
+	req := httptest.NewRequest("POST", "/r/abc123/visit", nil)
+	req.Header.Set("User-Agent", wechatUA)
+	req.Header.Set("Referer", "https://kada.click/r/abc123")
+	r.ServeHTTP(httptest.NewRecorder(), req)
+
+	events := rec.collect(t, 1)
+	if events[0].Kind != domain.ClickVisit {
+		t.Fatalf("the confirmation was recorded as %q, want a visit", events[0].Kind)
+	}
+	if events[0].Referer != "" {
+		t.Errorf("the confirmation filed our own page as the referrer: %q", events[0].Referer)
+	}
+}
+
+// The page and the vocabulary have to move together. A button added to the template whose action is not in
+// domain.AllActions is refused by a 400 no visitor ever sees - the button simply stops being recorded - and
+// an action defined but never sent is dead code that hides the next rename. Both directions are checked
+// against the template itself, which is the only place the list of buttons exists.
+func TestEveryActionTheGuidePageSendsIsKnown(t *testing.T) {
+	sent := make(map[domain.Action]bool)
+	for _, match := range regexp.MustCompile(`logAction\('([a-z_]+)'\)`).FindAllStringSubmatch(guidePageHTML, -1) {
+		action := domain.Action(match[1])
+		sent[action] = true
+		if !action.Known() {
+			t.Errorf("the guide page sends %q, which the endpoint would reject", action)
+		}
+	}
+
+	if len(sent) == 0 {
+		t.Fatal("no logAction call was found in the guide page; this test is checking nothing")
+	}
+	for _, action := range domain.AllActions {
+		if !sent[action] {
+			t.Errorf("domain.AllActions defines %q but the guide page never sends it", action)
+		}
 	}
 }
 

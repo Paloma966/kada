@@ -607,6 +607,7 @@ func (s *LinkService) LogClick(ctx context.Context, e domain.ClickEvent) {
 		UserAgent: e.UserAgent,
 		Platform:  string(e.Platform),
 		Kind:      string(e.Kind),
+		Action:    string(e.Action),
 		Referer:   e.Referer,
 		CreatedAt: time.Now(),
 	}

@@ -2,6 +2,7 @@ package domain
 
 import (
 	"errors"
+	"slices"
 	"time"
 )
 
@@ -192,6 +193,30 @@ const (
 	ClickAction ClickKind = "action"
 )
 
+// Action is one interaction on the guide page: the thing a visitor did after the link had already opened.
+//
+// The set is closed, and the endpoint that receives one rejects anything outside it. That is the point:
+// the action used to be free text the client chose, stored in the referer column, so a caller could write
+// whatever it liked into a column that is read as "where this visitor came from".
+type Action string
+
+const (
+	ActionOpenLink    Action = "open_link"
+	ActionOpenBrowser Action = "open_browser"
+	ActionCopyLink    Action = "copy_link"
+	ActionQRView      Action = "qr_view"
+)
+
+// AllActions is every interaction the guide page can report, and therefore everything the endpoint accepts.
+// Both directions matter: an action defined here that the page never sends is dead vocabulary, and one the
+// page sends without being defined here is rejected in production by a 400 no visitor ever sees.
+var AllActions = []Action{ActionOpenLink, ActionOpenBrowser, ActionCopyLink, ActionQRView}
+
+// Known reports whether this is one of the actions the application defines.
+func (a Action) Known() bool {
+	return slices.Contains(AllActions, a)
+}
+
 // ClickEvent is one click on a short link, as the application sees it: the HTTP request has been
 // classified, and the question left is whether it will be counted.
 //
@@ -203,7 +228,10 @@ type ClickEvent struct {
 	UserAgent string
 	Platform  Platform
 	Kind      ClickKind
-	Referer   string
+	// Action is set only when Kind is ClickAction. It is its own field rather than a prefix on the referer,
+	// which is where it used to live: a report that reads referers had to know some of them were not.
+	Action  Action
+	Referer string
 }
 
 // DeepLink represents one deeplink fallback option

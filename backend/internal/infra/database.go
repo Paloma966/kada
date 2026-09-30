@@ -80,6 +80,9 @@ func gormLogger() logger.Interface {
 // before the comparison: a column the models no longer write keeps its old NOT NULL, and AutoMigrate will
 // not relax it, so every insert into that table fails until the column is gone. The enum types come first
 // of all, because a table whose column uses one cannot be created until the type exists.
+//
+// The one data step, the action names left in the referer column, runs last for the opposite reason: it
+// writes to a column AutoMigrate has to create first.
 func Migrate(db *gorm.DB) error {
 	if err := schema.EnsureEnumTypes(db); err != nil {
 		return err
@@ -92,6 +95,11 @@ func Migrate(db *gorm.DB) error {
 	}
 	if err := db.AutoMigrate(entity.Models()...); err != nil {
 		return fmt.Errorf("auto migration failed: %w", err)
+	}
+	// Data, not schema, and therefore after AutoMigrate: this is the action names an older endpoint left in
+	// the referer column, being moved into the column that exists for them.
+	if err := schema.ReconcileLegacyActions(db); err != nil {
+		return err
 	}
 	log.Println("Database schema is up to date")
 	return nil

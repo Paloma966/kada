@@ -182,3 +182,50 @@ func ReconcileLegacyColumns(db *gorm.DB) error {
 	log.Println("Legacy schema columns reconciled")
 	return nil
 }
+
+// legacyActionRefererSQL moves the guide page action out of the referer column, where it never belonged.
+//
+// The action endpoint used to store it as "action:copy_link" in `referer`, so a report that reads referers
+// had to know that some of its rows were not referers at all. The column for it exists now, and this is the
+// rows that predate it: the name is moved across and the referer is cleared.
+//
+// The WHERE clause is the whole guard. It matches the prefix the old code wrote and nothing else, so a
+// genuine referer - a URL, starting with http - cannot be touched, and because the statement clears the
+// referer it also cannot match a second time. That is what makes it safe to run on every deploy.
+//
+// `kind` is deliberately left alone. Those rows moved a denormalized counter when they were written
+// (links.click_count), and that number cannot be recomputed from the rows, so reclassifying them now would
+// put the rows and the counter they fed into disagreement.
+const legacyActionRefererSQL = `
+	UPDATE click_logs
+	SET action = NULLIF(substring(referer from 8), ''), referer = NULL
+	WHERE referer LIKE 'action:%'
+`
+
+// LegacyActionRefererStatements returns the statement that empties the action names out of the referer
+// column. It is exported so it can be asserted in tests without a database.
+func LegacyActionRefererStatements() []string {
+	return []string{legacyActionRefererSQL}
+}
+
+// ReconcileLegacyActions moves the action names the old endpoint left in `referer` into the `action` column.
+//
+// It must run AFTER AutoMigrate: it writes to a column AutoMigrate is what creates.
+func ReconcileLegacyActions(db *gorm.DB) error {
+	if db.Name() != "postgres" {
+		// The string functions are PostgreSQL's; there is nothing to reconcile on another engine.
+		return nil
+	}
+	if !db.Migrator().HasTable("click_logs") {
+		return nil
+	}
+
+	res := db.Exec(legacyActionRefererSQL)
+	if res.Error != nil {
+		return fmt.Errorf("failed to move the legacy actions out of the referer column: %w", res.Error)
+	}
+	if res.RowsAffected > 0 {
+		log.Printf("Moved %d legacy guide page actions out of the referer column", res.RowsAffected)
+	}
+	return nil
+}

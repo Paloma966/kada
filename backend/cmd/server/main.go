@@ -195,12 +195,14 @@ func main() {
 		})
 	})
 
-	// Short-link redirection (public endpoint, high-traffic rate limit)
-	var redirectMW gin.HandlerFunc
+	// Short-link redirection (public endpoint, high-traffic rate limit), and the guide page's own reports
+	// under a tighter one of their own: see RegisterRoutes for why the two differ.
+	var redirectMW, actionMW gin.HandlerFunc
 	if rateLimiter != nil {
 		redirectMW = rateLimiter.Redirect()
+		actionMW = rateLimiter.Action()
 	}
-	redirectH.RegisterRoutes(r, redirectMW)
+	redirectH.RegisterRoutes(r, redirectMW, actionMW)
 
 	// API v1 route group
 	v1 := r.Group("/api")

@@ -19,7 +19,11 @@ type ClickEvent struct {
 	// Kind is what this event is evidence of (domain.ClickKind). It travels with the event rather than
 	// being derived at write time: the decision is made where the request is, which is the only place that
 	// knows whether the guide page was served or the client went straight to the target.
-	Kind      string    `json:"kind"`
+	Kind string `json:"kind"`
+	// Action is which guide page interaction this was (domain.Action), empty for anything else. It is a
+	// field of its own: it used to ride in Referer behind an "action:" prefix, so every report that read
+	// referers had to know that some of them were not referers.
+	Action    string    `json:"action,omitempty"`
 	Referer   string    `json:"referer"`
 	CreatedAt time.Time `json:"created_at"`
 }
