@@ -250,7 +250,11 @@ jobs:
               if [ "$remote_size" = "$local_size" ]; then uploaded=yes; break; fi
               echo "the host holds $remote_size of $local_size bytes"
             else
-              echo "attempt $attempt did not finish"
+              # The size is asked for here too, not only on success. "did not finish" on its own cannot tell a
+              # link that delivered nothing from one that delivered all but the last megabyte, and those two
+              # want opposite answers: a longer timeout for the second, another route for the first.
+              partial=$("${SSH[@]}" "$REMOTE" 'stat -c%s /tmp/kada-deploy.tar.gz 2>/dev/null || echo 0' || echo unknown)
+              echo "attempt $attempt did not finish, the host holds $partial of $local_size bytes"
             fi
             sleep "$RETRY_DELAY_SECONDS"
           done
@@ -316,7 +320,11 @@ jobs:
 
           echo "::notice title=CI does not manage the SMS credentials::$missing is not set as a repository secret; the deploy checks the host's own .env instead."
 
+      # The id is what the report step below reads to tell "the site was not reachable" apart from "the
+      # release never reached the host": without it, a failed deploy is reported as a smoke test that did
+      # not run, next to a reassuring sentence about a deployment that never happened.
       - name: Apply schema and restart services
+        id: apply
         uses: appleboy/ssh-action@v1.2.2
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
@@ -613,10 +621,16 @@ jobs:
 
       # Says out loud what the smoke test found. It does not fail the job, but the result is recorded so
       # "the deploy is green" never quietly hides "the site could not be reached from here".
+      #
+      # It also has to say which of the two it is reporting. The smoke test only ran if the release reached
+      # the host, and when it did not - the upload stalled, the migration refused, the API would not start -
+      # then there is nothing to report about the site and the reassuring sentence below would be false at
+      # exactly the moment a reader most needs the truth.
       - name: Report the smoke test result
         if: always()
         env:
           SITE: ${{ vars.SITE_URL || 'https://kada.click' }}
+          APPLY_OUTCOME: ${{ steps.apply.outcome }}
         run: |
           STATUS=$(cat verify-status.txt 2>/dev/null || echo "failed")
           BODY=$(cat verify-body.txt 2>/dev/null || echo "the smoke test did not run")
@@ -624,6 +638,20 @@ jobs:
 
           if [ "$STATUS" = "passed" ]; then
             echo "$ORIGIN answered over HTTPS, and its API is healthy."
+            exit 0
+          fi
+
+          if [ "$APPLY_OUTCOME" != "success" ]; then
+            {
+              echo "### The release did not reach the host"
+              echo ""
+              echo "The step that applies it ($APPLY_OUTCOME) did not succeed, so no smoke test ran: there was"
+              echo "nothing new to check."
+              echo ""
+              echo "The host is still running the previous build - that step refuses to touch anything until the"
+              echo "bundle it was given is complete - so this is a failed deployment, not an outage."
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "::error title=The release did not reach the host::the apply step did not succeed ($APPLY_OUTCOME); the host still runs the previous build."
             exit 0
           fi
 
