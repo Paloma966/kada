@@ -36,7 +36,7 @@ back to a direct database write).
 ## 2. Local setup
 
 ```bash
-git clone git@github.com:Paloma966/kada.git
+git clone git@github.com:booondenz/kada.git
 cd kada
 
 # Root environment for Docker Compose (JWT_SECRET and POSTGRES_PASSWORD are required)

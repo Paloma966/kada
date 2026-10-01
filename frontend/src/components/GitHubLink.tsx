@@ -4,7 +4,7 @@ import { useT } from "@/lib/i18n";
  * The project's own remote, as `git remote -v` prints it. Written down once here so the bar cannot end up
  * pointing at a fork or a mirror that has moved on.
  */
-const REPO_URL = "https://github.com/Paloma966/kada";
+const REPO_URL = "https://github.com/booondenz/kada";
 
 /**
  * The top bar's way out to the source, on every page.
